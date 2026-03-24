@@ -27,6 +27,8 @@ export interface Operation {
   power: number;   // 0-100 %
   passes: number;
   zOffset?: number;
+  /** Layer IDs this operation applies to. When present, only geometry tagged with a matching layerId is processed. */
+  layerIds?: string[];
 }
 
 export interface PathGeometry {

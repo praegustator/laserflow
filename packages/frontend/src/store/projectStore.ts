@@ -497,6 +497,7 @@ export const useProjectStore = create<ProjectStore>()(
             power: op.power,
             passes: op.passes,
             zOffset: op.zOffset,
+            layerIds: op.layerIds,
           })),
           machineId,
           layerTransforms,
