@@ -49,11 +49,11 @@ interface ProjectStore {
   deleteVersion: (versionId: string) => void;
 
   // Job generation
-  compileJob: (
-    machineId?: string,
-    originFlip?: boolean,
-    workH?: number,
-  ) => Promise<Job>;
+  compileJob: (opts?: {
+    machineId?: string;
+    originFlip?: boolean;
+    workH?: number;
+  }) => Promise<Job>;
 }
 
 function getActiveProject(projects: Project[], id: string | null): Project | undefined {
@@ -416,9 +416,9 @@ export const useProjectStore = create<ProjectStore>()(
           label,
           createdAt: new Date().toISOString(),
           snapshot: {
-            files: JSON.parse(JSON.stringify(project.files)),
-            layers: JSON.parse(JSON.stringify(project.layers)),
-            operations: JSON.parse(JSON.stringify(project.operations)),
+            files: structuredClone(project.files),
+            layers: structuredClone(project.layers),
+            operations: structuredClone(project.operations),
           },
         };
         set(s => ({
@@ -438,9 +438,9 @@ export const useProjectStore = create<ProjectStore>()(
         set(s => ({
           projects: updateProject(s.projects, activeProjectId!, p => ({
             ...p,
-            files: JSON.parse(JSON.stringify(version.snapshot.files)),
-            layers: JSON.parse(JSON.stringify(version.snapshot.layers)),
-            operations: JSON.parse(JSON.stringify(version.snapshot.operations)),
+            files: structuredClone(version.snapshot.files),
+            layers: structuredClone(version.snapshot.layers),
+            operations: structuredClone(version.snapshot.operations),
           })),
         }));
       },
@@ -456,7 +456,8 @@ export const useProjectStore = create<ProjectStore>()(
         }));
       },
 
-      compileJob: async (machineId, originFlip, workH) => {
+      compileJob: async (opts) => {
+        const { machineId, originFlip, workH } = opts ?? {};
         const { activeProjectId, projects } = get();
         const project = getActiveProject(projects, activeProjectId);
         if (!project) throw new Error('No active project');

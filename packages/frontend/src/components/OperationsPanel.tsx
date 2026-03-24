@@ -236,11 +236,9 @@ export default function OperationsPanel({ project, layers, originPosition }: Pro
   const handleGenerate = async () => {
     setGenerating(true);
     try {
-      await compileJob(
-        undefined,
-        originPosition === 'bottom-left',
-        undefined,
-      );
+      await compileJob({
+        originFlip: originPosition === 'bottom-left',
+      });
       addToast('success', 'G-code generated — job ready');
     } catch (err) {
       addToast('error', err instanceof Error ? err.message : 'Failed to generate G-code');
