@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./packages/backend
+    ports:
+      - "3001:3001"
+    volumes:
+      - laser_data:/app/data
+    devices:
+      - "/dev/ttyUSB0:/dev/ttyUSB0"
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+
+  frontend:
+    build:
+      context: ./packages/frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  laser_data:
