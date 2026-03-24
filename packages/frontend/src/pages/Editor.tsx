@@ -26,6 +26,7 @@ export default function Editor() {
   const updateLayerTransform = useProjectStore(s => s.updateLayerTransform);
   const moveShapeToNewLayer = useProjectStore(s => s.moveShapeToNewLayer);
   const moveShapesToLayer = useProjectStore(s => s.moveShapesToLayer);
+  const moveShapesToNewLayer = useProjectStore(s => s.moveShapesToNewLayer);
   const removeShapes = useProjectStore(s => s.removeShapes);
   const saveVersion = useProjectStore(s => s.saveVersion);
   const restoreVersion = useProjectStore(s => s.restoreVersion);
@@ -186,22 +187,15 @@ export default function Editor() {
     if (!selectedLayerId || selectedShapeIds.size === 0 || !project) return;
     const layer = project.layers.find(l => l.id === selectedLayerId);
     if (!layer) return;
+    const shapeIds = Array.from(selectedShapeIds);
     const shapes = layer.shapes.filter(s => selectedShapeIds.has(s.id));
+    if (shapes.length === 0) return;
     if (shapes.length === 1) {
       moveShapeToNewLayer(shapes[0].id, selectedLayerId, shapes[0].name);
     } else {
-      // For multiple shapes, create a descriptive name
-      const name = `${layer.name} (selection)`;
-      // Move each shape one at a time; first goes to new layer, rest follow
-      moveShapeToNewLayer(shapes[0].id, selectedLayerId, name);
-      // After the first one creates the layer, find it and move others
-      // We need to batch this differently — use moveShapesToLayer for the rest
-      // For simplicity, move one by one
-      for (let i = 1; i < shapes.length; i++) {
-        moveShapeToNewLayer(shapes[i].id, selectedLayerId, shapes[i].name);
-      }
+      moveShapesToNewLayer(shapeIds, selectedLayerId, `${layer.name} (selection)`);
     }
-    addToast('info', `Popped ${shapes.length} shape(s) to new layer(s)`);
+    addToast('info', `Popped ${shapes.length} shape(s) to new layer`);
     setSelectedShapeIds(new Set());
   };
 

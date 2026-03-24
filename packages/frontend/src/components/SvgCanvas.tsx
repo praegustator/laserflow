@@ -139,10 +139,16 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, selecte
             parts.push(`translate(${layer.offsetX},${layer.offsetY})`);
             parts.push(`scale(${mX ? -layer.scaleX : layer.scaleX},${mY ? -layer.scaleY : layer.scaleY})`);
             if (rotation !== 0) {
-              // Rotate around the center of the bounding box
+              // Rotate around the pivot point within the bounding box
               const bbox = computeShapesBoundingBox(layer.shapes);
-              const cx = bbox ? (bbox.minX + bbox.maxX) / 2 : 0;
-              const cy = bbox ? (bbox.minY + bbox.maxY) / 2 : 0;
+              const pivot = layer.pivot ?? 'tl';
+              let cx = 0, cy = 0;
+              if (bbox) {
+                const col = pivot[1] === 'l' ? 0 : pivot[1] === 'c' ? 0.5 : 1;
+                const row = pivot[0] === 't' ? 0 : pivot[0] === 'm' ? 0.5 : 1;
+                cx = bbox.minX + bbox.width * col;
+                cy = bbox.minY + bbox.height * row;
+              }
               parts.push(`rotate(${rotation},${cx},${cy})`);
             }
 
