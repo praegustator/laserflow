@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
-import ToastContainer from './components/ToastContainer';
+import BackendOverlay from './components/BackendOverlay';
 import Dashboard from './pages/Dashboard';
 import Console from './pages/Console';
 import Editor from './pages/Editor';
@@ -91,7 +91,7 @@ export default function App() {
   return (
     <HashRouter>
       <AppInner />
-      <ToastContainer />
+      <BackendOverlay />
     </HashRouter>
   );
 }
