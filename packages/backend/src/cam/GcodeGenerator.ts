@@ -149,9 +149,16 @@ export function generateGcode(
     lines.push(laserMode);
     lines.push('');
 
+    // When layerIds are specified on the operation, only process geometry
+    // whose layerId is in the operation's layerIds list. This ensures each
+    // operation only cuts/engraves paths from its assigned layers.
+    const opGeometry = op.layerIds && op.layerIds.length > 0
+      ? geometry.filter(geo => geo.layerId !== undefined && op.layerIds!.includes(geo.layerId))
+      : geometry;
+
     for (let pass = 1; pass <= op.passes; pass++) {
       lines.push(`; Pass ${pass}`);
-      for (const geo of geometry) {
+      for (const geo of opGeometry) {
         let transform: PathTransform = IDENTITY_TRANSFORM;
         if (geo.layerId && layerTransforms?.[geo.layerId]) {
           transform = {

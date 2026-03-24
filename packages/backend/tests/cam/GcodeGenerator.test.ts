@@ -76,4 +76,53 @@ describe('GcodeGenerator', () => {
     const passMatches = gcode.match(/; Pass \d+/g);
     expect(passMatches).toHaveLength(3);
   });
+
+  it('filters geometry by layerIds when specified on an operation', () => {
+    // Two layers: layer1 (cut path at X=10) and layer2 (engrave path at X=50)
+    const geometry: PathGeometry[] = [
+      { d: 'M 0 0 L 10 0', layerId: 'layer1' },
+      { d: 'M 0 0 L 50 0', layerId: 'layer2' },
+    ];
+    const operations: Operation[] = [
+      { id: 'cut-op', type: 'cut', feedRate: 600, power: 80, passes: 1, layerIds: ['layer1'] },
+      { id: 'engrave-op', type: 'engrave', feedRate: 3000, power: 50, passes: 1, layerIds: ['layer2'] },
+    ];
+
+    const gcode = generateGcode(geometry, operations, defaultProfile);
+
+    expect(gcode).toContain('M3');
+    expect(gcode).toContain('M4');
+
+    // Verify each operation only processes its own layer's path.
+    // cut-op targets layer1 (L 10 0 → X10.000) and must appear before M4.
+    // engrave-op targets layer2 (L 50 0 → X50.000) and must appear after M4.
+    const m3Index = gcode.indexOf('M3');
+    const m4Index = gcode.indexOf('M4');
+    const x10Index = gcode.indexOf('X10.000');
+    const x50Index = gcode.indexOf('X50.000');
+
+    expect(x10Index).toBeGreaterThan(m3Index);
+    expect(x10Index).toBeLessThan(m4Index);
+    expect(x50Index).toBeGreaterThan(m4Index);
+  });
+
+  it('processes all geometry when operation has no layerIds (backward compat)', () => {
+    const geometry: PathGeometry[] = [
+      { d: 'M 0 0 L 10 0', layerId: 'layer1' },
+      { d: 'M 0 0 L 50 0', layerId: 'layer2' },
+    ];
+    const operations: Operation[] = [{
+      id: 'op-all',
+      type: 'cut',
+      feedRate: 600,
+      power: 80,
+      passes: 1,
+      // no layerIds — should process all geometry
+    }];
+
+    const gcode = generateGcode(geometry, operations, defaultProfile);
+
+    expect(gcode).toContain('X10.000');
+    expect(gcode).toContain('X50.000');
+  });
 });
