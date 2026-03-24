@@ -21,7 +21,7 @@ export class WebSocketBroadcaster {
     app.get('/ws', { websocket: true }, (socket) => {
       clients.add(socket);
 
-      socket.on('message', (raw) => {
+      socket.on('message', (raw: Buffer | string) => {
         try {
           const msg = JSON.parse(raw.toString()) as { type: string; axis?: string; distance?: number; feed?: number; command?: string };
 
