@@ -3,6 +3,8 @@ import { serialManager } from '../serial/SerialManager.js';
 import { parseResponse } from '../serial/GrblProtocol.js';
 import type { Job, JobProgress, JobStatus } from '../types/index.js';
 
+// GRBL's serial RX buffer is 128 bytes; we keep 1 byte spare for safety.
+// Streaming must not exceed this limit or commands will be dropped/corrupted.
 const GRBL_BUFFER_SIZE = 127;
 
 export class JobExecutionEngine extends EventEmitter {

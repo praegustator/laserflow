@@ -15,6 +15,8 @@ const IDENTITY_TRANSFORM: PathTransform = { offsetX: 0, offsetY: 0, scaleX: 1, s
 function applyTransform(x: number, y: number, t: PathTransform): [number, number] {
   const tx = t.offsetX + x * t.scaleX;
   let ty = t.offsetY + y * t.scaleY;
+  // Y-flip converts from a top-left SVG coordinate system to bottom-left
+  // machine coordinates: Y' = workH - Y. workH must be provided when flipY is true.
   if (t.flipY && t.workH !== undefined) {
     ty = t.workH - ty;
   }

@@ -20,8 +20,11 @@ function parseGcode(gcode: string): GMove[] {
     const yMatch = trimmed.match(/Y(-?[\d.]+)/);
     const newX = xMatch ? parseFloat(xMatch[1]) : NaN;
     const newY = yMatch ? parseFloat(yMatch[1]) : NaN;
+    // Only update coordinates when they are explicitly present in the command;
+    // if neither X nor Y appears on a G0/G1 line, skip it (no movement).
     if (!isNaN(newX)) x = newX;
     if (!isNaN(newY)) y = newY;
+    if (isNaN(newX) && isNaN(newY)) continue;
     moves.push({ type: isG0 ? 'rapid' : 'cut', x, y });
   }
   return moves;

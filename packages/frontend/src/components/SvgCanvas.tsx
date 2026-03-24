@@ -98,7 +98,9 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, onSelec
 
   const { tx, ty, scale } = transform;
 
-  // For bottom-left origin: flip Y axis so (0,0) is at bottom-left
+  // SVG's native Y axis points downward (top-left origin). For bottom-left
+  // origin (standard GRBL/CNC), we flip the Y axis by applying
+  // scale(1,-1) then translating back so the work area stays on screen.
   const coordGroupTransform = originPosition === 'bottom-left'
     ? `scale(1,-1) translate(0, ${-workH})`
     : undefined;

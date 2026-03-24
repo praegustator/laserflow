@@ -266,8 +266,15 @@ export default function Settings() {
       const r = await fetch(`${url}/api/ports`, { signal: AbortSignal.timeout(3000) });
       if (r.ok) setTestStatus('✓ Connected');
       else setTestStatus(`✗ HTTP ${r.status}`);
-    } catch {
-      setTestStatus('✗ Connection failed');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('timeout') || msg.includes('abort')) {
+        setTestStatus('✗ Timed out (3s)');
+      } else if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+        setTestStatus('✗ Network error – backend unreachable');
+      } else {
+        setTestStatus(`✗ ${msg}`);
+      }
     }
     setTimeout(() => setTestStatus(null), 4000);
   };
