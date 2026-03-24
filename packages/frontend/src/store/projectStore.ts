@@ -24,7 +24,7 @@ interface ProjectStore {
   addLayer: (name: string) => void;
   removeLayer: (layerId: string) => void;
   renameLayer: (layerId: string, name: string) => void;
-  updateLayerTransform: (layerId: string, partial: Partial<Pick<Layer, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY'>>) => void;
+  updateLayerTransform: (layerId: string, partial: Partial<Pick<Layer, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation' | 'mirrorX' | 'mirrorY' | 'pivot'>>) => void;
   toggleLayerVisibility: (layerId: string) => void;
   moveLayerUp: (layerId: string) => void;
   moveLayerDown: (layerId: string) => void;
@@ -32,6 +32,8 @@ interface ProjectStore {
   // Shape management
   moveShapeToLayer: (shapeId: string, fromLayerId: string, toLayerId: string) => void;
   moveShapeToNewLayer: (shapeId: string, fromLayerId: string, newLayerName: string) => void;
+  moveShapesToLayer: (shapeIds: string[], fromLayerId: string, toLayerId: string) => void;
+  removeShapes: (shapeIds: string[], layerId: string) => void;
 
   // Operations
   addOperation: () => void;
@@ -42,6 +44,7 @@ interface ProjectStore {
   toggleOperationEnabled: (opId: string) => void;
   assignLayerToOperation: (opId: string, layerId: string) => void;
   unassignLayerFromOperation: (opId: string, layerId: string) => void;
+  duplicateOperation: (opId: string) => void;
 
   // Versioning
   saveVersion: (label: string) => void;
@@ -135,6 +138,10 @@ export const useProjectStore = create<ProjectStore>()(
           offsetY: 0,
           scaleX: 1,
           scaleY: 1,
+          rotation: 0,
+          mirrorX: false,
+          mirrorY: false,
+          pivot: 'tl',
         };
 
         set(s => ({
@@ -158,6 +165,10 @@ export const useProjectStore = create<ProjectStore>()(
           offsetY: 0,
           scaleX: 1,
           scaleY: 1,
+          rotation: 0,
+          mirrorX: false,
+          mirrorY: false,
+          pivot: 'tl',
         };
         set(s => ({
           projects: updateProject(s.projects, activeProjectId, p => ({
@@ -280,6 +291,10 @@ export const useProjectStore = create<ProjectStore>()(
               offsetY: 0,
               scaleX: 1,
               scaleY: 1,
+              rotation: 0,
+              mirrorX: false,
+              mirrorY: false,
+              pivot: 'tl',
             };
             return {
               ...p,
@@ -291,6 +306,40 @@ export const useProjectStore = create<ProjectStore>()(
               ],
             };
           }),
+        }));
+      },
+
+      moveShapesToLayer: (shapeIds: string[], fromLayerId: string, toLayerId: string) => {
+        const { activeProjectId } = get();
+        if (!activeProjectId || fromLayerId === toLayerId || shapeIds.length === 0) return;
+        set(s => ({
+          projects: updateProject(s.projects, activeProjectId, p => {
+            const fromLayer = p.layers.find(l => l.id === fromLayerId);
+            if (!fromLayer) return p;
+            const shapes = fromLayer.shapes.filter(sh => shapeIds.includes(sh.id));
+            if (shapes.length === 0) return p;
+            return {
+              ...p,
+              layers: p.layers.map(l => {
+                if (l.id === fromLayerId) return { ...l, shapes: l.shapes.filter(sh => !shapeIds.includes(sh.id)) };
+                if (l.id === toLayerId) return { ...l, shapes: [...l.shapes, ...shapes] };
+                return l;
+              }),
+            };
+          }),
+        }));
+      },
+
+      removeShapes: (shapeIds: string[], layerId: string) => {
+        const { activeProjectId } = get();
+        if (!activeProjectId || shapeIds.length === 0) return;
+        set(s => ({
+          projects: updateProject(s.projects, activeProjectId, p => ({
+            ...p,
+            layers: p.layers.map(l =>
+              l.id === layerId ? { ...l, shapes: l.shapes.filter(sh => !shapeIds.includes(sh.id)) } : l
+            ),
+          })),
         }));
       },
 
@@ -407,6 +456,27 @@ export const useProjectStore = create<ProjectStore>()(
         }));
       },
 
+      duplicateOperation: (opId: string) => {
+        const { activeProjectId, projects } = get();
+        const project = getActiveProject(projects, activeProjectId);
+        if (!project) return;
+        const original = project.operations.find(op => op.id === opId);
+        if (!original) return;
+        const dup: Operation = {
+          ...structuredClone(original),
+          id: uid(),
+          label: original.label ? `${original.label} (copy)` : undefined,
+        };
+        const idx = project.operations.findIndex(op => op.id === opId);
+        set(s => ({
+          projects: updateProject(s.projects, activeProjectId!, p => {
+            const ops = [...p.operations];
+            ops.splice(idx + 1, 0, dup);
+            return { ...p, operations: ops };
+          }),
+        }));
+      },
+
       saveVersion: (label: string) => {
         const { activeProjectId, projects } = get();
         const project = getActiveProject(projects, activeProjectId);
@@ -467,7 +537,7 @@ export const useProjectStore = create<ProjectStore>()(
 
         // Collect geometry from all layers referenced by enabled operations
         const geometry: PathGeometry[] = [];
-        const layerTransforms: Record<string, { offsetX: number; offsetY: number; scaleX: number; scaleY: number }> = {};
+        const layerTransforms: Record<string, { offsetX: number; offsetY: number; scaleX: number; scaleY: number; rotation: number; mirrorX: boolean; mirrorY: boolean }> = {};
 
         for (const op of enabledOps) {
           for (const layerId of op.layerIds) {
@@ -478,6 +548,9 @@ export const useProjectStore = create<ProjectStore>()(
               offsetY: layer.offsetY,
               scaleX: layer.scaleX,
               scaleY: layer.scaleY,
+              rotation: layer.rotation ?? 0,
+              mirrorX: layer.mirrorX ?? false,
+              mirrorY: layer.mirrorY ?? false,
             };
             for (const shape of layer.shapes) {
               geometry.push({ d: shape.d, layerId });

@@ -1,11 +1,14 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import type { Layer, Operation, MachineProfile } from '../types';
+import { computeShapesBoundingBox } from '../utils/geometry';
 
 interface Props {
   layers: Layer[];
   operations: Operation[];
   selectedLayerId: string | null;
+  selectedShapeIds?: Set<string>;
   onSelectLayer: (id: string) => void;
+  onSelectShape?: (shapeId: string, layerId: string) => void;
   originPosition: 'bottom-left' | 'top-left';
   machineProfile?: MachineProfile | null;
 }
@@ -20,7 +23,7 @@ const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#1
 
 const GRID_SPACING = 10; // mm
 
-export default function SvgCanvas({ layers, operations, selectedLayerId, onSelectLayer, originPosition, machineProfile }: Props) {
+export default function SvgCanvas({ layers, operations, selectedLayerId, selectedShapeIds, onSelectLayer, onSelectShape, originPosition, machineProfile }: Props) {
   const workW = machineProfile?.workArea.x ?? 300;
   const workH = machineProfile?.workArea.y ?? 200;
 
@@ -127,24 +130,51 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, onSelec
             if (!layer.visible) return null;
             const color = getLayerColor(layer.id, idx);
             const isSelected = layer.id === selectedLayerId;
+            const rotation = layer.rotation ?? 0;
+            const mX = layer.mirrorX ?? false;
+            const mY = layer.mirrorY ?? false;
+
+            // Build transform: translate, then rotate/mirror around the offset point, then scale
+            const parts: string[] = [];
+            parts.push(`translate(${layer.offsetX},${layer.offsetY})`);
+            parts.push(`scale(${mX ? -layer.scaleX : layer.scaleX},${mY ? -layer.scaleY : layer.scaleY})`);
+            if (rotation !== 0) {
+              // Rotate around the center of the bounding box
+              const bbox = computeShapesBoundingBox(layer.shapes);
+              const cx = bbox ? (bbox.minX + bbox.maxX) / 2 : 0;
+              const cy = bbox ? (bbox.minY + bbox.maxY) / 2 : 0;
+              parts.push(`rotate(${rotation},${cx},${cy})`);
+            }
+
             return (
               <g
                 key={layer.id}
-                transform={`translate(${layer.offsetX},${layer.offsetY}) scale(${layer.scaleX},${layer.scaleY})`}
-                onClick={() => onSelectLayer(layer.id)}
+                transform={parts.join(' ')}
+                onClick={(e) => { e.stopPropagation(); onSelectLayer(layer.id); }}
                 style={{ cursor: 'pointer' }}
                 opacity={isSelected ? 1 : 0.75}
               >
-                {layer.shapes.map((shape) => (
-                  <path
-                    key={shape.id}
-                    d={shape.d}
-                    fill="none"
-                    stroke={color}
-                    strokeWidth={isSelected ? 0.6 : 0.4}
-                    opacity={0.9}
-                  />
-                ))}
+                {layer.shapes.map((shape) => {
+                  const isShapeSelected = selectedShapeIds?.has(shape.id) ?? false;
+                  return (
+                    <path
+                      key={shape.id}
+                      d={shape.d}
+                      fill="none"
+                      stroke={isShapeSelected ? '#facc15' : color}
+                      strokeWidth={isShapeSelected ? 0.8 : isSelected ? 0.6 : 0.4}
+                      opacity={0.9}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onSelectShape) {
+                          onSelectShape(shape.id, layer.id);
+                        } else {
+                          onSelectLayer(layer.id);
+                        }
+                      }}
+                    />
+                  );
+                })}
               </g>
             );
           })}

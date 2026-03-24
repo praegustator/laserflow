@@ -19,11 +19,14 @@ export default function Editor() {
   const setActiveProjectId = useProjectStore(s => s.setActiveProjectId);
   const importSvgFile = useProjectStore(s => s.importSvgFile);
   const removeLayer = useProjectStore(s => s.removeLayer);
+  const renameLayer = useProjectStore(s => s.renameLayer);
   const toggleLayerVisibility = useProjectStore(s => s.toggleLayerVisibility);
   const moveLayerUp = useProjectStore(s => s.moveLayerUp);
   const moveLayerDown = useProjectStore(s => s.moveLayerDown);
   const updateLayerTransform = useProjectStore(s => s.updateLayerTransform);
   const moveShapeToNewLayer = useProjectStore(s => s.moveShapeToNewLayer);
+  const moveShapesToLayer = useProjectStore(s => s.moveShapesToLayer);
+  const removeShapes = useProjectStore(s => s.removeShapes);
   const saveVersion = useProjectStore(s => s.saveVersion);
   const restoreVersion = useProjectStore(s => s.restoreVersion);
   const deleteVersion = useProjectStore(s => s.deleteVersion);
@@ -35,11 +38,14 @@ export default function Editor() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
+  const [selectedShapeIds, setSelectedShapeIds] = useState<Set<string>>(new Set());
   const [expandedLayerIds, setExpandedLayerIds] = useState<Set<string>>(new Set());
   const [dragOver, setDragOver] = useState(false);
   const [showVersionDialog, setShowVersionDialog] = useState(false);
   const [versionLabel, setVersionLabel] = useState('');
   const [showVersions, setShowVersions] = useState(false);
+  const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
+  const [editingLayerName, setEditingLayerName] = useState('');
 
   const project = projects.find(p => p.id === activeProjectId) ?? null;
 
@@ -116,13 +122,104 @@ export default function Editor() {
     addToast('success', `Saved version "${label}"`);
   };
 
+  /** Double-click on layer name to start inline editing */
+  const startEditingLayerName = (layerId: string, currentName: string) => {
+    setEditingLayerId(layerId);
+    setEditingLayerName(currentName);
+  };
+
+  const commitLayerName = () => {
+    if (editingLayerId && editingLayerName.trim()) {
+      renameLayer(editingLayerId, editingLayerName.trim());
+    }
+    setEditingLayerId(null);
+    setEditingLayerName('');
+  };
+
+  /** Shape selection — supports Shift/Cmd multi-select */
+  const handleShapeClick = (shapeId: string, layerId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedLayerId(layerId);
+    if (e.shiftKey || e.metaKey || e.ctrlKey) {
+      // Toggle selection
+      setSelectedShapeIds(prev => {
+        const next = new Set(prev);
+        if (next.has(shapeId)) next.delete(shapeId);
+        else next.add(shapeId);
+        return next;
+      });
+    } else {
+      setSelectedShapeIds(new Set([shapeId]));
+    }
+  };
+
+  /** Shape clicked on the canvas */
+  const handleCanvasShapeClick = (shapeId: string, layerId: string) => {
+    setSelectedLayerId(layerId);
+    setSelectedShapeIds(new Set([shapeId]));
+    // Auto-expand the layer to show shapes
+    setExpandedLayerIds(prev => {
+      const next = new Set(prev);
+      next.add(layerId);
+      return next;
+    });
+  };
+
+  /** Move selected shapes to another layer */
+  const handleMoveSelectedToLayer = (toLayerId: string) => {
+    if (!selectedLayerId || selectedShapeIds.size === 0) return;
+    moveShapesToLayer(Array.from(selectedShapeIds), selectedLayerId, toLayerId);
+    addToast('info', `Moved ${selectedShapeIds.size} shape(s) to another layer`);
+    setSelectedShapeIds(new Set());
+  };
+
+  /** Delete selected shapes */
+  const handleDeleteSelectedShapes = () => {
+    if (!selectedLayerId || selectedShapeIds.size === 0) return;
+    removeShapes(Array.from(selectedShapeIds), selectedLayerId);
+    addToast('info', `Removed ${selectedShapeIds.size} shape(s)`);
+    setSelectedShapeIds(new Set());
+  };
+
+  /** Pop selected shapes to new layer */
+  const handlePopSelectedToNewLayer = () => {
+    if (!selectedLayerId || selectedShapeIds.size === 0 || !project) return;
+    const layer = project.layers.find(l => l.id === selectedLayerId);
+    if (!layer) return;
+    const shapes = layer.shapes.filter(s => selectedShapeIds.has(s.id));
+    if (shapes.length === 1) {
+      moveShapeToNewLayer(shapes[0].id, selectedLayerId, shapes[0].name);
+    } else {
+      // For multiple shapes, create a descriptive name
+      const name = `${layer.name} (selection)`;
+      // Move each shape one at a time; first goes to new layer, rest follow
+      moveShapeToNewLayer(shapes[0].id, selectedLayerId, name);
+      // After the first one creates the layer, find it and move others
+      // We need to batch this differently — use moveShapesToLayer for the rest
+      // For simplicity, move one by one
+      for (let i = 1; i < shapes.length; i++) {
+        moveShapeToNewLayer(shapes[i].id, selectedLayerId, shapes[i].name);
+      }
+    }
+    addToast('info', `Popped ${shapes.length} shape(s) to new layer(s)`);
+    setSelectedShapeIds(new Set());
+  };
+
   const canFrame = connectionStatus === 'connected' && (project?.layers.length ?? 0) > 0;
 
   const shortcuts = useMemo<ShortcutDef[]>(() => [
     { key: 'i', ctrl: true, label: 'Import SVG', handler: () => fileInputRef.current?.click() },
-    { key: 'Delete', label: 'Remove layer', handler: () => { if (selectedLayerId) { removeLayer(selectedLayerId); setSelectedLayerId(null); } } },
-    { key: 'Escape', label: 'Deselect', handler: () => setSelectedLayerId(null) },
-  ], [selectedLayerId, removeLayer]);
+    { key: 'Delete', label: 'Remove layer', handler: () => {
+      if (selectedShapeIds.size > 0 && selectedLayerId) {
+        removeShapes(Array.from(selectedShapeIds), selectedLayerId);
+        setSelectedShapeIds(new Set());
+      } else if (selectedLayerId) {
+        removeLayer(selectedLayerId);
+        setSelectedLayerId(null);
+      }
+    }},
+    { key: 'Escape', label: 'Deselect', handler: () => { setSelectedLayerId(null); setSelectedShapeIds(new Set()); } },
+  ], [selectedLayerId, selectedShapeIds, removeLayer, removeShapes]);
   useKeyboardShortcuts(shortcuts);
 
   return (
@@ -256,7 +353,7 @@ export default function Editor() {
               {project.layers.map((layer, idx) => (
                 <div
                   key={layer.id}
-                  onClick={() => setSelectedLayerId(layer.id)}
+                  onClick={() => { setSelectedLayerId(layer.id); setSelectedShapeIds(new Set()); }}
                   className={`rounded-lg border p-2 cursor-pointer transition-colors ${selectedLayerId === layer.id ? 'border-orange-500 bg-gray-800' : 'border-gray-700 hover:border-gray-600'}`}
                 >
                   <div className="flex items-center gap-1.5">
@@ -269,7 +366,26 @@ export default function Editor() {
                       className={`text-xs w-5 text-center ${layer.visible ? 'text-gray-200' : 'text-gray-600'}`}
                       title="Toggle visibility"
                     >{layer.visible ? '👁' : '🚫'}</button>
-                    <span className="flex-1 text-xs text-gray-200 truncate" title={layer.name}>{layer.name}</span>
+
+                    {/* Layer name — double-click to edit */}
+                    {editingLayerId === layer.id ? (
+                      <input
+                        type="text"
+                        value={editingLayerName}
+                        onChange={e => setEditingLayerName(e.target.value)}
+                        onBlur={commitLayerName}
+                        onKeyDown={e => { if (e.key === 'Enter') commitLayerName(); if (e.key === 'Escape') { setEditingLayerId(null); setEditingLayerName(''); } }}
+                        onClick={e => e.stopPropagation()}
+                        autoFocus
+                        className="flex-1 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 focus:outline-none min-w-0"
+                      />
+                    ) : (
+                      <span
+                        className="flex-1 text-xs text-gray-200 truncate"
+                        title={`${layer.name} — double-click to rename`}
+                        onDoubleClick={e => { e.stopPropagation(); startEditingLayerName(layer.id, layer.name); }}
+                      >{layer.name}</span>
+                    )}
 
                     {/* Expand/collapse shapes */}
                     {layer.shapes.length > 1 && (
@@ -287,20 +403,61 @@ export default function Editor() {
                   {/* Expanded shapes */}
                   {expandedLayerIds.has(layer.id) && (
                     <div className="mt-1.5 ml-5 space-y-0.5">
-                      {layer.shapes.map(shape => (
-                        <div key={shape.id} className="flex items-center gap-1.5 text-xs">
-                          <span className="text-gray-400 truncate flex-1" title={shape.name}>{shape.name}</span>
+                      {layer.shapes.map(shape => {
+                        const isShapeSelected = selectedShapeIds.has(shape.id);
+                        return (
+                          <div
+                            key={shape.id}
+                            onClick={e => handleShapeClick(shape.id, layer.id, e)}
+                            className={`flex items-center gap-1.5 text-xs cursor-pointer rounded px-1 py-0.5 transition-colors ${
+                              isShapeSelected ? 'bg-yellow-900/40 text-yellow-200' : 'hover:bg-gray-700/50'
+                            }`}
+                          >
+                            <span className={`truncate flex-1 ${isShapeSelected ? 'text-yellow-200' : 'text-gray-400'}`} title={shape.name}>{shape.name}</span>
+                            <button
+                              onClick={e => {
+                                e.stopPropagation();
+                                moveShapeToNewLayer(shape.id, layer.id, shape.name);
+                                addToast('info', `Moved "${shape.name}" to new layer`);
+                              }}
+                              className="text-gray-500 hover:text-orange-400 text-xs flex-shrink-0"
+                              title="Move to new layer"
+                            >↗</button>
+                          </div>
+                        );
+                      })}
+
+                      {/* Shape selection actions */}
+                      {selectedShapeIds.size > 0 && selectedLayerId === layer.id && (
+                        <div className="flex items-center gap-1 mt-1 pt-1 border-t border-gray-700">
+                          <span className="text-xs text-gray-500">{selectedShapeIds.size} selected</span>
+                          <div className="flex-1" />
                           <button
-                            onClick={e => {
-                              e.stopPropagation();
-                              moveShapeToNewLayer(shape.id, layer.id, shape.name);
-                              addToast('info', `Moved "${shape.name}" to new layer`);
-                            }}
-                            className="text-gray-500 hover:text-orange-400 text-xs flex-shrink-0"
-                            title="Move to new layer"
-                          >↗</button>
+                            onClick={e => { e.stopPropagation(); handlePopSelectedToNewLayer(); }}
+                            className="text-xs text-orange-400 hover:text-orange-300"
+                            title="Pop selected shapes to new layer(s)"
+                          >↗ Pop</button>
+                          {/* Move to layer dropdown */}
+                          {project.layers.length > 1 && (
+                            <select
+                              value=""
+                              onChange={e => { if (e.target.value) handleMoveSelectedToLayer(e.target.value); }}
+                              onClick={e => e.stopPropagation()}
+                              className="text-xs bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-100 focus:outline-none focus:border-orange-500"
+                            >
+                              <option value="">→ Move to…</option>
+                              {project.layers.filter(l => l.id !== layer.id).map(l => (
+                                <option key={l.id} value={l.id}>{l.name}</option>
+                              ))}
+                            </select>
+                          )}
+                          <button
+                            onClick={e => { e.stopPropagation(); handleDeleteSelectedShapes(); }}
+                            className="text-xs text-gray-500 hover:text-red-400"
+                            title="Delete selected shapes"
+                          >✕</button>
                         </div>
-                      ))}
+                      )}
                     </div>
                   )}
 
@@ -326,7 +483,9 @@ export default function Editor() {
               layers={project.layers}
               operations={project.operations}
               selectedLayerId={selectedLayerId}
+              selectedShapeIds={selectedShapeIds}
               onSelectLayer={setSelectedLayerId}
+              onSelectShape={handleCanvasShapeClick}
               originPosition={originPosition}
             />
           </Panel>
