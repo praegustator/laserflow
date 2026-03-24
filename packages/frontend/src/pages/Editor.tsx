@@ -178,9 +178,13 @@ export default function Editor() {
       </div>
 
       {activeJob ? (
-        <PanelGroup orientation="horizontal" className="flex-1 min-h-0">
+        <PanelGroup
+          orientation="horizontal"
+          className="flex-1 min-h-0"
+          resizeTargetMinimumSize={{ coarse: 44, fine: 8 }}
+        >
           {/* Layers panel */}
-          <Panel defaultSize={18} minSize={15} className="bg-gray-900 flex flex-col min-h-0">
+          <Panel defaultSize="20%" minSize="200px" groupResizeBehavior="preserve-pixel-size" className="bg-gray-900 flex flex-col min-h-0">
             <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between">
               <span className="text-xs font-semibold text-gray-300 uppercase">Layers</span>
               <button onClick={() => fileInputRef.current?.click()} className="text-xs text-orange-400 hover:text-orange-300">+ Add</button>
@@ -219,10 +223,12 @@ export default function Editor() {
             </div>
           </Panel>
 
-          <PanelResizeHandle className="w-1.5 bg-gray-800 hover:bg-orange-500/40 transition-colors cursor-col-resize" />
+          <PanelResizeHandle className="group w-2 bg-gray-800 hover:bg-orange-500/60 active:bg-orange-500 transition-colors cursor-col-resize flex items-center justify-center">
+            <div className="w-0.5 h-8 rounded-full bg-gray-600 group-hover:bg-orange-400 transition-colors" />
+          </PanelResizeHandle>
 
           {/* Canvas */}
-          <Panel defaultSize={57} minSize={25} className="min-w-0 min-h-0">
+          <Panel defaultSize="55%" minSize="300px" className="min-w-0 min-h-0">
             <SvgCanvas
               layers={storeLayers}
               operations={operations}
@@ -232,10 +238,12 @@ export default function Editor() {
             />
           </Panel>
 
-          <PanelResizeHandle className="w-1.5 bg-gray-800 hover:bg-orange-500/40 transition-colors cursor-col-resize" />
+          <PanelResizeHandle className="group w-2 bg-gray-800 hover:bg-orange-500/60 active:bg-orange-500 transition-colors cursor-col-resize flex items-center justify-center">
+            <div className="w-0.5 h-8 rounded-full bg-gray-600 group-hover:bg-orange-400 transition-colors" />
+          </PanelResizeHandle>
 
           {/* Operations panel */}
-          <Panel defaultSize={25} minSize={15} className="bg-gray-900 flex flex-col min-h-0">
+          <Panel defaultSize="25%" minSize="220px" groupResizeBehavior="preserve-pixel-size" className="bg-gray-900 flex flex-col min-h-0">
             <OperationsPanel
               job={activeJob}
               operations={operations}
