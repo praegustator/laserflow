@@ -4,9 +4,9 @@ import MachineStatus from './MachineStatus';
 import Footer from './Footer';
 
 const navItems = [
-  { to: '/', label: 'Dashboard', icon: '⌂', end: true },
-  { to: '/console', label: 'Console', icon: '⌨' },
+  { to: '/', label: 'Projects', icon: '📁', end: true },
   { to: '/editor', label: 'Editor', icon: '✏' },
+  { to: '/console', label: 'Console', icon: '⌨' },
   { to: '/gcode-preview', label: 'G-code Preview', icon: '📋' },
   { to: '/settings', label: 'Settings', icon: '⚙' },
 ];

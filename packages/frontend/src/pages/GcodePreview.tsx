@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useJobStore } from '../store/jobStore';
+import { useProjectStore } from '../store/projectStore';
 import { useKeyboardShortcuts, type ShortcutDef } from '../hooks/useKeyboardShortcuts';
 
 interface GMove {
@@ -51,8 +52,14 @@ export default function GcodePreview() {
   const jobs = useJobStore(s => s.jobs);
   const activeJobId = useJobStore(s => s.activeJobId);
   const activeJob = jobs.find(j => j.id === activeJobId) ?? null;
+  const projects = useProjectStore(s => s.projects);
+  const activeProjectId = useProjectStore(s => s.activeProjectId);
+  const activeProject = projects.find(p => p.id === activeProjectId) ?? null;
 
-  const [gcode, setGcode] = useState(activeJob?.gcode ?? '');
+  // Use project gcode first, then fall back to active job
+  const initialGcode = activeProject?.gcode ?? activeJob?.gcode ?? '';
+
+  const [gcode, setGcode] = useState(initialGcode);
   const [tab, setTab] = useState<Tab>('preview');
   const [sliderPos, setSliderPos] = useState(1);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -67,8 +74,9 @@ export default function GcodePreview() {
   const lineEls = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
-    if (activeJob?.gcode) setGcode(activeJob.gcode);
-  }, [activeJob]);
+    const gc = activeProject?.gcode ?? activeJob?.gcode;
+    if (gc) setGcode(gc);
+  }, [activeProject, activeJob]);
 
   const moves = useMemo(() => parseGcode(gcode), [gcode]);
   const totalMoves = moves.length;

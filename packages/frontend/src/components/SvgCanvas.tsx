@@ -78,7 +78,7 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, onSelec
 
   // Get color for a layer based on operations
   const getLayerColor = (layerId: string, layerIdx: number) => {
-    const op = operations.find(o => o.layerId === layerId);
+    const op = operations.find(o => o.layerIds?.includes(layerId) || o.layerId === layerId);
     if (op) return OP_COLORS[op.type] ?? OP_COLORS.cut;
     return LAYER_COLORS[layerIdx % LAYER_COLORS.length];
   };
@@ -98,9 +98,6 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, onSelec
 
   const { tx, ty, scale } = transform;
 
-  // SVG's native Y axis points downward (top-left origin). For bottom-left
-  // origin (standard GRBL/CNC), we flip the Y axis by applying
-  // scale(1,-1) then translating back so the work area stays on screen.
   const coordGroupTransform = originPosition === 'bottom-left'
     ? `scale(1,-1) translate(0, ${-workH})`
     : undefined;
@@ -138,10 +135,10 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, onSelec
                 style={{ cursor: 'pointer' }}
                 opacity={isSelected ? 1 : 0.75}
               >
-                {layer.geometry.map((path, i) => (
+                {layer.shapes.map((shape) => (
                   <path
-                    key={i}
-                    d={path.d}
+                    key={shape.id}
+                    d={shape.d}
                     fill="none"
                     stroke={color}
                     strokeWidth={isSelected ? 0.6 : 0.4}
