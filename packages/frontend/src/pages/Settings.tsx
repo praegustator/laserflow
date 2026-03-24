@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
-import { useAppSettings, type OriginPosition } from '../store/appSettingsStore';
+import { useAppSettings, isMixedContent, type OriginPosition } from '../store/appSettingsStore';
 import type { MachineProfile, MaterialPreset } from '../types';
 
 // ─── Machine Profiles ────────────────────────────────────────────────────────
@@ -260,9 +260,14 @@ export default function Settings() {
   };
 
   const handleTestConnection = async () => {
+    const url = pendingUrl.trim() || backendUrl;
+    if (isMixedContent(url)) {
+      setTestStatus('✗ Mixed content – browser blocks HTTP connections from HTTPS pages (see warning below)');
+      setTimeout(() => setTestStatus(null), 6000);
+      return;
+    }
     setTestStatus('Testing…');
     try {
-      const url = pendingUrl.trim() || backendUrl;
       const r = await fetch(`${url}/api/ports`, { signal: AbortSignal.timeout(3000) });
       if (r.ok) setTestStatus('✓ Connected');
       else setTestStatus(`✗ HTTP ${r.status}`);
@@ -460,8 +465,39 @@ export default function Settings() {
             </div>
             {testStatus && <span className="text-xs text-gray-400 mt-1 block">{testStatus}</span>}
           </div>
+
+          {/* Mixed-content warning – shown when on HTTPS with an http:// backend URL */}
+          {isMixedContent(pendingUrl) && (
+            <div className="rounded-md bg-amber-900/30 border border-amber-700/50 p-3 text-xs text-amber-300 space-y-2">
+              <p className="font-semibold">⚠️ Mixed content – connection will be blocked by your browser</p>
+              <p>
+                This app is served over <strong>HTTPS</strong> but your backend URL uses plain <strong>HTTP</strong>.
+                Browsers block insecure WebSocket (<code>ws://</code>) and fetch (<code>http://</code>)
+                connections from HTTPS pages, so LaserFlow cannot reach your local machine.
+              </p>
+              <p className="font-medium">To connect from GitHub Pages, choose one option:</p>
+              <ul className="list-disc list-inside space-y-1 text-amber-400/90">
+                <li>
+                  Put an <strong>HTTPS reverse proxy</strong> (e.g. nginx + a certificate trusted by your
+                  browser) in front of your backend and enter an <code>https://…</code> URL here.
+                </li>
+                <li>
+                  Use a <strong>secure tunnel</strong> such as{' '}
+                  <code>cloudflared tunnel</code> or <code>ngrok</code> to expose your backend over HTTPS,
+                  then paste the tunnel URL here.
+                </li>
+                <li>
+                  <strong>Run the frontend locally</strong> (served over HTTP) so the browser allows
+                  plain <code>ws://</code> connections: clone the repo and run <code>npm run dev</code>.
+                </li>
+              </ul>
+            </div>
+          )}
+
           <p className="text-xs text-gray-500">
-            When using GitHub Pages frontend, set this to your local backend URL (e.g. http://192.168.1.100:3001)
+            When the frontend is served locally over HTTP, enter your backend URL (e.g.{' '}
+            <code>http://192.168.1.100:3001</code>). When served over HTTPS (GitHub Pages), use an{' '}
+            <code>https://</code> URL or a secure tunnel to avoid mixed-content restrictions.
           </p>
         </div>
       </section>

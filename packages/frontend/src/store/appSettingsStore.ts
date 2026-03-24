@@ -48,3 +48,15 @@ export function getWsUrl(): string {
   const base = getBackendUrl();
   return base.replace(/^http/, 'ws') + '/ws';
 }
+
+/**
+ * Returns true when the app is served over HTTPS but the configured backend
+ * URL uses plain HTTP.  Browsers block both WebSocket (ws://) and fetch
+ * (http://) connections from HTTPS pages as "mixed content", so the
+ * connection will silently fail in this situation.
+ */
+export function isMixedContent(url?: string): boolean {
+  if (typeof window === 'undefined') return false;
+  const target = url ?? getBackendUrl();
+  return window.location.protocol === 'https:' && target.startsWith('http://');
+}
