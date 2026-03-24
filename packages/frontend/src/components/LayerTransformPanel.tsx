@@ -145,7 +145,7 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
           className="text-xs px-2 py-0.5 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"
           title={sizeMode === 'scale' ? 'Switch to absolute size (mm)' : 'Switch to scale multiplier'}
         >
-          {sizeMode === 'scale' ? 'Scale %' : 'Size mm'}
+          {sizeMode === 'scale' ? 'Scale ×' : 'Size mm'}
         </button>
         <button
           onClick={() => setRatioLocked(!ratioLocked)}
