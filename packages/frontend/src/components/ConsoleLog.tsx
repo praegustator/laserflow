@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMachineStore } from '../store/machineStore';
 import type { ConsoleEntry } from '../types';
 
@@ -31,11 +31,22 @@ function EntryRow({ entry }: { entry: ConsoleEntry }) {
   );
 }
 
+type DirectionFilter = 'all' | 'in' | 'out';
+
 export default function ConsoleLog() {
   const consoleLog = useMachineStore((s) => s.consoleLog);
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
+
+  const [search, setSearch] = useState('');
+  const [directionFilter, setDirectionFilter] = useState<DirectionFilter>('all');
+
+  const filteredLog = consoleLog.filter((entry) => {
+    if (directionFilter !== 'all' && entry.direction !== directionFilter) return false;
+    if (search && !entry.line.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
 
   // Track if user is near the bottom
   const handleScroll = () => {
@@ -51,19 +62,49 @@ export default function ConsoleLog() {
   }, [consoleLog]);
 
   return (
-    <div
-      ref={containerRef}
-      onScroll={handleScroll}
-      className="flex-1 overflow-y-auto bg-gray-950 py-2 min-h-0"
-    >
-      {consoleLog.length === 0 ? (
-        <div className="flex items-center justify-center h-full text-gray-600 text-sm">
-          No console output yet
+    <div className="flex flex-col flex-1 min-h-0">
+      {/* Filter bar */}
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-800 bg-gray-900 flex-shrink-0">
+        <input
+          type="text"
+          placeholder="Filter…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-100 placeholder-gray-600 focus:outline-none focus:border-orange-500 font-mono"
+        />
+        <div className="flex gap-0.5">
+          {(['all', 'in', 'out'] as DirectionFilter[]).map(d => (
+            <button
+              key={d}
+              onClick={() => setDirectionFilter(d)}
+              className={`px-2 py-1 text-xs rounded transition-colors ${
+                directionFilter === d
+                  ? 'bg-orange-500 text-white'
+                  : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+              }`}
+            >
+              {d === 'all' ? 'All' : d === 'in' ? '← In' : '→ Out'}
+            </button>
+          ))}
         </div>
-      ) : (
-        consoleLog.map((entry) => <EntryRow key={entry.id} entry={entry} />)
-      )}
-      <div ref={bottomRef} />
+        <span className="text-xs text-gray-600">{filteredLog.length}/{consoleLog.length}</span>
+      </div>
+
+      {/* Log entries */}
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto bg-gray-950 py-2 min-h-0"
+      >
+        {filteredLog.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-gray-600 text-sm">
+            {consoleLog.length === 0 ? 'No console output yet' : 'No matching entries'}
+          </div>
+        ) : (
+          filteredLog.map((entry) => <EntryRow key={entry.id} entry={entry} />)
+        )}
+        <div ref={bottomRef} />
+      </div>
     </div>
   );
 }

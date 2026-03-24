@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Job, Operation, OperationType, Layer } from '../types';
+import type { Job, Operation, OperationType, Layer, MaterialPreset } from '../types';
 import { useJobStore } from '../store/jobStore';
+import { useToastStore } from '../store/toastStore';
+import { api } from '../api/client';
 
 const OP_TYPE_LABELS: Record<OperationType, string> = {
   cut: '✂ Cut',
@@ -18,9 +20,10 @@ const OP_COLORS: Record<OperationType, string> = {
 interface OperationRowProps {
   op: Operation;
   onChange: (updated: Operation) => void;
+  presets: MaterialPreset[];
 }
 
-function OperationRow({ op, onChange }: OperationRowProps) {
+function OperationRow({ op, onChange, presets }: OperationRowProps) {
   const [expanded, setExpanded] = useState(false);
 
   const update = <K extends keyof Operation>(key: K, value: Operation[K]) => {
@@ -68,6 +71,28 @@ function OperationRow({ op, onChange }: OperationRowProps) {
 
           {op.type !== 'ignore' && (
             <>
+              {/* Material preset quick-apply */}
+              {presets.length > 0 && (
+                <div>
+                  <label className="text-xs text-gray-500 uppercase">Material Preset</label>
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      const preset = presets.find(p => p.id === e.target.value);
+                      if (!preset) return;
+                      const settings = op.type === 'engrave' ? preset.engrave : preset.cutThin;
+                      onChange({ ...op, feedRate: settings.feedRate, power: settings.power, label: preset.name });
+                    }}
+                    className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+                  >
+                    <option value="">— Apply preset —</option>
+                    {presets.map(p => (
+                      <option key={p.id} value={p.id}>{p.name} ({p.thickness}mm)</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* Feed rate */}
               <div>
                 <label className="text-xs text-gray-500 uppercase">
@@ -142,9 +167,16 @@ interface Props {
 
 export default function OperationsPanel({ job, operations, onOperationsChange, layers, selectedLayerId: _selectedLayerId, originPosition }: Props) {
   const generateGcode = useJobStore((s) => s.generateGcode);
+  const addToast = useToastStore((s) => s.addToast);
   const navigate = useNavigate();
   const [generating, setGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [presets, setPresets] = useState<MaterialPreset[]>([]);
+
+  useEffect(() => {
+    api.get('/api/material-presets')
+      .then(data => setPresets(data as MaterialPreset[]))
+      .catch(() => { /* non-critical */ });
+  }, []);
 
   const updateOp = (index: number, updated: Operation) => {
     const next = operations.map((op, i) => (i === index ? updated : op));
@@ -168,7 +200,6 @@ export default function OperationsPanel({ job, operations, onOperationsChange, l
 
   const handleGenerate = async () => {
     setGenerating(true);
-    setError(null);
     try {
       const layerTransforms = Object.fromEntries(
         layers.map(l => [l.id, { offsetX: l.offsetX, offsetY: l.offsetY, scaleX: l.scaleX, scaleY: l.scaleY }])
@@ -181,8 +212,9 @@ export default function OperationsPanel({ job, operations, onOperationsChange, l
         originPosition === 'bottom-left',
         undefined,
       );
+      addToast('success', 'G-code generated');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate G-code');
+      addToast('error', err instanceof Error ? err.message : 'Failed to generate G-code');
     } finally {
       setGenerating(false);
     }
@@ -203,7 +235,7 @@ export default function OperationsPanel({ job, operations, onOperationsChange, l
         ) : (
           operations.map((op, i) => (
             <div key={op.id} className="relative group">
-              <OperationRow op={op} onChange={(u) => updateOp(i, u)} />
+              <OperationRow op={op} onChange={(u) => updateOp(i, u)} presets={presets} />
               <button
                 onClick={() => removeOp(i)}
                 className="absolute top-2 right-8 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 text-xs transition-opacity"
@@ -222,10 +254,6 @@ export default function OperationsPanel({ job, operations, onOperationsChange, l
         >
           + Add Operation
         </button>
-
-        {error && (
-          <p className="text-xs text-red-400">{error}</p>
-        )}
 
         <button
           onClick={() => { void handleGenerate(); }}
