@@ -72,8 +72,9 @@ export class JobExecutionEngine extends EventEmitter {
     }
 
     if (this.currentLine >= this.lines.length && this.sentLines.length === 0) {
-      this.emit('jobCompleted', { jobId: this.currentJob.id });
+      const completedJobId = this.currentJob.id;
       this.currentJob = null;
+      this.emit('jobCompleted', { jobId: completedJobId });
     }
   }
 

@@ -20,6 +20,7 @@ export function parseStatusReport(line: string): Partial<MachineState> {
   const statePart = parts[0];
   if (statePart) {
     const stateStr = statePart.split(':')[0];
+    // 'Disconnected' is a client-side-only sentinel; GRBL never reports it.
     if (['Idle', 'Run', 'Hold', 'Alarm', 'Error'].includes(stateStr)) {
       result.state = stateStr as MachineState['state'];
     }

@@ -96,9 +96,9 @@ export const useJobStore = create<JobStore>((set, get) => ({
 
   setActiveJobId: (id) => {
     set({ activeJobId: id });
-    if (id) {
-      const job = get().jobs.find((j) => j.id === id);
-      if (job) return;
+    // Fetch job list if the selected job isn't already loaded
+    if (id && !get().jobs.find((j) => j.id === id)) {
+      void get().fetchJobs();
     }
   },
 

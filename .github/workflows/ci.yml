@@ -10,6 +10,8 @@ jobs:
   backend:
     name: Backend (lint, typecheck, test)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: packages/backend
@@ -39,6 +41,8 @@ jobs:
   frontend:
     name: Frontend (typecheck, build)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: packages/frontend

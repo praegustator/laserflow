@@ -31,7 +31,7 @@ export default function Editor() {
     if (activeJob) {
       setOperations(activeJob.operations.length > 0 ? activeJob.operations : []);
     }
-  }, [activeJob?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeJob]); // re-run when the active job object changes
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
