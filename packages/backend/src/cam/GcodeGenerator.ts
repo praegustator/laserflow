@@ -1,6 +1,26 @@
 import { SVGPathData } from 'svg-pathdata';
 import type { PathGeometry, Operation, MachineProfile } from '../types/index.js';
 
+export interface PathTransform {
+  offsetX: number;
+  offsetY: number;
+  scaleX: number;
+  scaleY: number;
+  flipY?: boolean;
+  workH?: number;
+}
+
+const IDENTITY_TRANSFORM: PathTransform = { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 };
+
+function applyTransform(x: number, y: number, t: PathTransform): [number, number] {
+  const tx = t.offsetX + x * t.scaleX;
+  let ty = t.offsetY + y * t.scaleY;
+  if (t.flipY && t.workH !== undefined) {
+    ty = t.workH - ty;
+  }
+  return [tx, ty];
+}
+
 function fmt(n: number): string {
   return n.toFixed(3);
 }
@@ -40,7 +60,7 @@ function quadraticBezierPoints(
   return pts;
 }
 
-function pathToGcode(d: string, feedRate: number, sValue: number): string {
+function pathToGcode(d: string, feedRate: number, sValue: number, transform: PathTransform = IDENTITY_TRANSFORM): string {
   const lines: string[] = [];
   const pathData = new SVGPathData(d).toAbs().normalizeHVZ();
   const commands = pathData.commands;
@@ -53,7 +73,8 @@ function pathToGcode(d: string, feedRate: number, sValue: number): string {
   for (const cmd of commands) {
     switch (cmd.type) {
       case SVGPathData.MOVE_TO: {
-        lines.push(`G0 X${fmt(cmd.x)} Y${fmt(cmd.y)} S0`);
+        const [mx, my] = applyTransform(cmd.x, cmd.y, transform);
+        lines.push(`G0 X${fmt(mx)} Y${fmt(my)} S0`);
         startX = cmd.x;
         startY = cmd.y;
         curX = cmd.x;
@@ -61,7 +82,8 @@ function pathToGcode(d: string, feedRate: number, sValue: number): string {
         break;
       }
       case SVGPathData.LINE_TO: {
-        lines.push(`G1 X${fmt(cmd.x)} Y${fmt(cmd.y)} F${feedRate} S${sValue}`);
+        const [lx, ly] = applyTransform(cmd.x, cmd.y, transform);
+        lines.push(`G1 X${fmt(lx)} Y${fmt(ly)} F${feedRate} S${sValue}`);
         curX = cmd.x;
         curY = cmd.y;
         break;
@@ -69,7 +91,8 @@ function pathToGcode(d: string, feedRate: number, sValue: number): string {
       case SVGPathData.CURVE_TO: {
         const pts = cubicBezierPoints(curX, curY, cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.x, cmd.y, 10);
         for (const [px, py] of pts) {
-          lines.push(`G1 X${fmt(px)} Y${fmt(py)} F${feedRate} S${sValue}`);
+          const [tx, ty] = applyTransform(px, py, transform);
+          lines.push(`G1 X${fmt(tx)} Y${fmt(ty)} F${feedRate} S${sValue}`);
         }
         curX = cmd.x;
         curY = cmd.y;
@@ -78,14 +101,16 @@ function pathToGcode(d: string, feedRate: number, sValue: number): string {
       case SVGPathData.QUAD_TO: {
         const pts = quadraticBezierPoints(curX, curY, cmd.x1, cmd.y1, cmd.x, cmd.y, 10);
         for (const [px, py] of pts) {
-          lines.push(`G1 X${fmt(px)} Y${fmt(py)} F${feedRate} S${sValue}`);
+          const [tx, ty] = applyTransform(px, py, transform);
+          lines.push(`G1 X${fmt(tx)} Y${fmt(ty)} F${feedRate} S${sValue}`);
         }
         curX = cmd.x;
         curY = cmd.y;
         break;
       }
       case SVGPathData.CLOSE_PATH: {
-        lines.push(`G1 X${fmt(startX)} Y${fmt(startY)} F${feedRate} S${sValue}`);
+        const [cx, cy] = applyTransform(startX, startY, transform);
+        lines.push(`G1 X${fmt(cx)} Y${fmt(cy)} F${feedRate} S${sValue}`);
         curX = startX;
         curY = startY;
         break;
@@ -99,7 +124,10 @@ function pathToGcode(d: string, feedRate: number, sValue: number): string {
 export function generateGcode(
   geometry: PathGeometry[],
   operations: Operation[],
-  profile: MachineProfile
+  profile: MachineProfile,
+  layerTransforms?: Record<string, PathTransform>,
+  originFlip?: boolean,
+  workH?: number
 ): string {
   const lines: string[] = [];
 
@@ -122,7 +150,17 @@ export function generateGcode(
     for (let pass = 1; pass <= op.passes; pass++) {
       lines.push(`; Pass ${pass}`);
       for (const geo of geometry) {
-        const pathGcode = pathToGcode(geo.d, op.feedRate, sValue);
+        let transform: PathTransform = IDENTITY_TRANSFORM;
+        if (geo.layerId && layerTransforms?.[geo.layerId]) {
+          transform = {
+            ...layerTransforms[geo.layerId],
+            flipY: originFlip,
+            workH,
+          };
+        } else if (originFlip && workH !== undefined) {
+          transform = { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, flipY: true, workH };
+        }
+        const pathGcode = pathToGcode(geo.d, op.feedRate, sValue, transform);
         lines.push(pathGcode);
       }
       lines.push('');

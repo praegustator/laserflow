@@ -5,6 +5,7 @@ const navItems = [
   { to: '/', label: 'Dashboard', icon: '⌂', end: true },
   { to: '/console', label: 'Console', icon: '⌨' },
   { to: '/editor', label: 'Editor', icon: '✏' },
+  { to: '/gcode-preview', label: 'G-code Preview', icon: '📋' },
   { to: '/settings', label: 'Settings', icon: '⚙' },
 ];
 

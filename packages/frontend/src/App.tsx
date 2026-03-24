@@ -1,13 +1,15 @@
 import { useEffect, useRef } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Console from './pages/Console';
 import Editor from './pages/Editor';
 import Settings from './pages/Settings';
+import GcodePreview from './pages/GcodePreview';
 import { createWebSocket } from './api/client';
 import { useMachineStore } from './store/machineStore';
 import { useJobStore } from './store/jobStore';
+import { useAppSettings } from './store/appSettingsStore';
 import type { WsMessage, MachineState, JobProgress } from './types';
 
 function AppInner() {
@@ -15,10 +17,20 @@ function AppInner() {
   const setMachineState = useMachineStore((s) => s.setMachineState);
   const updateJobProgress = useJobStore((s) => s.updateJobProgress);
   const updateJobStatus = useJobStore((s) => s.updateJobStatus);
+  const backendUrl = useAppSettings((s) => s.backendUrl);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    function cleanup() {
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current);
+        reconnectTimer.current = null;
+      }
+      wsRef.current?.close();
+      wsRef.current = null;
+    }
+
     function connect() {
       const ws = createWebSocket(
         (event: MessageEvent) => {
@@ -54,12 +66,8 @@ function AppInner() {
     }
 
     connect();
-
-    return () => {
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      wsRef.current?.close();
-    };
-  }, [addConsoleEntry, setMachineState, updateJobProgress, updateJobStatus]);
+    return cleanup;
+  }, [backendUrl, addConsoleEntry, setMachineState, updateJobProgress, updateJobStatus]);
 
   return (
     <Routes>
@@ -68,6 +76,7 @@ function AppInner() {
         <Route path="console" element={<Console />} />
         <Route path="editor" element={<Editor />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="gcode-preview" element={<GcodePreview />} />
       </Route>
     </Routes>
   );
@@ -75,8 +84,8 @@ function AppInner() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <AppInner />
-    </BrowserRouter>
+    </HashRouter>
   );
 }

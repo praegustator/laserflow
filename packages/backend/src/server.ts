@@ -10,6 +10,7 @@ import { registerRoutes as registerMachineRoutes } from './routes/machines.js';
 import { registerRoutes as registerConnectionRoutes } from './routes/connection.js';
 import { registerRoutes as registerCommandRoutes } from './routes/commands.js';
 import { registerRoutes as registerJobRoutes } from './routes/jobs.js';
+import { registerRoutes as registerMaterialPresetRoutes } from './routes/materialPresets.js';
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -25,6 +26,7 @@ export async function buildServer() {
   registerConnectionRoutes(app);
   registerCommandRoutes(app);
   registerJobRoutes(app);
+  registerMaterialPresetRoutes(app);
 
   serialManager.on('data', (line: string) => {
     wsBroadcaster.broadcast('console', line);

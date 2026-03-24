@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
+import { useAppSettings, type OriginPosition } from '../store/appSettingsStore';
 import type { MachineProfile, MaterialPreset } from '../types';
 
 // ─── Machine Profiles ────────────────────────────────────────────────────────
@@ -228,6 +229,20 @@ function PresetForm({
 // ─── Main Settings Page ───────────────────────────────────────────────────────
 
 export default function Settings() {
+  const backendUrl = useAppSettings((s) => s.backendUrl);
+  const setBackendUrl = useAppSettings((s) => s.setBackendUrl);
+  const originPosition = useAppSettings((s) => s.originPosition);
+  const setOriginPosition = useAppSettings((s) => s.setOriginPosition);
+  const units = useAppSettings((s) => s.units);
+  const setUnits = useAppSettings((s) => s.setUnits);
+  const safetyConfirmation = useAppSettings((s) => s.safetyConfirmation);
+  const setSafetyConfirmation = useAppSettings((s) => s.setSafetyConfirmation);
+  const autoScrollConsole = useAppSettings((s) => s.autoScrollConsole);
+  const setAutoScrollConsole = useAppSettings((s) => s.setAutoScrollConsole);
+
+  const [pendingUrl, setPendingUrl] = useState(backendUrl);
+  const [testStatus, setTestStatus] = useState<string | null>(null);
+
   const [profiles, setProfiles] = useState<MachineProfile[]>([]);
   const [presets, setPresets] = useState<MaterialPreset[]>([]);
   const [editingProfile, setEditingProfile] = useState<MachineProfile | null>(null);
@@ -235,6 +250,108 @@ export default function Settings() {
   const [editingPreset, setEditingPreset] = useState<MaterialPreset | null>(null);
   const [addingPreset, setAddingPreset] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [profileDragOver, setProfileDragOver] = useState(false);
+  const [presetDragOver, setPresetDragOver] = useState(false);
+  const profileImportRef = useRef<HTMLInputElement>(null);
+  const presetImportRef = useRef<HTMLInputElement>(null);
+
+  const handleSaveUrl = () => {
+    setBackendUrl(pendingUrl.trim() || 'http://localhost:3001');
+  };
+
+  const handleTestConnection = async () => {
+    setTestStatus('Testing…');
+    try {
+      const url = pendingUrl.trim() || backendUrl;
+      const r = await fetch(`${url}/api/ports`, { signal: AbortSignal.timeout(3000) });
+      if (r.ok) setTestStatus('✓ Connected');
+      else setTestStatus(`✗ HTTP ${r.status}`);
+    } catch {
+      setTestStatus('✗ Connection failed');
+    }
+    setTimeout(() => setTestStatus(null), 4000);
+  };
+
+  // Export helpers
+  const exportJson = (filename: string, data: unknown) => {
+    const json = JSON.stringify(data, null, 2);
+    const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Import profiles from JSON
+  const importProfilesFromJson = async (json: unknown) => {
+    if (!Array.isArray(json)) return;
+    for (const p of json as MachineProfile[]) {
+      try {
+        const created = await api.post('/api/machines', p) as MachineProfile;
+        setProfiles((ps) => {
+          const existing = ps.find(x => x.id === created.id);
+          return existing ? ps.map(x => x.id === created.id ? created : x) : [...ps, created];
+        });
+      } catch (err) { console.error('Import profile failed', err); }
+    }
+  };
+
+  const handleProfileImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const json = JSON.parse(await file.text()) as unknown;
+      await importProfilesFromJson(json);
+    } catch { /* ignore */ }
+    e.target.value = '';
+  };
+
+  const handleProfileImportDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setProfileDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    try {
+      const json = JSON.parse(await file.text()) as unknown;
+      await importProfilesFromJson(json);
+    } catch { /* ignore */ }
+  };
+
+  // Import presets from JSON
+  const importPresetsFromJson = async (json: unknown) => {
+    if (!Array.isArray(json)) return;
+    for (const p of json as MaterialPreset[]) {
+      try {
+        const created = await api.post('/api/material-presets', p) as MaterialPreset;
+        setPresets((ps) => {
+          const existing = ps.find(x => x.id === created.id);
+          return existing ? ps.map(x => x.id === created.id ? created : x) : [...ps, created];
+        });
+      } catch (err) { console.error('Import preset failed', err); }
+    }
+  };
+
+  const handlePresetImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const json = JSON.parse(await file.text()) as unknown;
+      await importPresetsFromJson(json);
+    } catch { /* ignore */ }
+    e.target.value = '';
+  };
+
+  const handlePresetImportDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setPresetDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    try {
+      const json = JSON.parse(await file.text()) as unknown;
+      await importPresetsFromJson(json);
+    } catch { /* ignore */ }
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -318,18 +435,57 @@ export default function Settings() {
     <div className="p-6 max-w-3xl mx-auto space-y-10">
       <h1 className="text-2xl font-bold text-gray-100">Settings</h1>
 
+      {/* ── Connection ────────────────────────────────────────────────── */}
+      <section>
+        <h2 className="text-lg font-semibold text-gray-200 mb-3">Connection</h2>
+        <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 space-y-3">
+          <div>
+            <label className="text-xs text-gray-500 uppercase">Backend URL</label>
+            <div className="flex gap-2 mt-1">
+              <input
+                value={pendingUrl}
+                onChange={e => setPendingUrl(e.target.value)}
+                placeholder="http://localhost:3001"
+                className="flex-1 bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+              />
+              <button onClick={() => { void handleSaveUrl(); }} className="px-3 py-1.5 text-xs rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold transition-colors">Save</button>
+              <button onClick={() => { void handleTestConnection(); }} className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors">Test</button>
+            </div>
+            {testStatus && <span className="text-xs text-gray-400 mt-1 block">{testStatus}</span>}
+          </div>
+          <p className="text-xs text-gray-500">
+            When using GitHub Pages frontend, set this to your local backend URL (e.g. http://192.168.1.100:3001)
+          </p>
+        </div>
+      </section>
+
       {/* ── Machine Profiles ──────────────────────────────────────────── */}
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold text-gray-200">Machine Profiles</h2>
-          {!addingProfile && !editingProfile && (
+          <div className="flex gap-2">
             <button
-              onClick={() => setAddingProfile(true)}
-              className="px-3 py-1.5 text-xs rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold transition-colors"
+              onClick={() => exportJson('machine-profiles.json', profiles)}
+              className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
             >
-              + Add Profile
+              ↓ Export All
             </button>
-          )}
+            <button
+              onClick={() => profileImportRef.current?.click()}
+              className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
+            >
+              ↑ Import JSON
+            </button>
+            <input type="file" accept=".json" className="hidden" ref={profileImportRef} onChange={e => { void handleProfileImportFile(e); }} />
+            {!addingProfile && !editingProfile && (
+              <button
+                onClick={() => setAddingProfile(true)}
+                className="px-3 py-1.5 text-xs rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold transition-colors"
+              >
+                + Add Profile
+              </button>
+            )}
+          </div>
         </div>
 
         {addingProfile && (
@@ -386,20 +542,44 @@ export default function Settings() {
             ),
           )}
         </div>
+        {/* Profile import drop zone */}
+        <div
+          onDragOver={e => { e.preventDefault(); setProfileDragOver(true); }}
+          onDragLeave={() => setProfileDragOver(false)}
+          onDrop={e => { void handleProfileImportDrop(e); }}
+          className={`mt-2 border-2 border-dashed rounded-lg p-4 text-center text-sm text-gray-500 transition-colors ${profileDragOver ? 'border-orange-400 bg-orange-900/10' : 'border-gray-700'}`}
+        >
+          Drop JSON file here to import profiles
+        </div>
       </section>
 
       {/* ── Material Presets ──────────────────────────────────────────── */}
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold text-gray-200">Material Presets</h2>
-          {!addingPreset && !editingPreset && (
+          <div className="flex gap-2">
             <button
-              onClick={() => setAddingPreset(true)}
-              className="px-3 py-1.5 text-xs rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold transition-colors"
+              onClick={() => exportJson('material-presets.json', presets)}
+              className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
             >
-              + Add Preset
+              ↓ Export All
             </button>
-          )}
+            <button
+              onClick={() => presetImportRef.current?.click()}
+              className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
+            >
+              ↑ Import JSON
+            </button>
+            <input type="file" accept=".json" className="hidden" ref={presetImportRef} onChange={e => { void handlePresetImportFile(e); }} />
+            {!addingPreset && !editingPreset && (
+              <button
+                onClick={() => setAddingPreset(true)}
+                className="px-3 py-1.5 text-xs rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold transition-colors"
+              >
+                + Add Preset
+              </button>
+            )}
+          </div>
         </div>
 
         {addingPreset && (
@@ -456,6 +636,15 @@ export default function Settings() {
             ),
           )}
         </div>
+        {/* Preset import drop zone */}
+        <div
+          onDragOver={e => { e.preventDefault(); setPresetDragOver(true); }}
+          onDragLeave={() => setPresetDragOver(false)}
+          onDrop={e => { void handlePresetImportDrop(e); }}
+          className={`mt-2 border-2 border-dashed rounded-lg p-4 text-center text-sm text-gray-500 transition-colors ${presetDragOver ? 'border-orange-400 bg-orange-900/10' : 'border-gray-700'}`}
+        >
+          Drop JSON file here to import presets
+        </div>
       </section>
 
       {/* ── App Settings ───────────────────────────────────────────────── */}
@@ -464,10 +653,29 @@ export default function Settings() {
         <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 space-y-4">
           <div className="flex items-center justify-between">
             <div>
+              <div className="text-sm text-gray-200">Origin Position</div>
+              <div className="text-xs text-gray-500">Where is (0,0) on your machine bed</div>
+            </div>
+            <select
+              value={originPosition}
+              onChange={e => setOriginPosition(e.target.value as OriginPosition)}
+              className="bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+            >
+              <option value="bottom-left">Bottom-Left (standard GRBL)</option>
+              <option value="top-left">Top-Left</option>
+            </select>
+          </div>
+          <div className="border-t border-gray-700" />
+          <div className="flex items-center justify-between">
+            <div>
               <div className="text-sm text-gray-200">Units</div>
               <div className="text-xs text-gray-500">Display units for distances</div>
             </div>
-            <select className="bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-orange-500">
+            <select
+              value={units}
+              onChange={e => setUnits(e.target.value as 'mm' | 'in')}
+              className="bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+            >
               <option value="mm">Millimeters (mm)</option>
               <option value="in">Inches (in)</option>
             </select>
@@ -478,7 +686,12 @@ export default function Settings() {
               <div className="text-sm text-gray-200">Safety Confirmation</div>
               <div className="text-xs text-gray-500">Require confirmation before starting a job</div>
             </div>
-            <input type="checkbox" defaultChecked className="accent-orange-500 w-4 h-4" />
+            <input
+              type="checkbox"
+              checked={safetyConfirmation}
+              onChange={e => setSafetyConfirmation(e.target.checked)}
+              className="accent-orange-500 w-4 h-4"
+            />
           </div>
           <div className="border-t border-gray-700" />
           <div className="flex items-center justify-between">
@@ -486,7 +699,12 @@ export default function Settings() {
               <div className="text-sm text-gray-200">Auto-scroll Console</div>
               <div className="text-xs text-gray-500">Automatically scroll to latest console output</div>
             </div>
-            <input type="checkbox" defaultChecked className="accent-orange-500 w-4 h-4" />
+            <input
+              type="checkbox"
+              checked={autoScrollConsole}
+              onChange={e => setAutoScrollConsole(e.target.checked)}
+              className="accent-orange-500 w-4 h-4"
+            />
           </div>
         </div>
       </section>

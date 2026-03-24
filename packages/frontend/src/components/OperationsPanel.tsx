@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import type { Job, Operation, OperationType } from '../types';
+import { useNavigate } from 'react-router-dom';
+import type { Job, Operation, OperationType, Layer } from '../types';
 import { useJobStore } from '../store/jobStore';
 
 const OP_TYPE_LABELS: Record<OperationType, string> = {
@@ -134,10 +135,14 @@ interface Props {
   job: Job;
   operations: Operation[];
   onOperationsChange: (ops: Operation[]) => void;
+  layers: Layer[];
+  selectedLayerId: string | null;
+  originPosition: string;
 }
 
-export default function OperationsPanel({ job, operations, onOperationsChange }: Props) {
+export default function OperationsPanel({ job, operations, onOperationsChange, layers, selectedLayerId: _selectedLayerId, originPosition }: Props) {
   const generateGcode = useJobStore((s) => s.generateGcode);
+  const navigate = useNavigate();
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -165,7 +170,17 @@ export default function OperationsPanel({ job, operations, onOperationsChange }:
     setGenerating(true);
     setError(null);
     try {
-      await generateGcode(job.id, operations);
+      const layerTransforms = Object.fromEntries(
+        layers.map(l => [l.id, { offsetX: l.offsetX, offsetY: l.offsetY, scaleX: l.scaleX, scaleY: l.scaleY }])
+      );
+      await generateGcode(
+        job.id,
+        operations,
+        undefined,
+        layerTransforms,
+        originPosition === 'bottom-left',
+        undefined,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate G-code');
     } finally {
@@ -224,6 +239,14 @@ export default function OperationsPanel({ job, operations, onOperationsChange }:
           <p className="text-xs text-green-400 text-center">
             ✓ G-code ready ({job.gcode.split('\n').length.toLocaleString()} lines)
           </p>
+        )}
+        {job.gcode && (
+          <button
+            onClick={() => { void navigate('/gcode-preview'); }}
+            className="w-full py-1.5 text-sm rounded border border-gray-600 text-gray-300 hover:border-orange-500 hover:text-orange-400 transition-colors"
+          >
+            📋 Preview G-code →
+          </button>
         )}
       </div>
     </div>

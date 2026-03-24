@@ -1,9 +1,12 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import type { PathGeometry, Operation, MachineProfile } from '../types';
+import type { Layer, Operation, MachineProfile } from '../types';
 
 interface Props {
-  geometry: PathGeometry[];
+  layers: Layer[];
   operations: Operation[];
+  selectedLayerId: string | null;
+  onSelectLayer: (id: string) => void;
+  originPosition: 'bottom-left' | 'top-left';
   machineProfile?: MachineProfile | null;
 }
 
@@ -13,19 +16,19 @@ const OP_COLORS: Record<string, string> = {
   ignore: '#6b7280',
 };
 
+const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];
+
 const GRID_SPACING = 10; // mm
 
-export default function SvgCanvas({ geometry, operations, machineProfile }: Props) {
+export default function SvgCanvas({ layers, operations, selectedLayerId, onSelectLayer, originPosition, machineProfile }: Props) {
   const workW = machineProfile?.workArea.x ?? 300;
   const workH = machineProfile?.workArea.y ?? 200;
 
-  // Viewport transform: pan (tx,ty) and scale
   const [transform, setTransform] = useState({ tx: 40, ty: 40, scale: 1.5 });
   const dragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
 
-  // Fit on mount or when work area changes
   useEffect(() => {
     const el = svgRef.current;
     if (!el) return;
@@ -45,7 +48,6 @@ export default function SvgCanvas({ geometry, operations, machineProfile }: Prop
     const factor = e.deltaY < 0 ? 1.1 : 0.9;
     setTransform((t) => {
       const newScale = Math.max(0.1, Math.min(50, t.scale * factor));
-      // Zoom toward cursor
       const rect = svgRef.current!.getBoundingClientRect();
       const cx = e.clientX - rect.left;
       const cy = e.clientY - rect.top;
@@ -74,42 +76,32 @@ export default function SvgCanvas({ geometry, operations, machineProfile }: Prop
 
   const onMouseUp = useCallback(() => { dragging.current = false; }, []);
 
-  // Build operation lookup by layerId
-  const opByLayer = new Map<string, Operation>();
-  operations.forEach((op) => opByLayer.set(op.id, op));
-
-  const getColor = (path: PathGeometry) => {
-    if (path.layerId) {
-      const op = opByLayer.get(path.layerId);
-      if (op) return OP_COLORS[op.type] ?? OP_COLORS.cut;
-    }
-    // fallback: first operation color
-    if (operations.length > 0) return OP_COLORS[operations[0].type] ?? OP_COLORS.cut;
-    return OP_COLORS.cut;
+  // Get color for a layer based on operations
+  const getLayerColor = (layerId: string, layerIdx: number) => {
+    const op = operations.find(o => o.layerId === layerId);
+    if (op) return OP_COLORS[op.type] ?? OP_COLORS.cut;
+    return LAYER_COLORS[layerIdx % LAYER_COLORS.length];
   };
 
   // Grid lines
   const gridLines: React.ReactNode[] = [];
   for (let x = 0; x <= workW; x += GRID_SPACING) {
     gridLines.push(
-      <line
-        key={`gx${x}`}
-        x1={x} y1={0} x2={x} y2={workH}
-        stroke="#374151" strokeWidth={x % 50 === 0 ? 0.4 : 0.2}
-      />,
+      <line key={`gx${x}`} x1={x} y1={0} x2={x} y2={workH} stroke="#374151" strokeWidth={x % 50 === 0 ? 0.4 : 0.2} />,
     );
   }
   for (let y = 0; y <= workH; y += GRID_SPACING) {
     gridLines.push(
-      <line
-        key={`gy${y}`}
-        x1={0} y1={y} x2={workW} y2={y}
-        stroke="#374151" strokeWidth={y % 50 === 0 ? 0.4 : 0.2}
-      />,
+      <line key={`gy${y}`} x1={0} y1={y} x2={workW} y2={y} stroke="#374151" strokeWidth={y % 50 === 0 ? 0.4 : 0.2} />,
     );
   }
 
   const { tx, ty, scale } = transform;
+
+  // For bottom-left origin: flip Y axis so (0,0) is at bottom-left
+  const coordGroupTransform = originPosition === 'bottom-left'
+    ? `scale(1,-1) translate(0, ${-workH})`
+    : undefined;
 
   return (
     <svg
@@ -127,29 +119,46 @@ export default function SvgCanvas({ geometry, operations, machineProfile }: Prop
         {/* Grid */}
         {gridLines}
         {/* Border */}
-        <rect
-          x={0} y={0} width={workW} height={workH}
-          fill="none" stroke="#4b5563" strokeWidth={0.5}
-        />
-        {/* Geometry paths */}
-        {geometry.map((path, i) => (
-          <path
-            key={i}
-            d={path.d}
-            fill="none"
-            stroke={getColor(path)}
-            strokeWidth={0.4}
-            opacity={0.9}
-          />
-        ))}
-        {/* Origin marker */}
-        <circle cx={0} cy={0} r={1} fill="#f97316" />
-        <line x1={-3} y1={0} x2={3} y2={0} stroke="#f97316" strokeWidth={0.3} />
-        <line x1={0} y1={-3} x2={0} y2={3} stroke="#f97316" strokeWidth={0.3} />
+        <rect x={0} y={0} width={workW} height={workH} fill="none" stroke="#4b5563" strokeWidth={0.5} />
+
+        {/* Coordinate group (possibly flipped) */}
+        <g transform={coordGroupTransform}>
+          {/* Layers */}
+          {layers.map((layer, idx) => {
+            if (!layer.visible) return null;
+            const color = getLayerColor(layer.id, idx);
+            const isSelected = layer.id === selectedLayerId;
+            return (
+              <g
+                key={layer.id}
+                transform={`translate(${layer.offsetX},${layer.offsetY}) scale(${layer.scaleX},${layer.scaleY})`}
+                onClick={() => onSelectLayer(layer.id)}
+                style={{ cursor: 'pointer' }}
+                opacity={isSelected ? 1 : 0.75}
+              >
+                {layer.geometry.map((path, i) => (
+                  <path
+                    key={i}
+                    d={path.d}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={isSelected ? 0.6 : 0.4}
+                    opacity={0.9}
+                  />
+                ))}
+              </g>
+            );
+          })}
+
+          {/* Origin cross */}
+          <circle cx={0} cy={0} r={1} fill="#f97316" />
+          <line x1={-3} y1={0} x2={3} y2={0} stroke="#f97316" strokeWidth={0.3} />
+          <line x1={0} y1={-3} x2={0} y2={3} stroke="#f97316" strokeWidth={0.3} />
+        </g>
       </g>
       {/* Scale indicator */}
       <text x={8} y={16} fill="#6b7280" fontSize={10}>
-        {workW}×{workH} mm | {scale.toFixed(2)}×
+        {workW}×{workH} mm | {scale.toFixed(2)}× | origin: {originPosition}
       </text>
     </svg>
   );

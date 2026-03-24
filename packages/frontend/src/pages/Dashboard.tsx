@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useJobStore } from '../store/jobStore';
 import JobCard from '../components/JobCard';
@@ -10,6 +10,7 @@ export default function Dashboard() {
   const setActiveJobId = useJobStore((s) => s.setActiveJobId);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const [dragOver, setDragOver] = useState(false);
 
   useEffect(() => {
     void fetchJobs();
@@ -25,13 +26,35 @@ export default function Dashboard() {
     } catch (err) {
       console.error('Upload failed', err);
     } finally {
-      // Reset so same file can be re-selected
       e.target.value = '';
     }
   };
 
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = Array.from(e.dataTransfer.files).find(f => f.name.endsWith('.svg'));
+    if (!file) return;
+    try {
+      const job = await uploadJob(file);
+      setActiveJobId(job.id);
+      void navigate('/editor');
+    } catch (err) { console.error(err); }
+  };
+
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div
+      className="relative p-6 max-w-4xl mx-auto"
+      onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={e => { void handleDrop(e); }}
+    >
+      {dragOver && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-950/80 border-4 border-dashed border-orange-400 rounded-xl pointer-events-none">
+          <p className="text-2xl font-bold text-orange-400">Drop SVG file here</p>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -64,7 +87,7 @@ export default function Dashboard() {
           <div className="text-5xl mb-4">🔥</div>
           <h2 className="text-lg font-semibold text-gray-400">No jobs yet</h2>
           <p className="text-sm text-gray-600 mt-2 mb-6">
-            Import an SVG file to get started
+            Import an SVG file or drag and drop one here
           </p>
           <button
             onClick={() => fileInputRef.current?.click()}

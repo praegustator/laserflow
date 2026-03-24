@@ -8,11 +8,26 @@ export interface Operation {
   power: number;
   passes: number;
   zOffset?: number;
+  layerId?: string;
+  label?: string;
 }
 
 export interface PathGeometry {
   d: string;
   layerId?: string;
+  shapeId?: string;
+}
+
+export interface Layer {
+  id: string;
+  name: string;
+  sourceSvg: string;
+  geometry: PathGeometry[];
+  visible: boolean;
+  offsetX: number;
+  offsetY: number;
+  scaleX: number;
+  scaleY: number;
 }
 
 export interface Job {
@@ -22,6 +37,7 @@ export interface Job {
   status: JobStatus;
   sourceSvg?: string;
   geometry: PathGeometry[];
+  layers: Layer[];
   operations: Operation[];
   gcode?: string;
   errorMessage?: string;

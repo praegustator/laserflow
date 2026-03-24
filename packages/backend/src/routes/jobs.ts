@@ -3,10 +3,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { JobRepository } from '../jobs/JobRepository.js';
 import { jobEngine } from '../jobs/JobExecutionEngine.js';
 import { parseSvg } from '../cam/SvgParser.js';
-import { generateGcode } from '../cam/GcodeGenerator.js';
+import { generateGcode, type PathTransform } from '../cam/GcodeGenerator.js';
 import { machineProfiles } from '../config/MachineProfiles.js';
 import type { Job, Operation } from '../types/index.js';
-
 const jobRepo = new JobRepository();
 
 export function registerRoutes(app: FastifyInstance): void {
@@ -46,18 +45,18 @@ export function registerRoutes(app: FastifyInstance): void {
     return reply.code(204).send();
   });
 
-  app.post<{ Params: { id: string }; Body: { operations: Operation[]; machineId?: string } }>(
+  app.post<{ Params: { id: string }; Body: { operations: Operation[]; machineId?: string; layerTransforms?: Record<string, PathTransform>; originFlip?: boolean; workH?: number } }>(
     '/api/jobs/:id/gcode',
     async (req, reply) => {
       const job = jobRepo.findById(req.params.id);
       if (!job) return reply.code(404).send({ error: 'Not found' });
 
-      const { operations, machineId } = req.body;
+      const { operations, machineId, layerTransforms, originFlip, workH } = req.body;
       const profile = machineId ? machineProfiles.getById(machineId) : machineProfiles.getAll()[0];
       if (!profile) return reply.code(400).send({ error: 'No machine profile found' });
 
       job.operations = operations;
-      job.gcode = generateGcode(job.geometry, operations, profile);
+      job.gcode = generateGcode(job.geometry, operations, profile, layerTransforms, originFlip, workH);
       jobRepo.save(job);
 
       return reply.send({ gcode: job.gcode });
