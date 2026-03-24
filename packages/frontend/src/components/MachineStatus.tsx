@@ -1,7 +1,6 @@
 import { useMachineStore } from '../store/machineStore';
 
-const STATE_COLORS: Record<string, string> = {
-  Disconnected: 'bg-gray-600 text-gray-200',
+const MACHINE_STATE_COLORS: Record<string, string> = {
   Idle: 'bg-green-600 text-white',
   Run: 'bg-blue-600 text-white',
   Hold: 'bg-yellow-500 text-gray-900',
@@ -14,25 +13,43 @@ interface Props {
 }
 
 export default function MachineStatus({ compact = false }: Props) {
+  const backendConnected = useMachineStore((s) => s.backendConnected);
   const connectionStatus = useMachineStore((s) => s.connectionStatus);
   const machineState = useMachineStore((s) => s.machineState);
 
-  const stateName =
+  const machineStateName =
     connectionStatus === 'disconnected'
       ? 'Disconnected'
       : connectionStatus === 'connecting'
         ? 'Connecting…'
         : (machineState?.state ?? 'Unknown');
 
-  const colorClass = STATE_COLORS[stateName] ?? 'bg-gray-600 text-gray-200';
+  const machineColorClass = MACHINE_STATE_COLORS[machineStateName] ?? 'bg-gray-600 text-gray-200';
   const pos = machineState?.workPosition;
 
   if (compact) {
     return (
       <div className="flex items-center gap-3">
-        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${colorClass}`}>
-          {stateName}
+        {/* Server status */}
+        <span
+          className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+            backendConnected
+              ? 'bg-emerald-700 text-emerald-100'
+              : 'bg-red-800 text-red-200'
+          }`}
+          title={backendConnected ? 'Backend server is reachable' : 'Cannot reach backend server'}
+        >
+          Server {backendConnected ? '✓' : '✗'}
         </span>
+
+        {/* Machine status */}
+        <span
+          className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${machineColorClass}`}
+          title={`Machine: ${machineStateName}`}
+        >
+          Machine: {machineStateName}
+        </span>
+
         {pos && (
           <span className="text-xs font-mono text-gray-400">
             X{pos.x.toFixed(2)} Y{pos.y.toFixed(2)}
@@ -44,11 +61,22 @@ export default function MachineStatus({ compact = false }: Props) {
 
   return (
     <div className="bg-gray-800 rounded-lg p-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${colorClass}`}>
-          {stateName}
+      {/* Status badges */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span
+          className={`px-3 py-1 rounded-full text-sm font-semibold ${
+            backendConnected
+              ? 'bg-emerald-700 text-emerald-100'
+              : 'bg-red-800 text-red-200'
+          }`}
+        >
+          Server {backendConnected ? 'Connected' : 'Unreachable'}
+        </span>
+        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${machineColorClass}`}>
+          Machine: {machineStateName}
         </span>
       </div>
+
       {machineState && (
         <div className="grid grid-cols-2 gap-2 text-sm font-mono">
           <div>

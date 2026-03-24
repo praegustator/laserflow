@@ -15,6 +15,7 @@ import type { WsMessage, MachineState, JobProgress } from './types';
 function AppInner() {
   const addConsoleEntry = useMachineStore((s) => s.addConsoleEntry);
   const setMachineState = useMachineStore((s) => s.setMachineState);
+  const setBackendConnected = useMachineStore((s) => s.setBackendConnected);
   const updateJobProgress = useJobStore((s) => s.updateJobProgress);
   const updateJobStatus = useJobStore((s) => s.updateJobStatus);
   const backendUrl = useAppSettings((s) => s.backendUrl);
@@ -56,8 +57,11 @@ function AppInner() {
             // ignore malformed messages
           }
         },
-        undefined,
         () => {
+          setBackendConnected(true);
+        },
+        () => {
+          setBackendConnected(false);
           // Reconnect after 3s on close
           reconnectTimer.current = setTimeout(connect, 3000);
         },
@@ -67,7 +71,7 @@ function AppInner() {
 
     connect();
     return cleanup;
-  }, [backendUrl, addConsoleEntry, setMachineState, updateJobProgress, updateJobStatus]);
+  }, [backendUrl, addConsoleEntry, setMachineState, setBackendConnected, updateJobProgress, updateJobStatus]);
 
   return (
     <Routes>

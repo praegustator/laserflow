@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import MachineStatus from './MachineStatus';
+import Footer from './Footer';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: '⌂', end: true },
@@ -41,11 +42,6 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-
-        {/* Version */}
-        <div className="px-5 py-3 text-xs text-gray-600 border-t border-gray-800">
-          v1.0.0
-        </div>
       </aside>
 
       {/* Main */}
@@ -59,9 +55,12 @@ export default function Layout() {
         </header>
 
         {/* Page */}
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 overflow-auto min-h-0">
           <Outlet />
         </main>
+
+        {/* Footer */}
+        <Footer />
       </div>
     </div>
   );

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { useJobStore } from '../store/jobStore';
 import { useMachineStore } from '../store/machineStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import SvgCanvas from '../components/SvgCanvas';
 import OperationsPanel from '../components/OperationsPanel';
+import LayerTransformPanel from '../components/LayerTransformPanel';
 import type { Operation } from '../types';
 
 export default function Editor() {
@@ -120,9 +122,9 @@ export default function Editor() {
       </div>
 
       {activeJob ? (
-        <div className="flex flex-1 min-h-0">
+        <PanelGroup orientation="horizontal" className="flex-1 min-h-0">
           {/* Layers panel */}
-          <div className="w-56 flex-shrink-0 border-r border-gray-800 bg-gray-900 flex flex-col min-h-0">
+          <Panel defaultSize={18} minSize={12} maxSize={35} className="bg-gray-900 flex flex-col min-h-0">
             <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between">
               <span className="text-xs font-semibold text-gray-300 uppercase">Layers</span>
               <button onClick={() => fileInputRef.current?.click()} className="text-xs text-orange-400 hover:text-orange-300">+ Add</button>
@@ -149,34 +151,17 @@ export default function Editor() {
                     <button onClick={e => { e.stopPropagation(); removeLayer(layer.id); if (selectedLayerId === layer.id) setSelectedLayerId(null); }} className="text-gray-500 hover:text-red-400 text-xs" title="Remove">✕</button>
                   </div>
                   {selectedLayerId === layer.id && (
-                    <div className="mt-2 space-y-1.5" onClick={e => e.stopPropagation()}>
-                      <div className="grid grid-cols-2 gap-1">
-                        <div>
-                          <label className="text-xs text-gray-500">X (mm)</label>
-                          <input type="number" value={layer.offsetX} step={0.1} onChange={e => updateLayer(layer.id, { offsetX: Number(e.target.value) })} className="w-full text-xs bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-gray-100 focus:outline-none focus:border-orange-500" />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500">Y (mm)</label>
-                          <input type="number" value={layer.offsetY} step={0.1} onChange={e => updateLayer(layer.id, { offsetY: Number(e.target.value) })} className="w-full text-xs bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-gray-100 focus:outline-none focus:border-orange-500" />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500">Scale X</label>
-                          <input type="number" value={layer.scaleX} step={0.01} min={0.01} onChange={e => updateLayer(layer.id, { scaleX: Number(e.target.value) })} className="w-full text-xs bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-gray-100 focus:outline-none focus:border-orange-500" />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500">Scale Y</label>
-                          <input type="number" value={layer.scaleY} step={0.01} min={0.01} onChange={e => updateLayer(layer.id, { scaleY: Number(e.target.value) })} className="w-full text-xs bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-gray-100 focus:outline-none focus:border-orange-500" />
-                        </div>
-                      </div>
-                    </div>
+                    <LayerTransformPanel layer={layer} onUpdate={updateLayer} />
                   )}
                 </div>
               ))}
             </div>
-          </div>
+          </Panel>
+
+          <PanelResizeHandle className="w-1.5 bg-gray-800 hover:bg-orange-500/40 transition-colors cursor-col-resize" />
 
           {/* Canvas */}
-          <div className="flex-1 min-w-0 min-h-0">
+          <Panel defaultSize={57} minSize={30} className="min-w-0 min-h-0">
             <SvgCanvas
               layers={storeLayers}
               operations={operations}
@@ -184,10 +169,12 @@ export default function Editor() {
               onSelectLayer={setSelectedLayerId}
               originPosition={originPosition}
             />
-          </div>
+          </Panel>
+
+          <PanelResizeHandle className="w-1.5 bg-gray-800 hover:bg-orange-500/40 transition-colors cursor-col-resize" />
 
           {/* Operations panel */}
-          <div className="w-72 flex-shrink-0 border-l border-gray-800 bg-gray-900 flex flex-col min-h-0">
+          <Panel defaultSize={25} minSize={15} maxSize={40} className="bg-gray-900 flex flex-col min-h-0">
             <OperationsPanel
               job={activeJob}
               operations={operations}
@@ -196,8 +183,8 @@ export default function Editor() {
               selectedLayerId={selectedLayerId}
               originPosition={originPosition}
             />
-          </div>
-        </div>
+          </Panel>
+        </PanelGroup>
       ) : (
         <div className="flex-1 flex items-center justify-center text-center">
           <div>
