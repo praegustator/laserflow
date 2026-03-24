@@ -3,6 +3,9 @@ import { api } from '../api/client';
 import type { MachineState, PortInfo, ConsoleEntry } from '../types';
 
 interface MachineStore {
+  /** Whether the frontend WebSocket can reach the backend server */
+  backendConnected: boolean;
+  /** Serial connection to the physical machine (via backend) */
   connectionStatus: 'disconnected' | 'connecting' | 'connected';
   machineState: MachineState | null;
   selectedPort: string;
@@ -10,6 +13,7 @@ interface MachineStore {
   consoleLog: ConsoleEntry[];
   ports: PortInfo[];
 
+  setBackendConnected: (v: boolean) => void;
   fetchPorts: () => Promise<void>;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
@@ -23,12 +27,15 @@ interface MachineStore {
 let _entryCounter = 0;
 
 export const useMachineStore = create<MachineStore>((set, get) => ({
+  backendConnected: false,
   connectionStatus: 'disconnected',
   machineState: null,
   selectedPort: '',
   baudRate: 115200,
   consoleLog: [],
   ports: [],
+
+  setBackendConnected: (v) => set({ backendConnected: v }),
 
   fetchPorts: async () => {
     const ports = await api.get('/api/ports') as PortInfo[];

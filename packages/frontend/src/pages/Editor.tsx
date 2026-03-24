@@ -1,11 +1,18 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { useJobStore } from '../store/jobStore';
 import { useMachineStore } from '../store/machineStore';
 import { useAppSettings } from '../store/appSettingsStore';
+import { useToastStore } from '../store/toastStore';
+import { useKeyboardShortcuts, type ShortcutDef } from '../hooks/useKeyboardShortcuts';
 import SvgCanvas from '../components/SvgCanvas';
 import OperationsPanel from '../components/OperationsPanel';
+import LayerTransformPanel from '../components/LayerTransformPanel';
+import { computeBoundingBox } from '../utils/geometry';
 import type { Operation } from '../types';
+
+const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];
 
 export default function Editor() {
   const jobs = useJobStore(s => s.jobs);
@@ -20,14 +27,15 @@ export default function Editor() {
   const moveLayerUp = useJobStore(s => s.moveLayerUp);
   const moveLayerDown = useJobStore(s => s.moveLayerDown);
   const connectionStatus = useMachineStore(s => s.connectionStatus);
+  const sendCommand = useMachineStore(s => s.sendCommand);
   const originPosition = useAppSettings(s => s.originPosition);
+  const addToast = useToastStore(s => s.addToast);
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [operations, setOperations] = useState<Operation[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
 
   useEffect(() => { void fetchJobs(); }, [fetchJobs]);
@@ -46,11 +54,12 @@ export default function Editor() {
       try {
         const job = await uploadJob(file);
         if (!activeJobId) setActiveJobId(job.id);
+        addToast('success', `Imported ${file.name}`);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Upload failed');
+        addToast('error', err instanceof Error ? err.message : 'Upload failed');
       }
     }
-  }, [uploadJob, activeJobId, setActiveJobId]);
+  }, [uploadJob, activeJobId, setActiveJobId, addToast]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) void handleFiles(e.target.files);
@@ -66,18 +75,61 @@ export default function Editor() {
   const handleStart = async () => {
     if (!activeJob) return;
     setStarting(true);
-    setError(null);
     try {
       await startJob(activeJob.id);
+      addToast('success', 'Job started');
       void navigate('/console');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start job');
+      addToast('error', err instanceof Error ? err.message : 'Failed to start job');
     } finally {
       setStarting(false);
     }
   };
 
   const canStart = connectionStatus === 'connected' && !!activeJob?.gcode && !starting;
+  const canFrame = connectionStatus === 'connected' && storeLayers.length > 0;
+
+  const handleFrame = async () => {
+    // Compute bounding box of all visible layers (applying layer transforms)
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const layer of storeLayers) {
+      if (!layer.visible) continue;
+      const bbox = computeBoundingBox(layer.geometry);
+      if (!bbox) continue;
+      const x0 = layer.offsetX + bbox.minX * layer.scaleX;
+      const y0 = layer.offsetY + bbox.minY * layer.scaleY;
+      const x1 = layer.offsetX + bbox.maxX * layer.scaleX;
+      const y1 = layer.offsetY + bbox.maxY * layer.scaleY;
+      minX = Math.min(minX, x0); maxX = Math.max(maxX, x1);
+      minY = Math.min(minY, y0); maxY = Math.max(maxY, y1);
+    }
+    if (!Number.isFinite(minX)) {
+      addToast('info', 'No visible geometry to frame');
+      return;
+    }
+    // Send rapid traverse around bounding box (laser off)
+    const feed = 3000;
+    try {
+      await sendCommand('G90 G21'); // absolute, mm
+      await sendCommand('M5 S0'); // laser off
+      await sendCommand(`G0 X${minX.toFixed(2)} Y${minY.toFixed(2)} F${feed}`);
+      await sendCommand(`G0 X${maxX.toFixed(2)} Y${minY.toFixed(2)}`);
+      await sendCommand(`G0 X${maxX.toFixed(2)} Y${maxY.toFixed(2)}`);
+      await sendCommand(`G0 X${minX.toFixed(2)} Y${maxY.toFixed(2)}`);
+      await sendCommand(`G0 X${minX.toFixed(2)} Y${minY.toFixed(2)}`);
+      addToast('success', `Framed: ${(maxX - minX).toFixed(1)} × ${(maxY - minY).toFixed(1)} mm`);
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : 'Frame failed');
+    }
+  };
+
+  // Keyboard shortcuts
+  const shortcuts = useMemo<ShortcutDef[]>(() => [
+    { key: 'i', ctrl: true, label: 'Import SVG', handler: () => fileInputRef.current?.click() },
+    { key: 'Delete', label: 'Remove layer', handler: () => { if (selectedLayerId) { removeLayer(selectedLayerId); setSelectedLayerId(null); } } },
+    { key: 'Escape', label: 'Deselect', handler: () => setSelectedLayerId(null) },
+  ], [selectedLayerId, removeLayer]);
+  useKeyboardShortcuts(shortcuts);
 
   return (
     <div
@@ -105,10 +157,16 @@ export default function Editor() {
         <button
           onClick={() => fileInputRef.current?.click()}
           className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
+          title="Import SVG (Ctrl+I)"
         >+ Import SVG</button>
         <input ref={fileInputRef} type="file" accept=".svg" multiple className="hidden" onChange={handleFileChange} />
         <div className="flex-1" />
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        <button
+          onClick={() => { void handleFrame(); }}
+          disabled={!canFrame}
+          className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 transition-colors"
+          title="Rapid-traverse the bounding box to verify placement"
+        >⬜ Frame</button>
         <button
           onClick={() => { void handleStart(); }}
           disabled={!canStart}
@@ -120,9 +178,9 @@ export default function Editor() {
       </div>
 
       {activeJob ? (
-        <div className="flex flex-1 min-h-0">
+        <PanelGroup orientation="horizontal" className="flex-1 min-h-0">
           {/* Layers panel */}
-          <div className="w-56 flex-shrink-0 border-r border-gray-800 bg-gray-900 flex flex-col min-h-0">
+          <Panel defaultSize={18} minSize={12} maxSize={35} className="bg-gray-900 flex flex-col min-h-0">
             <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between">
               <span className="text-xs font-semibold text-gray-300 uppercase">Layers</span>
               <button onClick={() => fileInputRef.current?.click()} className="text-xs text-orange-400 hover:text-orange-300">+ Add</button>
@@ -138,6 +196,11 @@ export default function Editor() {
                   className={`rounded-lg border p-2 cursor-pointer transition-colors ${selectedLayerId === layer.id ? 'border-orange-500 bg-gray-800' : 'border-gray-700 hover:border-gray-600'}`}
                 >
                   <div className="flex items-center gap-1.5">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: LAYER_COLORS[idx % LAYER_COLORS.length] }}
+                      title={`Layer colour ${idx + 1}`}
+                    />
                     <button
                       onClick={e => { e.stopPropagation(); updateLayer(layer.id, { visible: !layer.visible }); }}
                       className={`text-xs w-5 text-center ${layer.visible ? 'text-gray-200' : 'text-gray-600'}`}
@@ -149,34 +212,17 @@ export default function Editor() {
                     <button onClick={e => { e.stopPropagation(); removeLayer(layer.id); if (selectedLayerId === layer.id) setSelectedLayerId(null); }} className="text-gray-500 hover:text-red-400 text-xs" title="Remove">✕</button>
                   </div>
                   {selectedLayerId === layer.id && (
-                    <div className="mt-2 space-y-1.5" onClick={e => e.stopPropagation()}>
-                      <div className="grid grid-cols-2 gap-1">
-                        <div>
-                          <label className="text-xs text-gray-500">X (mm)</label>
-                          <input type="number" value={layer.offsetX} step={0.1} onChange={e => updateLayer(layer.id, { offsetX: Number(e.target.value) })} className="w-full text-xs bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-gray-100 focus:outline-none focus:border-orange-500" />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500">Y (mm)</label>
-                          <input type="number" value={layer.offsetY} step={0.1} onChange={e => updateLayer(layer.id, { offsetY: Number(e.target.value) })} className="w-full text-xs bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-gray-100 focus:outline-none focus:border-orange-500" />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500">Scale X</label>
-                          <input type="number" value={layer.scaleX} step={0.01} min={0.01} onChange={e => updateLayer(layer.id, { scaleX: Number(e.target.value) })} className="w-full text-xs bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-gray-100 focus:outline-none focus:border-orange-500" />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500">Scale Y</label>
-                          <input type="number" value={layer.scaleY} step={0.01} min={0.01} onChange={e => updateLayer(layer.id, { scaleY: Number(e.target.value) })} className="w-full text-xs bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-gray-100 focus:outline-none focus:border-orange-500" />
-                        </div>
-                      </div>
-                    </div>
+                    <LayerTransformPanel layer={layer} onUpdate={updateLayer} />
                   )}
                 </div>
               ))}
             </div>
-          </div>
+          </Panel>
+
+          <PanelResizeHandle className="w-1.5 bg-gray-800 hover:bg-orange-500/40 transition-colors cursor-col-resize" />
 
           {/* Canvas */}
-          <div className="flex-1 min-w-0 min-h-0">
+          <Panel defaultSize={57} minSize={30} className="min-w-0 min-h-0">
             <SvgCanvas
               layers={storeLayers}
               operations={operations}
@@ -184,10 +230,12 @@ export default function Editor() {
               onSelectLayer={setSelectedLayerId}
               originPosition={originPosition}
             />
-          </div>
+          </Panel>
+
+          <PanelResizeHandle className="w-1.5 bg-gray-800 hover:bg-orange-500/40 transition-colors cursor-col-resize" />
 
           {/* Operations panel */}
-          <div className="w-72 flex-shrink-0 border-l border-gray-800 bg-gray-900 flex flex-col min-h-0">
+          <Panel defaultSize={25} minSize={15} maxSize={40} className="bg-gray-900 flex flex-col min-h-0">
             <OperationsPanel
               job={activeJob}
               operations={operations}
@@ -196,8 +244,8 @@ export default function Editor() {
               selectedLayerId={selectedLayerId}
               originPosition={originPosition}
             />
-          </div>
-        </div>
+          </Panel>
+        </PanelGroup>
       ) : (
         <div className="flex-1 flex items-center justify-center text-center">
           <div>
