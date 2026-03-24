@@ -8,8 +8,11 @@ export interface Operation {
   power: number;
   passes: number;
   zOffset?: number;
-  layerId?: string;
+  layerIds: string[];
   label?: string;
+  enabled: boolean;
+  /** @deprecated kept for backward compat with old jobs */
+  layerId?: string;
 }
 
 export interface PathGeometry {
@@ -18,16 +21,57 @@ export interface PathGeometry {
   shapeId?: string;
 }
 
+/** A single shape extracted from an SVG file */
+export interface Shape {
+  id: string;
+  name: string;
+  d: string;
+  sourceFileId: string;
+}
+
 export interface Layer {
   id: string;
   name: string;
-  sourceSvg: string;
-  geometry: PathGeometry[];
+  shapes: Shape[];
   visible: boolean;
   offsetX: number;
   offsetY: number;
   scaleX: number;
   scaleY: number;
+}
+
+/** An SVG file imported into a project */
+export interface ProjectFile {
+  id: string;
+  name: string;
+  sourceSvg: string;
+  shapes: Shape[];
+}
+
+/** A saved snapshot of a project */
+export interface ProjectVersion {
+  id: string;
+  label: string;
+  createdAt: string;
+  snapshot: {
+    files: ProjectFile[];
+    layers: Layer[];
+    operations: Operation[];
+  };
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  files: ProjectFile[];
+  layers: Layer[];
+  operations: Operation[];
+  versions: ProjectVersion[];
+  /** Backend job ID if G-code has been generated */
+  jobId?: string;
+  gcode?: string;
 }
 
 export interface Job {

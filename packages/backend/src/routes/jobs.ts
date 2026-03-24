@@ -63,6 +63,41 @@ export function registerRoutes(app: FastifyInstance): void {
     }
   );
 
+  // Compile endpoint: accepts raw geometry + operations, creates a job with generated G-code
+  app.post<{
+    Body: {
+      name: string;
+      geometry: import('../types/index.js').PathGeometry[];
+      operations: Operation[];
+      machineId?: string;
+      layerTransforms?: Record<string, PathTransform>;
+      originFlip?: boolean;
+      workH?: number;
+    };
+  }>('/api/jobs/compile', async (req, reply) => {
+    const { name, geometry, operations: ops, machineId, layerTransforms, originFlip, workH } = req.body;
+    if (!geometry || !Array.isArray(geometry) || geometry.length === 0) {
+      return reply.code(400).send({ error: 'geometry is required' });
+    }
+    const profile = machineId ? machineProfiles.getById(machineId) : machineProfiles.getAll()[0];
+    if (!profile) return reply.code(400).send({ error: 'No machine profile found' });
+
+    const gcode = generateGcode(geometry, ops ?? [], profile, layerTransforms, originFlip, workH);
+
+    const job: Job = {
+      id: uuidv4(),
+      name: name || 'Compiled Job',
+      createdAt: new Date().toISOString(),
+      status: 'idle',
+      geometry,
+      operations: ops ?? [],
+      gcode,
+    };
+
+    jobRepo.save(job);
+    return reply.code(201).send(job);
+  });
+
   app.post<{ Params: { id: string } }>('/api/jobs/:id/start', async (req, reply) => {
     const job = jobRepo.findById(req.params.id);
     if (!job) return reply.code(404).send({ error: 'Not found' });

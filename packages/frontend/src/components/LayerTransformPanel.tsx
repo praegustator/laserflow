@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Layer } from '../types';
-import { computeBoundingBox } from '../utils/geometry';
+import { computeShapesBoundingBox } from '../utils/geometry';
 
 interface Props {
   layer: Layer;
@@ -17,7 +17,7 @@ type SizeMode = 'scale' | 'absolute';
 export default function LayerTransformPanel({ layer, onUpdate }: Props) {
   const [sizeMode, setSizeMode] = useState<SizeMode>('scale');
   const [ratioLocked, setRatioLocked] = useState(true);
-  const bbox = computeBoundingBox(layer.geometry);
+  const bbox = computeShapesBoundingBox(layer.shapes);
 
   // Local text state so the user can type freely (including commas)
   const [localScaleX, setLocalScaleX] = useState(String(layer.scaleX));
