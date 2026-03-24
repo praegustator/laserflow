@@ -16,7 +16,7 @@ export default function Layout() {
     <div className="flex h-screen bg-gray-950 text-gray-100 overflow-hidden">
       <PanelGroup orientation="horizontal" className="h-full">
         {/* Sidebar */}
-        <Panel defaultSize={15} minSize={10} maxSize={25} className="bg-gray-900 border-r border-gray-800 flex flex-col min-h-0">
+        <Panel defaultSize="15%" minSize="10%" maxSize="25%" className="bg-gray-900 border-r border-gray-800 flex flex-col min-h-0">
           {/* Logo */}
           <div className="px-5 py-4 border-b border-gray-800 flex-shrink-0">
             <span className="text-xl font-bold tracking-tight text-orange-400 whitespace-nowrap overflow-hidden">
