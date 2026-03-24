@@ -1,0 +1,12 @@
+{
+  "name": "laserflow",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "npm run build --workspace=packages/backend && npm run build --workspace=packages/frontend",
+    "typecheck": "npm run typecheck --workspace=packages/backend && npm run typecheck --workspace=packages/frontend",
+    "lint": "npm run lint --workspace=packages/backend && npm run lint --workspace=packages/frontend",
+    "test": "npm run test --workspace=packages/backend"
+  }
+}
