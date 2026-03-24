@@ -180,7 +180,7 @@ export default function Editor() {
       {activeJob ? (
         <PanelGroup orientation="horizontal" className="flex-1 min-h-0">
           {/* Layers panel */}
-          <Panel defaultSize={18} minSize={12} maxSize={35} className="bg-gray-900 flex flex-col min-h-0">
+          <Panel defaultSize={18} minSize={15} className="bg-gray-900 flex flex-col min-h-0">
             <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between">
               <span className="text-xs font-semibold text-gray-300 uppercase">Layers</span>
               <button onClick={() => fileInputRef.current?.click()} className="text-xs text-orange-400 hover:text-orange-300">+ Add</button>
@@ -222,7 +222,7 @@ export default function Editor() {
           <PanelResizeHandle className="w-1.5 bg-gray-800 hover:bg-orange-500/40 transition-colors cursor-col-resize" />
 
           {/* Canvas */}
-          <Panel defaultSize={57} minSize={30} className="min-w-0 min-h-0">
+          <Panel defaultSize={57} minSize={25} className="min-w-0 min-h-0">
             <SvgCanvas
               layers={storeLayers}
               operations={operations}
@@ -235,7 +235,7 @@ export default function Editor() {
           <PanelResizeHandle className="w-1.5 bg-gray-800 hover:bg-orange-500/40 transition-colors cursor-col-resize" />
 
           {/* Operations panel */}
-          <Panel defaultSize={25} minSize={15} maxSize={40} className="bg-gray-900 flex flex-col min-h-0">
+          <Panel defaultSize={25} minSize={15} className="bg-gray-900 flex flex-col min-h-0">
             <OperationsPanel
               job={activeJob}
               operations={operations}

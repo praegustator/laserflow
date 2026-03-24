@@ -1,21 +1,24 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useJobStore } from '../store/jobStore';
+import { useKeyboardShortcuts, type ShortcutDef } from '../hooks/useKeyboardShortcuts';
 
 interface GMove {
   type: 'rapid' | 'cut';
   x: number;
   y: number;
+  lineNum: number;
 }
 
 function parseGcode(gcode: string): GMove[] {
   const moves: GMove[] = [];
   let x = 0, y = 0;
-  for (const line of gcode.split('\n')) {
+  const lines = gcode.split('\n');
+  lines.forEach((line, lineNum) => {
     const trimmed = line.trim();
-    if (trimmed.startsWith(';') || !trimmed) continue;
+    if (trimmed.startsWith(';') || !trimmed) return;
     const isG0 = trimmed.startsWith('G0 ') || trimmed.startsWith('G0\t') || trimmed === 'G0';
     const isG1 = trimmed.startsWith('G1 ') || trimmed.startsWith('G1\t') || trimmed === 'G1';
-    if (!isG0 && !isG1) continue;
+    if (!isG0 && !isG1) return;
     const xMatch = trimmed.match(/X(-?[\d.]+)/);
     const yMatch = trimmed.match(/Y(-?[\d.]+)/);
     const newX = xMatch ? parseFloat(xMatch[1]) : NaN;
@@ -24,9 +27,9 @@ function parseGcode(gcode: string): GMove[] {
     // if neither X nor Y appears on a G0/G1 line, skip it (no movement).
     if (!isNaN(newX)) x = newX;
     if (!isNaN(newY)) y = newY;
-    if (isNaN(newX) && isNaN(newY)) continue;
-    moves.push({ type: isG0 ? 'rapid' : 'cut', x, y });
-  }
+    if (isNaN(newX) && isNaN(newY)) return;
+    moves.push({ type: isG0 ? 'rapid' : 'cut', x, y, lineNum });
+  });
   return moves;
 }
 
@@ -41,6 +44,9 @@ function highlightLine(line: string): React.ReactNode {
 
 type Tab = 'preview' | 'text' | 'import';
 
+const PLAY_SPEEDS = [0.5, 1, 2, 5, 10] as const;
+type PlaySpeed = (typeof PLAY_SPEEDS)[number];
+
 export default function GcodePreview() {
   const jobs = useJobStore(s => s.jobs);
   const activeJobId = useJobStore(s => s.activeJobId);
@@ -50,19 +56,33 @@ export default function GcodePreview() {
   const [tab, setTab] = useState<Tab>('preview');
   const [sliderPos, setSliderPos] = useState(1);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playSpeed, setPlaySpeed] = useState<PlaySpeed>(1);
+  const [showText, setShowText] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const rafRef = useRef<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const textRef = useRef<HTMLPreElement>(null);
+  const sideTextRef = useRef<HTMLDivElement>(null);
+  const lineEls = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
     if (activeJob?.gcode) setGcode(activeJob.gcode);
   }, [activeJob]);
 
-  const moves = parseGcode(gcode);
+  const moves = useMemo(() => parseGcode(gcode), [gcode]);
   const totalMoves = moves.length;
   const currentIdx = Math.min(Math.floor(sliderPos * totalMoves), totalMoves);
+
+  // Line number in the source gcode that the current move corresponds to
+  const currentLineNum = currentIdx > 0 ? moves[currentIdx - 1].lineNum : -1;
+
+  // Auto-scroll the side text panel to the current line
+  useEffect(() => {
+    if (showText && currentLineNum >= 0) {
+      lineEls.current[currentLineNum]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }, [currentLineNum, showText]);
 
   // Play animation
   useEffect(() => {
@@ -70,16 +90,44 @@ export default function GcodePreview() {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       return;
     }
+    const stepSize = 0.002 * playSpeed;
     const step = () => {
       setSliderPos(p => {
         if (p >= 1) { setIsPlaying(false); return 1; }
-        return Math.min(1, p + 0.002);
+        return Math.min(1, p + stepSize);
       });
       rafRef.current = requestAnimationFrame(step);
     };
     rafRef.current = requestAnimationFrame(step);
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, [isPlaying]);
+  }, [isPlaying, playSpeed]);
+
+  // Step helpers
+  const stepForward = useCallback(() => {
+    setIsPlaying(false);
+    setSliderPos(p => Math.min(1, p + 1 / Math.max(1, totalMoves)));
+  }, [totalMoves]);
+
+  const stepBack = useCallback(() => {
+    setIsPlaying(false);
+    setSliderPos(p => Math.max(0, p - 1 / Math.max(1, totalMoves)));
+  }, [totalMoves]);
+
+  const jumpToStart = useCallback(() => { setIsPlaying(false); setSliderPos(0); }, []);
+  const jumpToEnd   = useCallback(() => { setIsPlaying(false); setSliderPos(1); }, []);
+
+  // Keyboard shortcuts (only active on the preview tab)
+  const shortcuts = useMemo<ShortcutDef[]>(() => {
+    if (tab !== 'preview') return [];
+    return [
+      { key: ' ',          label: 'Play/Pause',    handler: () => setIsPlaying(p => !p) },
+      { key: 'ArrowRight',               label: 'Step forward', handler: stepForward },
+      { key: 'ArrowLeft',                label: 'Step back',    handler: stepBack },
+      { key: 'ArrowRight', shift: true,  label: 'Jump to end',  handler: jumpToEnd },
+      { key: 'ArrowLeft',  shift: true,  label: 'Jump to start',handler: jumpToStart },
+    ];
+  }, [tab, stepForward, stepBack, jumpToStart, jumpToEnd]);
+  useKeyboardShortcuts(shortcuts);
 
   // Compute bounding box
   const computeBounds = useCallback(() => {
@@ -155,7 +203,7 @@ export default function GcodePreview() {
     }
   };
 
-  const gcodeLines = gcode.split('\n');
+  const gcodeLines = useMemo(() => gcode.split('\n'), [gcode]);
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -186,55 +234,117 @@ export default function GcodePreview() {
           <div className="flex flex-col h-full">
             {gcode ? (
               <>
-                <div className="flex-1 min-h-0 bg-gray-950">
-                  <svg
-                    ref={svgRef}
-                    className="w-full h-full"
-                    viewBox={viewBox}
-                    preserveAspectRatio="xMidYMid meet"
-                  >
-                    {/* Background */}
-                    <rect x={bounds.minX} y={bounds.minY} width={vbW} height={vbH} fill="#111827" />
-                    {/* Rapid moves */}
-                    {rapidSegments.map((d, i) => (
-                      <path key={`r${i}`} d={d} fill="none" stroke="#4b5563" strokeWidth={vbW * 0.002} strokeDasharray={`${vbW * 0.01},${vbW * 0.005}`} />
-                    ))}
-                    {/* Cut moves */}
-                    {cutSegments.map((d, i) => (
-                      <path key={`c${i}`} d={d} fill="none" stroke="#f97316" strokeWidth={vbW * 0.002} />
-                    ))}
-                    {/* Current position dot */}
-                    {visibleMoves.length > 0 && (
-                      <circle
-                        cx={visibleMoves[visibleMoves.length - 1].x}
-                        cy={visibleMoves[visibleMoves.length - 1].y}
-                        r={vbW * 0.008}
-                        fill="#fbbf24"
-                      />
-                    )}
-                  </svg>
+                {/* SVG + optional side text */}
+                <div className="flex-1 min-h-0 flex">
+                  <div className="flex-1 min-h-0 bg-gray-950">
+                    <svg
+                      ref={svgRef}
+                      className="w-full h-full"
+                      viewBox={viewBox}
+                      preserveAspectRatio="xMidYMid meet"
+                    >
+                      {/* Background */}
+                      <rect x={bounds.minX} y={bounds.minY} width={vbW} height={vbH} fill="#111827" />
+                      {/* Rapid moves */}
+                      {rapidSegments.map((d, i) => (
+                        <path key={`r${i}`} d={d} fill="none" stroke="#4b5563" strokeWidth={vbW * 0.002} strokeDasharray={`${vbW * 0.01},${vbW * 0.005}`} />
+                      ))}
+                      {/* Cut moves */}
+                      {cutSegments.map((d, i) => (
+                        <path key={`c${i}`} d={d} fill="none" stroke="#f97316" strokeWidth={vbW * 0.002} />
+                      ))}
+                      {/* Current position dot */}
+                      {visibleMoves.length > 0 && (
+                        <circle
+                          cx={visibleMoves[visibleMoves.length - 1].x}
+                          cy={visibleMoves[visibleMoves.length - 1].y}
+                          r={vbW * 0.008}
+                          fill="#fbbf24"
+                        />
+                      )}
+                    </svg>
+                  </div>
+
+                  {/* Side text panel */}
+                  {showText && (
+                    <div ref={sideTextRef} className="w-72 flex-shrink-0 border-l border-gray-800 overflow-auto bg-gray-950">
+                      <pre className="p-3 text-xs font-mono leading-5">
+                        {gcodeLines.map((line, i) => (
+                          <div
+                            key={i}
+                            ref={el => { lineEls.current[i] = el; }}
+                            className={`flex gap-2 ${i === currentLineNum ? 'bg-orange-900/40 rounded' : ''}`}
+                          >
+                            <span className="text-gray-600 select-none w-7 text-right flex-shrink-0">{i + 1}</span>
+                            {highlightLine(line)}
+                          </div>
+                        ))}
+                      </pre>
+                    </div>
+                  )}
                 </div>
+
                 {/* Controls */}
-                <div className="flex-shrink-0 bg-gray-900 border-t border-gray-800 px-4 py-3 flex items-center gap-3">
+                <div className="flex-shrink-0 bg-gray-900 border-t border-gray-800 px-3 py-2 flex items-center gap-2 flex-wrap">
+                  {/* Jump / step / play buttons */}
                   <button
-                    onClick={() => { setIsPlaying(false); setSliderPos(0); }}
+                    onClick={jumpToStart}
+                    title="Jump to start (Shift+←)"
                     className="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200"
-                  >⏮ Reset</button>
+                  >⏮</button>
+                  <button
+                    onClick={stepBack}
+                    title="Step back (←)"
+                    className="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200"
+                  >◀</button>
                   <button
                     onClick={() => setIsPlaying(p => !p)}
+                    title="Play/Pause (Space)"
                     className="px-3 py-1 text-xs rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold"
                   >{isPlaying ? '⏸ Pause' : '▶ Play'}</button>
+                  <button
+                    onClick={stepForward}
+                    title="Step forward (→)"
+                    className="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200"
+                  >▶</button>
+                  <button
+                    onClick={jumpToEnd}
+                    title="Jump to end (Shift+→)"
+                    className="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200"
+                  >⏭</button>
+
+                  {/* Speed selector */}
+                  <div className="flex items-center gap-1 ml-1">
+                    <span className="text-xs text-gray-500">Speed:</span>
+                    {PLAY_SPEEDS.map(s => (
+                      <button
+                        key={s}
+                        onClick={() => setPlaySpeed(s)}
+                        className={`px-1.5 py-0.5 text-xs rounded transition-colors ${playSpeed === s ? 'bg-orange-500 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+                      >{s}×</button>
+                    ))}
+                  </div>
+
+                  {/* Slider */}
                   <input
                     type="range"
                     min={0}
                     max={totalMoves}
                     value={currentIdx}
                     onChange={e => { setIsPlaying(false); setSliderPos(Number(e.target.value) / Math.max(1, totalMoves)); }}
-                    className="flex-1 accent-orange-500"
+                    className="flex-1 accent-orange-500 min-w-0"
                   />
-                  <span className="text-xs text-gray-400 w-24 text-right">
+
+                  <span className="text-xs text-gray-400 w-24 text-right tabular-nums">
                     {currentIdx.toLocaleString()} / {totalMoves.toLocaleString()}
                   </span>
+
+                  {/* Toggle side text */}
+                  <button
+                    onClick={() => setShowText(v => !v)}
+                    title="Toggle G-code text panel"
+                    className={`px-2 py-1 text-xs rounded transition-colors ${showText ? 'bg-orange-500/20 text-orange-400' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
+                  >≡ Text</button>
                 </div>
               </>
             ) : (
