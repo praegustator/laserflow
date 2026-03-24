@@ -82,25 +82,25 @@ export default function MachineStatus({ compact = false }: Props) {
           <div>
             <div className="text-gray-500 text-xs uppercase mb-1">Work Pos</div>
             <div className="text-gray-200">
-              X {machineState.workPosition.x.toFixed(3)}
+              X {machineState.workPosition?.x?.toFixed(3) ?? '-'}
             </div>
             <div className="text-gray-200">
-              Y {machineState.workPosition.y.toFixed(3)}
+              Y {machineState.workPosition?.y?.toFixed(3) ?? '-'}
             </div>
             <div className="text-gray-200">
-              Z {machineState.workPosition.z.toFixed(3)}
+              Z {machineState.workPosition?.z?.toFixed(3) ?? '-'}
             </div>
           </div>
           <div>
             <div className="text-gray-500 text-xs uppercase mb-1">Machine</div>
             <div className="text-gray-200">
-              X {machineState.position.x.toFixed(3)}
+              X {machineState.position?.x?.toFixed(3) ?? '-'}
             </div>
             <div className="text-gray-200">
-              Y {machineState.position.y.toFixed(3)}
+              Y {machineState.position?.y?.toFixed(3) ?? '-'}
             </div>
             <div className="text-gray-200">
-              Z {machineState.position.z.toFixed(3)}
+              Z {machineState.position?.z?.toFixed(3) ?? '-'}
             </div>
           </div>
         </div>
