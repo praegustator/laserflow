@@ -1,46 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Layer, PathGeometry } from '../types';
+import type { Layer } from '../types';
+import { computeBoundingBox } from '../utils/geometry';
 
 interface Props {
   layer: Layer;
   onUpdate: (id: string, partial: Partial<Layer>) => void;
 }
 
-/** Compute the axis-aligned bounding box of an array of SVG path geometries.
- *  This is a fast approximation using the path data "d" string — it looks at
- *  all numeric coordinate pairs in move/line/curve commands.
- */
-function computeBoundingBox(geometry: PathGeometry[]): { width: number; height: number } | null {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-
-  for (const g of geometry) {
-    // Extract all numbers from the path data.
-    // Path data looks like "M 10 20 L 30 40 C 50 60 ..."
-    const nums = g.d.match(/-?\d+(?:\.\d+)?/g);
-    if (!nums || nums.length < 2) continue;
-    // Pair them as (x, y)
-    for (let i = 0; i < nums.length - 1; i += 2) {
-      const x = Number(nums[i]);
-      const y = Number(nums[i + 1]);
-      if (Number.isFinite(x) && Number.isFinite(y)) {
-        minX = Math.min(minX, x);
-        maxX = Math.max(maxX, x);
-        minY = Math.min(minY, y);
-        maxY = Math.max(maxY, y);
-      }
-    }
-  }
-
-  if (!Number.isFinite(minX)) return null;
-  return { width: maxX - minX, height: maxY - minY };
-}
-
 /** Parse a decimal string that may use comma or dot as separator */
 function parseDecimal(v: string): number {
-  return Number(v.replace(',', '.'));
+  return Number(v.replace(/,/g, '.'));
 }
 
 type SizeMode = 'scale' | 'absolute';

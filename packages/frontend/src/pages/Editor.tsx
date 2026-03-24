@@ -9,6 +9,7 @@ import { useKeyboardShortcuts, type ShortcutDef } from '../hooks/useKeyboardShor
 import SvgCanvas from '../components/SvgCanvas';
 import OperationsPanel from '../components/OperationsPanel';
 import LayerTransformPanel from '../components/LayerTransformPanel';
+import { computeBoundingBox } from '../utils/geometry';
 import type { Operation } from '../types';
 
 const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];
@@ -89,28 +90,24 @@ export default function Editor() {
   const canFrame = connectionStatus === 'connected' && storeLayers.length > 0;
 
   const handleFrame = async () => {
-    // Compute bounding box of all visible layers
+    // Compute bounding box of all visible layers (applying layer transforms)
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const layer of storeLayers) {
       if (!layer.visible) continue;
-      for (const path of layer.geometry) {
-        const nums = path.d.match(/-?\d+(?:\.\d+)?/g);
-        if (!nums || nums.length < 2) continue;
-        for (let i = 0; i < nums.length - 1; i += 2) {
-          const x = layer.offsetX + Number(nums[i]) * layer.scaleX;
-          const y = layer.offsetY + Number(nums[i + 1]) * layer.scaleY;
-          if (Number.isFinite(x) && Number.isFinite(y)) {
-            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-          }
-        }
-      }
+      const bbox = computeBoundingBox(layer.geometry);
+      if (!bbox) continue;
+      const x0 = layer.offsetX + bbox.minX * layer.scaleX;
+      const y0 = layer.offsetY + bbox.minY * layer.scaleY;
+      const x1 = layer.offsetX + bbox.maxX * layer.scaleX;
+      const y1 = layer.offsetY + bbox.maxY * layer.scaleY;
+      minX = Math.min(minX, x0); maxX = Math.max(maxX, x1);
+      minY = Math.min(minY, y0); maxY = Math.max(maxY, y1);
     }
     if (!Number.isFinite(minX)) {
       addToast('info', 'No visible geometry to frame');
       return;
     }
-    // Send rapid traverse around bounding box (low feed, laser off)
+    // Send rapid traverse around bounding box (laser off)
     const feed = 3000;
     try {
       await sendCommand('G90 G21'); // absolute, mm

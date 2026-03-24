@@ -175,7 +175,7 @@ export default function OperationsPanel({ job, operations, onOperationsChange, l
   useEffect(() => {
     api.get('/api/material-presets')
       .then(data => setPresets(data as MaterialPreset[]))
-      .catch(() => { /* non-critical */ });
+      .catch(() => { console.warn('Failed to load material presets'); });
   }, []);
 
   const updateOp = (index: number, updated: Operation) => {

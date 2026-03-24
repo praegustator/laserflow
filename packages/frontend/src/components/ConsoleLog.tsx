@@ -77,6 +77,7 @@ export default function ConsoleLog() {
             <button
               key={d}
               onClick={() => setDirectionFilter(d)}
+              aria-label={d === 'all' ? 'Show all messages' : d === 'in' ? 'Show incoming messages' : 'Show outgoing messages'}
               className={`px-2 py-1 text-xs rounded transition-colors ${
                 directionFilter === d
                   ? 'bg-orange-500 text-white'

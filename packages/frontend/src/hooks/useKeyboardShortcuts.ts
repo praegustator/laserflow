@@ -24,7 +24,11 @@ export function useKeyboardShortcuts(shortcuts: ShortcutDef[]) {
       for (const s of shortcuts) {
         const ctrlMatch = s.ctrl ? (e.ctrlKey || e.metaKey) : !(e.ctrlKey || e.metaKey);
         const shiftMatch = s.shift ? e.shiftKey : !e.shiftKey;
-        if (e.key.toLowerCase() === s.key.toLowerCase() && ctrlMatch && shiftMatch) {
+        // Use exact match for special keys (multi-char), case-insensitive for single chars
+        const keyMatch = s.key.length > 1
+          ? e.key === s.key
+          : e.key.toLowerCase() === s.key.toLowerCase();
+        if (keyMatch && ctrlMatch && shiftMatch) {
           e.preventDefault();
           s.handler();
           return;
