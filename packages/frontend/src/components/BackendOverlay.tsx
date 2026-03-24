@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMachineStore } from '../store/machineStore';
-import { useAppSettings } from '../store/appSettingsStore';
+import { useAppSettings, isMixedContent } from '../store/appSettingsStore';
 
 /**
  * Full-screen overlay shown when the frontend cannot reach the backend server.
@@ -62,6 +62,24 @@ export default function BackendOverlay() {
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
             />
           </div>
+
+          {/* Mixed-content warning */}
+          {isMixedContent(urlInput) && (
+            <div className="rounded-md bg-amber-900/30 border border-amber-700/50 p-3 text-xs text-amber-300 space-y-1">
+              <p className="font-semibold">⚠️ Mixed content – browser will block this connection</p>
+              <p>
+                This app is on <strong>HTTPS</strong> but your backend URL is plain <strong>HTTP</strong>.
+                Browsers block <code>ws://</code> and <code>http://</code> connections from HTTPS pages.
+              </p>
+              <p className="font-medium mt-1">Fix options:</p>
+              <ul className="list-disc list-inside space-y-0.5 text-amber-400/90">
+                <li>Add an HTTPS reverse proxy (nginx) and use an <code>https://</code> URL</li>
+                <li>Use a secure tunnel (<code>cloudflared</code> / <code>ngrok</code>) and paste the tunnel URL</li>
+                <li>Run the frontend locally over HTTP (<code>npm run dev</code>)</li>
+              </ul>
+            </div>
+          )}
+
           <button
             type="submit"
             className="w-full py-2.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-semibold text-sm transition-colors"
