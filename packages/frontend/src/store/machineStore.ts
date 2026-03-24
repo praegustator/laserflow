@@ -79,11 +79,16 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
   },
 
   setMachineState: (partial) => {
-    set((s) => ({
-      machineState: s.machineState
-        ? { ...s.machineState, ...partial }
-        : (partial as MachineState),
-    }));
+    set((s) => {
+      const base: MachineState = s.machineState ?? {
+        state: 'Idle',
+        position: { x: 0, y: 0, z: 0 },
+        workPosition: { x: 0, y: 0, z: 0 },
+        feed: 0,
+        spindle: 0,
+      };
+      return { machineState: { ...base, ...partial } };
+    });
   },
 
   setSelectedPort: (port) => set({ selectedPort: port }),
