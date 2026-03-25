@@ -36,7 +36,7 @@ export default function Layout() {
       {/* Header with navigation tabs (Prusa Slicer style) */}
       <header className="flex-shrink-0 h-12 bg-gray-900 border-b border-gray-800 flex items-center px-4 gap-0">
         {/* Logo */}
-        <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="LaserFlow" className="h-7 mr-4" />
+        <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="LaserFlow" className="h-7 mr-4 -mt-2.5" />
 
         {/* Tab navigation */}
         <nav className="flex items-stretch h-full flex-1 gap-0.5">

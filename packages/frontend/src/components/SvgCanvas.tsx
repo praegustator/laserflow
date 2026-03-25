@@ -3,15 +3,25 @@ import type { Layer, Operation, MachineProfile } from '../types';
 import { computeShapesBoundingBox } from '../utils/geometry';
 import { useAppSettings } from '../store/appSettingsStore';
 
+/** Preview delta applied to selected layers (for relative transform preview) */
+export interface TransformPreview {
+  deltaX: number;
+  deltaY: number;
+  deltaRotation: number;
+}
+
 interface Props {
   layers: Layer[];
   operations: Operation[];
-  selectedLayerId: string | null;
+  selectedLayerIds: Set<string>;
   selectedShapeIds?: Set<string>;
   onSelectLayer: (id: string) => void;
   onSelectShape?: (shapeId: string, layerId: string, e: React.MouseEvent) => void;
+  onUpdateLayer?: (id: string, partial: Partial<Layer>) => void;
   originPosition: 'bottom-left' | 'top-left';
   machineProfile?: MachineProfile | null;
+  /** When set, renders a ghost preview of selected layers shifted by this delta */
+  transformPreview?: TransformPreview;
 }
 
 const OP_COLORS: Record<string, string> = {
@@ -24,7 +34,10 @@ const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#1
 
 const GRID_SPACING = 10; // mm
 
-export default function SvgCanvas({ layers, operations, selectedLayerId, selectedShapeIds, onSelectLayer, onSelectShape, originPosition, machineProfile }: Props) {
+/** Degrees of rotation per pixel of horizontal mouse drag */
+const ROTATE_SENSITIVITY = 0.5;
+
+export default function SvgCanvas({ layers, operations, selectedLayerIds, selectedShapeIds, onSelectLayer, onSelectShape, onUpdateLayer, originPosition, machineProfile, transformPreview }: Props) {
   const settingsWorkW = useAppSettings(s => s.workAreaWidth);
   const settingsWorkH = useAppSettings(s => s.workAreaHeight);
   const workW = machineProfile?.workArea.x ?? settingsWorkW;
@@ -34,6 +47,13 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, selecte
   const dragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
+
+  // Shift-drag (move) / Alt-drag (rotate) state
+  type InteractMode = 'pan' | 'move' | 'rotate';
+  const interactMode = useRef<InteractMode>('pan');
+  const interactStart = useRef({ x: 0, y: 0 });
+  // Store initial layer offsets/rotations at drag start for smooth interactive editing
+  const interactLayerSnap = useRef<Map<string, { offsetX: number; offsetY: number; rotation: number }>>(new Map());
 
   useEffect(() => {
     const el = svgRef.current;
@@ -68,19 +88,51 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, selecte
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
     dragging.current = true;
-    dragStart.current = { x: e.clientX, y: e.clientY, tx: transform.tx, ty: transform.ty };
-  }, [transform]);
+
+    // Determine interaction mode
+    if ((e.shiftKey || e.altKey) && selectedLayerIds.size > 0 && onUpdateLayer) {
+      interactMode.current = e.altKey ? 'rotate' : 'move';
+      interactStart.current = { x: e.clientX, y: e.clientY };
+      // Snapshot current layer state
+      const snap = new Map<string, { offsetX: number; offsetY: number; rotation: number }>();
+      for (const lid of selectedLayerIds) {
+        const l = layers.find(la => la.id === lid);
+        if (l) snap.set(lid, { offsetX: l.offsetX, offsetY: l.offsetY, rotation: l.rotation ?? 0 });
+      }
+      interactLayerSnap.current = snap;
+    } else {
+      interactMode.current = 'pan';
+      dragStart.current = { x: e.clientX, y: e.clientY, tx: transform.tx, ty: transform.ty };
+    }
+  }, [transform, selectedLayerIds, layers, onUpdateLayer]);
 
   const onMouseMove = useCallback((e: React.MouseEvent) => {
     if (!dragging.current) return;
-    setTransform((t) => ({
-      ...t,
-      tx: dragStart.current.tx + e.clientX - dragStart.current.x,
-      ty: dragStart.current.ty + e.clientY - dragStart.current.y,
-    }));
-  }, []);
+    if (interactMode.current === 'move' && onUpdateLayer) {
+      const dx = (e.clientX - interactStart.current.x) / transform.scale;
+      const dy = (e.clientY - interactStart.current.y) / transform.scale;
+      for (const [lid, snap] of interactLayerSnap.current) {
+        onUpdateLayer(lid, { offsetX: snap.offsetX + dx, offsetY: snap.offsetY + dy });
+      }
+    } else if (interactMode.current === 'rotate' && onUpdateLayer) {
+      const dx = e.clientX - interactStart.current.x;
+      const angleDelta = dx * ROTATE_SENSITIVITY;
+      for (const [lid, snap] of interactLayerSnap.current) {
+        onUpdateLayer(lid, { rotation: (snap.rotation + angleDelta) % 360 });
+      }
+    } else {
+      setTransform((t) => ({
+        ...t,
+        tx: dragStart.current.tx + e.clientX - dragStart.current.x,
+        ty: dragStart.current.ty + e.clientY - dragStart.current.y,
+      }));
+    }
+  }, [transform.scale, onUpdateLayer]);
 
-  const onMouseUp = useCallback(() => { dragging.current = false; }, []);
+  const onMouseUp = useCallback(() => {
+    dragging.current = false;
+    interactMode.current = 'pan';
+  }, []);
 
   // Get color for a layer based on operations
   const getLayerColor = (layerId: string, layerIdx: number) => {
@@ -131,7 +183,7 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, selecte
           {layers.map((layer, idx) => {
             if (!layer.visible) return null;
             const color = getLayerColor(layer.id, idx);
-            const isSelected = layer.id === selectedLayerId;
+            const isSelected = selectedLayerIds.has(layer.id);
             const rotation = layer.rotation ?? 0;
             const mX = layer.mirrorX ?? false;
             const mY = layer.mirrorY ?? false;
@@ -219,6 +271,38 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, selecte
               </g>
             );
           })}
+
+          {/* Ghost preview for relative transform */}
+          {transformPreview && (transformPreview.deltaX !== 0 || transformPreview.deltaY !== 0 || transformPreview.deltaRotation !== 0) && (
+            layers.filter(l => selectedLayerIds.has(l.id) && l.visible).map((layer) => {
+              const rotation = (layer.rotation ?? 0) + transformPreview.deltaRotation;
+              const mX = layer.mirrorX ?? false;
+              const mY = layer.mirrorY ?? false;
+              const sxm = mX ? -layer.scaleX : layer.scaleX;
+              const sym = mY ? -layer.scaleY : layer.scaleY;
+              const gBbox = computeShapesBoundingBox(layer.shapes);
+              const pivot = layer.pivot ?? 'tl';
+              let gPivotX = 0, gPivotY = 0;
+              if (gBbox) {
+                const col = pivot[1] === 'l' ? 0 : pivot[1] === 'c' ? 0.5 : 1;
+                const row = pivot[0] === 't' ? 0 : pivot[0] === 'm' ? 0.5 : 1;
+                gPivotX = gBbox.minX + gBbox.width * col;
+                gPivotY = gBbox.minY + gBbox.height * row;
+              }
+              const gParts = [
+                `translate(${layer.offsetX + transformPreview.deltaX},${layer.offsetY + transformPreview.deltaY})`,
+                `rotate(${rotation},${sxm * gPivotX},${sym * gPivotY})`,
+                `scale(${sxm},${sym})`,
+              ];
+              return (
+                <g key={`preview-${layer.id}`} transform={gParts.join(' ')} opacity={0.3} style={{ pointerEvents: 'none' }}>
+                  {layer.shapes.map(shape => (
+                    <path key={shape.id} d={shape.d} fill="none" stroke="#facc15" strokeWidth={0.5} strokeDasharray="3 2" vectorEffect="non-scaling-stroke" />
+                  ))}
+                </g>
+              );
+            })
+          )}
 
           {/* Origin cross — positioned according to origin setting */}
           {(() => {

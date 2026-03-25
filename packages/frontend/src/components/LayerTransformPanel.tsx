@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Layer, PivotAnchor } from '../types';
 import { computeShapesBoundingBox, type BBox } from '../utils/geometry';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faArrowsLeftRight, faArrowsUpDown } from '@fortawesome/free-solid-svg-icons';
+import { faArrowsLeftRight, faArrowsUpDown, faLock, faLockOpen } from '@fortawesome/free-solid-svg-icons';
 
 interface Props {
-  layer: Layer;
+  layers: Layer[];
   onUpdate: (id: string, partial: Partial<Layer>) => void;
   originPosition?: 'bottom-left' | 'top-left';
   workH?: number;
+  onPreviewChange?: (preview: { deltaX: number; deltaY: number; deltaRotation: number }) => void;
 }
 
 /** Parse a decimal string that may use comma or dot as separator */
@@ -36,11 +37,16 @@ function getPivotCoords(bbox: BBox | null, pivot: PivotAnchor): { px: number; py
   };
 }
 
-export default function LayerTransformPanel({ layer, onUpdate, originPosition = 'top-left', workH = 200 }: Props) {
+export default function LayerTransformPanel({ layers, onUpdate, originPosition = 'top-left', workH = 200, onPreviewChange }: Props) {
+  const multi = layers.length > 1;
+  const layer = layers[0]; // Primary layer for single-layer mode
   const [sizeMode, setSizeMode] = useState<SizeMode>('scale');
-  const [posRotMode, setPosRotMode] = useState<PosRotMode>('absolute');
+  const [posRotMode, setPosRotMode] = useState<PosRotMode>(multi ? 'relative' : 'absolute');
   const [ratioLocked, setRatioLocked] = useState(true);
   const bbox = computeShapesBoundingBox(layer.shapes);
+
+  // In multi-layer mode, force relative
+  const effectivePosRotMode = multi ? 'relative' : posRotMode;
 
   // Local text state so the user can type freely (including commas)
   const [localScaleX, setLocalScaleX] = useState(String(layer.scaleX));
@@ -50,6 +56,9 @@ export default function LayerTransformPanel({ layer, onUpdate, originPosition = 
   const [deltaX, setDeltaX] = useState('0');
   const [deltaY, setDeltaY] = useState('0');
   const [deltaRot, setDeltaRot] = useState('0');
+  // Delta inputs for relative scaling
+  const [deltaScaleX, setDeltaScaleX] = useState('1');
+  const [deltaScaleY, setDeltaScaleY] = useState('1');
 
   // Derived absolute sizes
   const naturalW = bbox?.width ?? 0;
@@ -85,6 +94,23 @@ export default function LayerTransformPanel({ layer, onUpdate, originPosition = 
     setLocalPivotY(String(Math.round(dy * 100) / 100));
   }, [layer.scaleX, layer.scaleY, layer.offsetX, layer.offsetY, layer.rotation, naturalW, naturalH, pivotWorldX, pivotWorldY, originPosition, workH]);
 
+  // Send preview delta to parent when relative values change
+  useEffect(() => {
+    if (!onPreviewChange) return;
+    if (effectivePosRotMode !== 'relative') {
+      onPreviewChange({ deltaX: 0, deltaY: 0, deltaRotation: 0 });
+      return;
+    }
+    const dx = parseDecimal(deltaX);
+    const dy = parseDecimal(deltaY);
+    const dr = parseDecimal(deltaRot);
+    onPreviewChange({
+      deltaX: Number.isFinite(dx) ? dx : 0,
+      deltaY: Number.isFinite(dy) ? dy : 0,
+      deltaRotation: Number.isFinite(dr) ? dr : 0,
+    });
+  }, [deltaX, deltaY, deltaRot, effectivePosRotMode, onPreviewChange]);
+
   /** Commit absolute pivot position — compute the required offset. */
   const commitPivotPos = useCallback((axis: 'x' | 'y', raw: string) => {
     const v = parseDecimal(raw);
@@ -103,14 +129,16 @@ export default function LayerTransformPanel({ layer, onUpdate, originPosition = 
     const dx = parseDecimal(deltaX);
     const dy = parseDecimal(deltaY);
     if (Number.isFinite(dx) && Number.isFinite(dy)) {
-      onUpdate(layer.id, {
-        offsetX: layer.offsetX + dx,
-        offsetY: layer.offsetY + dy,
-      });
+      for (const l of layers) {
+        onUpdate(l.id, {
+          offsetX: l.offsetX + dx,
+          offsetY: l.offsetY + dy,
+        });
+      }
     }
     setDeltaX('0');
     setDeltaY('0');
-  }, [layer.id, layer.offsetX, layer.offsetY, deltaX, deltaY, onUpdate]);
+  }, [layers, deltaX, deltaY, onUpdate]);
 
   const commitScale = useCallback((axis: 'x' | 'y', raw: string) => {
     const v = parseDecimal(raw);
@@ -146,27 +174,47 @@ export default function LayerTransformPanel({ layer, onUpdate, originPosition = 
   const commitDeltaRot = useCallback(() => {
     const dr = parseDecimal(deltaRot);
     if (Number.isFinite(dr)) {
-      onUpdate(layer.id, { rotation: ((layer.rotation ?? 0) + dr) % 360 });
+      for (const l of layers) {
+        onUpdate(l.id, { rotation: ((l.rotation ?? 0) + dr) % 360 });
+      }
     }
     setDeltaRot('0');
-  }, [layer.id, layer.rotation, deltaRot, onUpdate]);
+  }, [layers, deltaRot, onUpdate]);
+
+  /** Apply a relative scale multiplier to all selected layers and reset. */
+  const commitDeltaScale = useCallback(() => {
+    const dsx = parseDecimal(deltaScaleX);
+    const dsy = ratioLocked ? dsx : parseDecimal(deltaScaleY);
+    if (!Number.isFinite(dsx) || dsx <= 0 || !Number.isFinite(dsy) || dsy <= 0) return;
+    for (const l of layers) {
+      onUpdate(l.id, { scaleX: l.scaleX * dsx, scaleY: l.scaleY * dsy });
+    }
+    setDeltaScaleX('1');
+    setDeltaScaleY('1');
+  }, [layers, deltaScaleX, deltaScaleY, ratioLocked, onUpdate]);
 
   /**
    * Flip mirror and adjust the layer offset so the pivot stays at the same world position.
    */
   const handleFlipX = useCallback(() => {
-    const { px } = getPivotCoords(bbox, layer.pivot ?? 'tl');
-    const newMirrorX = !(layer.mirrorX ?? false);
-    const adjustment = newMirrorX ? 2 * layer.scaleX * px : -2 * layer.scaleX * px;
-    onUpdate(layer.id, { mirrorX: newMirrorX, offsetX: layer.offsetX + adjustment });
-  }, [layer, bbox, onUpdate]);
+    for (const l of layers) {
+      const lbbox = computeShapesBoundingBox(l.shapes);
+      const { px } = getPivotCoords(lbbox, l.pivot ?? 'tl');
+      const newMirrorX = !(l.mirrorX ?? false);
+      const adjustment = newMirrorX ? 2 * l.scaleX * px : -2 * l.scaleX * px;
+      onUpdate(l.id, { mirrorX: newMirrorX, offsetX: l.offsetX + adjustment });
+    }
+  }, [layers, onUpdate]);
 
   const handleFlipY = useCallback(() => {
-    const { py } = getPivotCoords(bbox, layer.pivot ?? 'tl');
-    const newMirrorY = !(layer.mirrorY ?? false);
-    const adjustment = newMirrorY ? 2 * layer.scaleY * py : -2 * layer.scaleY * py;
-    onUpdate(layer.id, { mirrorY: newMirrorY, offsetY: layer.offsetY + adjustment });
-  }, [layer, bbox, onUpdate]);
+    for (const l of layers) {
+      const lbbox = computeShapesBoundingBox(l.shapes);
+      const { py } = getPivotCoords(lbbox, l.pivot ?? 'tl');
+      const newMirrorY = !(l.mirrorY ?? false);
+      const adjustment = newMirrorY ? 2 * l.scaleY * py : -2 * l.scaleY * py;
+      onUpdate(l.id, { mirrorY: newMirrorY, offsetY: l.offsetY + adjustment });
+    }
+  }, [layers, onUpdate]);
 
   const inputClass = 'w-full text-xs bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-gray-100 focus:outline-none focus:border-orange-500';
   const btnActive = 'text-xs px-1.5 py-0.5 rounded bg-orange-600 text-white font-medium';
@@ -177,15 +225,20 @@ export default function LayerTransformPanel({ layer, onUpdate, originPosition = 
       {/* ── Position & Rotation abs/rel toggle ── */}
       <div className="flex items-center gap-1 mb-0.5">
         <label className="text-xs text-gray-500 flex-1">Position &amp; Rotation</label>
-        <button onClick={() => { setPosRotMode('absolute'); setDeltaX('0'); setDeltaY('0'); setDeltaRot('0'); }} className={posRotMode === 'absolute' ? btnActive : btnInactive}>Abs</button>
-        <button onClick={() => { setPosRotMode('relative'); setDeltaX('0'); setDeltaY('0'); setDeltaRot('0'); }} className={posRotMode === 'relative' ? btnActive : btnInactive}>Rel</button>
+        {!multi && (
+          <>
+            <button onClick={() => { setPosRotMode('absolute'); setDeltaX('0'); setDeltaY('0'); setDeltaRot('0'); }} className={effectivePosRotMode === 'absolute' ? btnActive : btnInactive}>Abs</button>
+            <button onClick={() => { setPosRotMode('relative'); setDeltaX('0'); setDeltaY('0'); setDeltaRot('0'); }} className={effectivePosRotMode === 'relative' ? btnActive : btnInactive}>Rel</button>
+          </>
+        )}
+        {multi && <span className="text-xs text-gray-600 italic">relative</span>}
       </div>
 
       {/* ── Position ── */}
       <div>
         <label className="text-xs text-gray-500">Position</label>
 
-        {posRotMode === 'absolute' ? (
+        {effectivePosRotMode === 'absolute' ? (
           <div className="flex items-end gap-1">
             <div className="flex-1">
               <label className="text-xs text-gray-500">X</label>
@@ -253,18 +306,57 @@ export default function LayerTransformPanel({ layer, onUpdate, originPosition = 
       <div>
         <div className="flex items-center gap-1 mb-0.5">
           <label className="text-xs text-gray-500 flex-1">Size</label>
-          <button onClick={() => setSizeMode('scale')} className={sizeMode === 'scale' ? btnActive : btnInactive}>Scale ×</button>
-          <button onClick={() => setSizeMode('absolute')} className={sizeMode === 'absolute' ? btnActive : btnInactive}>mm</button>
+          {!multi && (
+            <>
+              <button onClick={() => setSizeMode('scale')} className={sizeMode === 'scale' ? btnActive : btnInactive}>Scale ×</button>
+              <button onClick={() => setSizeMode('absolute')} className={sizeMode === 'absolute' ? btnActive : btnInactive}>mm</button>
+            </>
+          )}
+          {multi && <span className="text-xs text-gray-600 italic">relative ×</span>}
           <button
             onClick={() => setRatioLocked(!ratioLocked)}
-            className={`flex-shrink-0 text-xs px-1 py-0.5 rounded transition-colors ${ratioLocked ? 'bg-orange-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
+            className={`flex-shrink-0 text-xs px-1.5 py-0.5 rounded transition-colors ${ratioLocked ? 'bg-orange-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
             title={ratioLocked ? 'Aspect ratio locked' : 'Aspect ratio unlocked'}
           >
-            {ratioLocked ? '🔒' : '🔓'}
+            <FontAwesomeIcon icon={ratioLocked ? faLock : faLockOpen} />
           </button>
         </div>
 
-        {sizeMode === 'scale' ? (
+        {multi ? (
+          /* Multi-layer: relative scale multiplier */
+          <div className="flex items-end gap-1">
+            <div className="flex-1">
+              <label className="text-xs text-gray-500">×X</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={deltaScaleX}
+                onChange={e => setDeltaScaleX(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') commitDeltaScale(); }}
+                className={inputClass}
+                placeholder="1.0"
+              />
+            </div>
+            {!ratioLocked && (
+              <div className="flex-1">
+                <label className="text-xs text-gray-500">×Y</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={deltaScaleY}
+                  onChange={e => setDeltaScaleY(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') commitDeltaScale(); }}
+                  className={inputClass}
+                  placeholder="1.0"
+                />
+              </div>
+            )}
+            <button
+              onClick={commitDeltaScale}
+              className="text-xs px-2 py-0.5 rounded bg-orange-600 hover:bg-orange-500 text-white transition-colors flex-shrink-0"
+            >Scale</button>
+          </div>
+        ) : sizeMode === 'scale' ? (
           <div className="flex items-end gap-1">
             <div className="flex-1">
               <label className="text-xs text-gray-500">X</label>
@@ -326,7 +418,7 @@ export default function LayerTransformPanel({ layer, onUpdate, originPosition = 
       <div>
         <label className="text-xs text-gray-500">Rotation</label>
 
-        {posRotMode === 'absolute' ? (
+        {effectivePosRotMode === 'absolute' ? (
           <div className="flex items-end gap-1">
             <div className="flex-1">
               <input
@@ -380,29 +472,31 @@ export default function LayerTransformPanel({ layer, onUpdate, originPosition = 
             ><FontAwesomeIcon icon={faArrowsUpDown} className="text-xs" /></button>
           </div>
         </div>
-        <div>
-          <label className="text-xs text-gray-500 mb-0.5 block">Pivot</label>
-          <div className="inline-grid grid-cols-3 gap-px">
-            {PIVOT_GRID.map((row) =>
-              row.map((anchor) => (
-                <button
-                  key={anchor}
-                  onClick={() => onUpdate(layer.id, { pivot: anchor })}
-                  className={`w-4 h-4 rounded-sm transition-colors ${
-                    (layer.pivot ?? 'tl') === anchor
-                      ? 'bg-orange-500'
-                      : 'bg-gray-700 hover:bg-gray-600'
-                  }`}
-                  title={anchor}
-                />
-              ))
-            )}
+        {!multi && (
+          <div className="ml-1">
+            <label className="text-xs text-gray-500 mb-0.5 block">Pivot</label>
+            <div className="inline-grid grid-cols-3 gap-px">
+              {PIVOT_GRID.map((row) =>
+                row.map((anchor) => (
+                  <button
+                    key={anchor}
+                    onClick={() => onUpdate(layer.id, { pivot: anchor })}
+                    className={`w-4 h-4 rounded-sm transition-colors ${
+                      (layer.pivot ?? 'tl') === anchor
+                        ? 'bg-orange-500'
+                        : 'bg-gray-700 hover:bg-gray-600'
+                    }`}
+                    title={anchor}
+                  />
+                ))
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Info line */}
-      {bbox && (
+      {!multi && bbox && (
         <p className="text-xs text-gray-600">
           {naturalW.toFixed(1)}×{naturalH.toFixed(1)} mm
           {sizeMode === 'scale' && ` → ${absW.toFixed(1)}×${absH.toFixed(1)} mm`}
