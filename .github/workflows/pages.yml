@@ -21,6 +21,14 @@ jobs:
         working-directory: packages/frontend
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        run: |
+          TAG=$(git tag --list 'v*' --sort=-version:refname | head -n 1)
+          echo "tag=${TAG:-dev}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -36,6 +44,7 @@ jobs:
         run: npm run build
         env:
           VITE_BASE_PATH: '/laserflow/'
+          VITE_APP_VERSION: ${{ steps.version.outputs.tag }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    name: Bump version and release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Determine version bump
+        id: bump
+        run: |
+          LABELS='${{ toJson(github.event.pull_request.labels.*.name) }}'
+          if echo "$LABELS" | grep -qi '"MAJOR"'; then
+            echo "type=major" >> "$GITHUB_OUTPUT"
+          elif echo "$LABELS" | grep -qi '"MINOR"'; then
+            echo "type=minor" >> "$GITHUB_OUTPUT"
+          else
+            echo "type=patch" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute next version
+        id: version
+        run: |
+          BUMP_TYPE="${{ steps.bump.outputs.type }}"
+
+          # Get the latest semver tag, default to v0.0.0 if none exists
+          LATEST=$(git tag --list 'v*' --sort=-version:refname | head -n 1)
+          if [ -z "$LATEST" ]; then
+            LATEST="v0.0.0"
+          fi
+
+          # Strip leading 'v'
+          VERSION="${LATEST#v}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+
+          if [ "$BUMP_TYPE" = "major" ]; then
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+          elif [ "$BUMP_TYPE" = "minor" ]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          else
+            PATCH=$((PATCH + 1))
+          fi
+
+          NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "new=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Bumping ${LATEST} -> ${NEW_VERSION} (${BUMP_TYPE})"
+
+      - name: Update package.json versions
+        run: |
+          VERSION="${{ steps.version.outputs.new }}"
+          # Strip leading 'v' for package.json
+          PKG_VERSION="${VERSION#v}"
+
+          # Update root package.json
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '${PKG_VERSION}';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+          # Update frontend package.json
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('packages/frontend/package.json', 'utf8'));
+            pkg.version = '${PKG_VERSION}';
+            fs.writeFileSync('packages/frontend/package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+          # Update backend package.json
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('packages/backend/package.json', 'utf8'));
+            pkg.version = '${PKG_VERSION}';
+            fs.writeFileSync('packages/backend/package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      - name: Commit version bump
+        run: |
+          VERSION="${{ steps.version.outputs.new }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json packages/frontend/package.json packages/backend/package.json
+          git commit -m "chore: release ${VERSION} [skip ci]"
+          git tag "${VERSION}"
+          git push origin main --follow-tags
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.new }}
+          release_name: ${{ steps.version.outputs.new }}
+          body: |
+            Automated release ${{ steps.version.outputs.new }}
+
+            Merged PR: #${{ github.event.pull_request.number }} — ${{ github.event.pull_request.title }}
+          draft: false
+          prerelease: false
