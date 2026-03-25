@@ -28,7 +28,7 @@ function fmt(n: number): string {
 }
 
 /** Maximum distance (mm) between consecutive linearized points on a curve. */
-const CURVE_TOLERANCE = 0.5;
+const CURVE_TOLERANCE = 0.1;
 const MIN_SEGMENTS = 2;
 
 function adaptiveSegments(controlPolygonLength: number): number {
@@ -92,6 +92,12 @@ function pathToGcode(d: string, feedRate: number, sValue: number, transform: Pat
     .transform(SVGPathDataTransformer.A_TO_C());
   const commands = pathData.commands;
 
+  // Scale factor so that the tolerance is applied in output (mm) space,
+  // not in the raw SVG coordinate space.  Without this, curves that are
+  // scaled up by the layer transform would keep the same segment count,
+  // producing visibly rough output.
+  const maxScale = Math.max(Math.abs(transform.scaleX), Math.abs(transform.scaleY)) || 1;
+
   let startX = 0;
   let startY = 0;
   let curX = 0;
@@ -116,7 +122,12 @@ function pathToGcode(d: string, feedRate: number, sValue: number, transform: Pat
         break;
       }
       case SVGPathData.CURVE_TO: {
-        const pts = cubicBezierPoints(curX, curY, cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.x, cmd.y);
+        const polyLen =
+          Math.hypot(cmd.x1 - curX, cmd.y1 - curY) +
+          Math.hypot(cmd.x2 - cmd.x1, cmd.y2 - cmd.y1) +
+          Math.hypot(cmd.x - cmd.x2, cmd.y - cmd.y2);
+        const segs = adaptiveSegments(polyLen * maxScale);
+        const pts = cubicBezierPoints(curX, curY, cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.x, cmd.y, segs);
         for (const [px, py] of pts) {
           const [tx, ty] = applyTransform(px, py, transform);
           lines.push(`G1 X${fmt(tx)} Y${fmt(ty)} F${feedRate} S${sValue}`);
@@ -126,7 +137,11 @@ function pathToGcode(d: string, feedRate: number, sValue: number, transform: Pat
         break;
       }
       case SVGPathData.QUAD_TO: {
-        const pts = quadraticBezierPoints(curX, curY, cmd.x1, cmd.y1, cmd.x, cmd.y);
+        const polyLen =
+          Math.hypot(cmd.x1 - curX, cmd.y1 - curY) +
+          Math.hypot(cmd.x - cmd.x1, cmd.y - cmd.y1);
+        const segs = adaptiveSegments(polyLen * maxScale);
+        const pts = quadraticBezierPoints(curX, curY, cmd.x1, cmd.y1, cmd.x, cmd.y, segs);
         for (const [px, py] of pts) {
           const [tx, ty] = applyTransform(px, py, transform);
           lines.push(`G1 X${fmt(tx)} Y${fmt(ty)} F${feedRate} S${sValue}`);

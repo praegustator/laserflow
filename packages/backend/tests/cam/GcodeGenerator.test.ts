@@ -174,4 +174,53 @@ describe('GcodeGenerator', () => {
     // Larger curves should produce more segments
     expect(largeG1).toBeGreaterThan(smallG1);
   });
+
+  it('produces more segments when layer transform scales up', () => {
+    // A curve linearized at scale=1 should have fewer G1 segments than the
+    // same curve linearized at scale=3, because the output tolerance is
+    // applied in mm (post-transform) space.
+    const curvePath = 'M 0 0 C 10 20 30 20 40 0';
+    const ops: Operation[] = [{ id: 'op', type: 'cut', feedRate: 600, power: 100, passes: 1 }];
+
+    // scale=1
+    const geo1: PathGeometry[] = [{ d: curvePath, layerId: 'L' }];
+    const t1 = { L: { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 } };
+    const g1Count = generateGcode(geo1, ops, defaultProfile, t1)
+      .split('\n').filter(l => l.startsWith('G1')).length;
+
+    // scale=3
+    const t3 = { L: { offsetX: 0, offsetY: 0, scaleX: 3, scaleY: 3 } };
+    const g3Count = generateGcode(geo1, ops, defaultProfile, t3)
+      .split('\n').filter(l => l.startsWith('G1')).length;
+
+    // 3× scale must produce roughly 3× the segments
+    expect(g3Count).toBeGreaterThan(g1Count * 2);
+  });
+
+  it('keeps maximum output segment length within tolerance', () => {
+    // Circle linearized with a scale=2 transform.  Every consecutive pair of
+    // output G1 points must be ≤ 0.15 mm apart (CURVE_TOLERANCE = 0.1 plus a
+    // small margin for parametric non-uniformity).
+    const circlePath = 'M 0 50 A 50 50 0 1 0 100 50 A 50 50 0 1 0 0 50 Z';
+    const ops: Operation[] = [{ id: 'op', type: 'cut', feedRate: 600, power: 100, passes: 1 }];
+    const geo: PathGeometry[] = [{ d: circlePath, layerId: 'L' }];
+    const t = { L: { offsetX: 0, offsetY: 0, scaleX: 2, scaleY: 2 } };
+
+    const gcode = generateGcode(geo, ops, defaultProfile, t);
+    const coords = gcode.split('\n')
+      .filter(l => l.startsWith('G1'))
+      .map(l => {
+        const xm = l.match(/X([\d.-]+)/);
+        const ym = l.match(/Y([\d.-]+)/);
+        return [parseFloat(xm?.[1] ?? '0'), parseFloat(ym?.[1] ?? '0')];
+      });
+
+    let maxDist = 0;
+    for (let i = 1; i < coords.length; i++) {
+      const d = Math.hypot(coords[i][0] - coords[i - 1][0], coords[i][1] - coords[i - 1][1]);
+      if (d > maxDist) maxDist = d;
+    }
+
+    expect(maxDist).toBeLessThan(0.15);
+  });
 });
