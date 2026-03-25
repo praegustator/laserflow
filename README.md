@@ -4,87 +4,37 @@
 
 LaserFlow is an open-source, browser-based CAM (Computer-Aided Manufacturing) tool and machine controller for GRBL-compatible laser cutters and engravers. Import SVG artwork, arrange operations across layers, generate G-code, and stream it directly to your machine — all from a single web interface.
 
----
-
-## Table of Contents
-
-- [Features](#features)
-- [Quick Start](#quick-start)
-  - [One-Line Installer](#one-line-installer)
-  - [Manual Installation](#manual-installation)
-- [Running the Application](#running-the-application)
-  - [Development Mode](#development-mode)
-  - [Production Build](#production-build)
-  - [Docker](#docker)
-- [Architecture Overview](#architecture-overview)
-- [Configuration](#configuration)
-- [Development Guide](#development-guide)
-  - [Project Structure](#project-structure)
-  - [Available Scripts](#available-scripts)
-  - [Tech Stack](#tech-stack)
-- [Contributing](#contributing)
-- [License](#license)
-
----
-
-## Features
-
-| Feature | Description |
-|---------|-------------|
-| **SVG Import** | Upload SVG files and automatically parse all paths and shapes |
-| **Layer System** | Organize shapes into named layers with visibility, scale, offset, rotation, and mirror controls |
-| **Operations** | Assign cut / engrave / ignore operations with per-operation feed rate, laser power, passes, and Z-offset |
-| **Material Presets** | Save and reuse material configurations (wood, acrylic, leather, …) |
-| **Machine Profiles** | Store work-area dimensions and speed limits for different machines |
-| **G-code Generation** | Convert your design into optimised G-code ready for GRBL |
-| **G-code Preview** | Visualise the generated toolpath before sending |
-| **Real-Time Control** | Stream G-code to your machine with live progress, ETA, and elapsed time |
-| **Machine Status** | Monitor position, feed rate, spindle speed, and machine state in real time |
-| **Serial Console** | Inspect raw serial communication between the app and the machine |
-| **Keyboard Shortcuts** | Efficient operator workflow without lifting your hands from the keyboard |
-| **Project Versioning** | Create named snapshots and restore previous states |
-| **Docker Ready** | One-command deployment with Docker Compose |
-
----
-
 ## Quick Start
-
-### One-Line Installer
-
-The easiest way to get LaserFlow running on Linux is to use the install script:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/praegustator/laserflow/main/install.sh | sh
 ```
 
-The script will:
-1. Detect or install **Node.js 20** (via [nvm](https://github.com/nvm-sh/nvm) if needed)
-2. Clone this repository
-3. Run `npm install` to fetch all dependencies
-4. Start both the backend and frontend in development mode
+The script will: detect / install **Node.js 20** –> clone repo –> `npm install` –> start backend + frontend in dev mode.
 
-> **Note:** Running scripts piped directly from the internet is a convenience — review [`install.sh`](install.sh) first if you prefer.
+## Features
 
----
+* 🗂️ Organize your workspace with projects (support versioning)
+* 🖼️ Import SVG files and parse all paths and shapes
+* 🧩 Organize shapes into layers, manipulate them with scale, offset, rotation, and mirror controls
+* ✂️ Assign cut / engrave / ignore operations
+* 👁️ Preview G-code in a dedicated preview tool
+* 📡 Live stream G-code to the laser and monitor the state, live progress, ETA in real time
+* ♻️ Save and reuse material and machine configurations
+* 🧪 Inspect raw serial communication between the app and the machine
 
-### Manual Installation
+
+## Manual Installation
 
 **Prerequisites**
 
-| Requirement | Minimum Version | Notes |
-|-------------|-----------------|-------|
-| Node.js | 18 LTS | 20 LTS recommended |
-| npm | 9 | bundled with Node 18+ |
-| Git | any recent | for cloning |
+You will need Node.js (recommended version 20 LTS) and `git` for cloning.
 
 **Steps**
 
 ```sh
-# 1. Clone the repository
 git clone https://github.com/praegustator/laserflow.git
 cd laserflow
-
-# 2. Install all dependencies (monorepo — installs both packages at once)
 npm install
 ```
 
