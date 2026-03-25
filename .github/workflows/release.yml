@@ -19,11 +19,6 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
       - name: Determine version bump
         id: bump
         run: |
@@ -68,56 +63,20 @@ jobs:
           echo "new=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
           echo "Bumping ${LATEST} -> ${NEW_VERSION} (${BUMP_TYPE})"
 
-      - name: Update package.json versions
-        run: |
-          VERSION="${{ steps.version.outputs.new }}"
-          # Strip leading 'v' for package.json
-          PKG_VERSION="${VERSION#v}"
-
-          # Update root package.json
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-            pkg.version = '${PKG_VERSION}';
-            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
-
-          # Update frontend package.json
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('packages/frontend/package.json', 'utf8'));
-            pkg.version = '${PKG_VERSION}';
-            fs.writeFileSync('packages/frontend/package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
-
-          # Update backend package.json
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('packages/backend/package.json', 'utf8'));
-            pkg.version = '${PKG_VERSION}';
-            fs.writeFileSync('packages/backend/package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
-
-      - name: Commit version bump
+      - name: Create and push tag
         run: |
           VERSION="${{ steps.version.outputs.new }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json packages/frontend/package.json packages/backend/package.json
-          git commit -m "chore: release ${VERSION} [skip ci]"
           git tag "${VERSION}"
-          git push origin main --follow-tags
+          git push origin "${VERSION}"
 
       - name: Create GitHub Release
-        uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.version.outputs.new }}
-          release_name: ${{ steps.version.outputs.new }}
-          body: |
-            Automated release ${{ steps.version.outputs.new }}
-
-            Merged PR: #${{ github.event.pull_request.number }} — ${{ github.event.pull_request.title }}
-          draft: false
-          prerelease: false
+        run: |
+          VERSION="${{ steps.version.outputs.new }}"
+          NOTES="Automated release ${VERSION}"$'\n\n'"Merged PR: #${{ github.event.pull_request.number }} — ${{ github.event.pull_request.title }}"
+          gh release create "${VERSION}" \
+            --title "${VERSION}" \
+            --notes "${NOTES}"
