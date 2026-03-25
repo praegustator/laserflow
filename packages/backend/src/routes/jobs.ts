@@ -206,10 +206,10 @@ export function registerRoutes(app: FastifyInstance): void {
   // Emergency stop: abort current job and send GRBL soft-reset
   app.post('/api/emergency-stop', async (_req, reply) => {
     jobEngine.abort();
-    // Also reset all running/paused jobs to idle
+    // Also reset all running/paused jobs to error
     for (const job of jobRepo.findAll()) {
       if (job.status === 'running' || job.status === 'paused') {
-        job.status = 'idle';
+        job.status = 'error';
         job.errorMessage = 'Emergency stop';
         jobRepo.save(job);
       }
@@ -217,8 +217,8 @@ export function registerRoutes(app: FastifyInstance): void {
     // Send soft-reset to GRBL if connected
     if (serialManager.getStatus() === 'connected') {
       const resetChar = String.fromCharCode(0x18);
-      try { await serialManager.sendCommand(resetChar); } catch { /* ignore */ }
-      try { await serialManager.sendCommand('M5'); } catch { /* ignore - turn off laser */ }
+      try { await serialManager.sendCommand(resetChar); } catch (e) { app.log.warn('Emergency stop: soft-reset failed: %s', e); }
+      try { await serialManager.sendCommand('M5'); } catch (e) { app.log.warn('Emergency stop: M5 failed: %s', e); }
     }
     return reply.send({ status: 'stopped' });
   });

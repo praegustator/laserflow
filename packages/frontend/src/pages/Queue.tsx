@@ -331,7 +331,7 @@ export default function Queue() {
     progress: jobProgress[job.id],
     selected: selectedIds.has(job.id),
     onSelect: handleSelect,
-    onStart: () => { void wrap(() => startJob(job.id), 'Job started')(); },
+    onStart: () => { void wrap(() => startJob(job.id), 'Job running — sending to machine')(); },
     onPause: () => { void wrap(() => pauseJob(job.id), 'Job paused')(); },
     onResume: () => { void wrap(() => resumeJob(job.id), 'Job resumed')(); },
     onAbort: () => { void wrap(() => abortJob(job.id), 'Job cancelled')(); },

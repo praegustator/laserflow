@@ -113,7 +113,7 @@ export const useJobStore = create<JobStore>((set, get) => ({
       activeJobId: null,
       jobs: s.jobs.map((j) =>
         j.status === 'running' || j.status === 'paused'
-          ? { ...j, status: 'idle', errorMessage: 'Emergency stop' }
+          ? { ...j, status: 'error', errorMessage: 'Emergency stop' }
           : j,
       ),
     }));
