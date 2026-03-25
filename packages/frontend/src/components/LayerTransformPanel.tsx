@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Layer, PivotAnchor } from '../types';
-import { computeShapesBoundingBox, type BBox } from '../utils/geometry';
+import { computeShapesBoundingBox, computeMultiLayerWorldBBox, type BBox } from '../utils/geometry';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowsLeftRight, faArrowsUpDown, faLock, faLockOpen } from '@fortawesome/free-solid-svg-icons';
 
@@ -41,12 +41,15 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
   const multi = layers.length > 1;
   const layer = layers[0]; // Primary layer for single-layer mode
   const [sizeMode, setSizeMode] = useState<SizeMode>('scale');
-  const [posRotMode, setPosRotMode] = useState<PosRotMode>(multi ? 'relative' : 'absolute');
+  const [posRotMode, setPosRotMode] = useState<PosRotMode>('absolute');
   const [ratioLocked, setRatioLocked] = useState(true);
   const bbox = computeShapesBoundingBox(layer.shapes);
 
-  // In multi-layer mode, force relative
-  const effectivePosRotMode = multi ? 'relative' : posRotMode;
+  // Multi-layer pivot anchor (for the combined bounding box)
+  const [multiPivot, setMultiPivot] = useState<PivotAnchor>('tl');
+
+  // Allow both absolute and relative for multi-layer
+  const effectivePosRotMode = posRotMode;
 
   // Local text state so the user can type freely (including commas)
   const [localScaleX, setLocalScaleX] = useState(String(layer.scaleX));
@@ -60,7 +63,7 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
   const [deltaScaleX, setDeltaScaleX] = useState('1');
   const [deltaScaleY, setDeltaScaleY] = useState('1');
 
-  // Derived absolute sizes
+  // Derived absolute sizes (single layer)
   const naturalW = bbox?.width ?? 0;
   const naturalH = bbox?.height ?? 0;
   const absW = naturalW * layer.scaleX;
@@ -68,16 +71,33 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
   const [localAbsW, setLocalAbsW] = useState(String(Math.round(absW * 100) / 100));
   const [localAbsH, setLocalAbsH] = useState(String(Math.round(absH * 100) / 100));
 
-  // Compute pivot world position for display
+  // Compute pivot world position for display (single-layer)
   const { px: pivotNatX, py: pivotNatY } = getPivotCoords(bbox, layer.pivot ?? 'tl');
   const pivotWorldX = layer.offsetX + layer.scaleX * pivotNatX;
   const pivotWorldY = layer.offsetY + layer.scaleY * pivotNatY;
 
+  // Multi-layer combined world bounding box
+  const multiWorldBBox = useMemo(
+    () => multi ? computeMultiLayerWorldBBox(layers) : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [multi, ...layers.map(l => `${l.id}:${l.offsetX}:${l.offsetY}:${l.scaleX}:${l.scaleY}:${l.rotation}:${l.mirrorX}:${l.mirrorY}`)]
+  );
+
+  // Multi-layer pivot point (on the combined world bbox)
+  const multiPivotWorld = useMemo(() => {
+    if (!multiWorldBBox) return { x: 0, y: 0 };
+    return getPivotCoords(multiWorldBBox, multiPivot);
+  }, [multiWorldBBox, multiPivot]);
+
+  // Choose which pivot position to show based on mode
+  const displayPivotX = multi ? multiPivotWorld.px : pivotWorldX;
+  const displayPivotY = multi ? multiPivotWorld.py : pivotWorldY;
+
   // Convert Y to user-facing coordinate: for bottom-left origin, Y=0 is at the bottom (workH in SVG space)
-  const displayY = originPosition === 'bottom-left' ? workH - pivotWorldY : pivotWorldY;
+  const displayY = originPosition === 'bottom-left' ? workH - displayPivotY : displayPivotY;
 
   // For absolute position inputs, show/edit the pivot world position (not the raw offset)
-  const [localPivotX, setLocalPivotX] = useState(String(Math.round(pivotWorldX * 100) / 100));
+  const [localPivotX, setLocalPivotX] = useState(String(Math.round(displayPivotX * 100) / 100));
   const [localPivotY, setLocalPivotY] = useState(String(Math.round(displayY * 100) / 100));
 
   // Sync local text state when the layer prop changes externally
@@ -89,10 +109,10 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
     const h = naturalH * layer.scaleY;
     setLocalAbsW(String(Math.round(w * 100) / 100));
     setLocalAbsH(String(Math.round(h * 100) / 100));
-    setLocalPivotX(String(Math.round(pivotWorldX * 100) / 100));
-    const dy = originPosition === 'bottom-left' ? workH - pivotWorldY : pivotWorldY;
+    setLocalPivotX(String(Math.round(displayPivotX * 100) / 100));
+    const dy = originPosition === 'bottom-left' ? workH - displayPivotY : displayPivotY;
     setLocalPivotY(String(Math.round(dy * 100) / 100));
-  }, [layer.scaleX, layer.scaleY, layer.offsetX, layer.offsetY, layer.rotation, naturalW, naturalH, pivotWorldX, pivotWorldY, originPosition, workH]);
+  }, [layer.scaleX, layer.scaleY, layer.offsetX, layer.offsetY, layer.rotation, naturalW, naturalH, displayPivotX, displayPivotY, originPosition, workH]);
 
   // Send preview delta to parent when relative values change
   useEffect(() => {
@@ -115,14 +135,32 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
   const commitPivotPos = useCallback((axis: 'x' | 'y', raw: string) => {
     const v = parseDecimal(raw);
     if (!Number.isFinite(v)) return;
-    if (axis === 'x') {
-      onUpdate(layer.id, { offsetX: v - layer.scaleX * pivotNatX });
+
+    if (multi) {
+      // Multi-layer: compute delta and apply to all layers
+      const svgTarget = axis === 'y' && originPosition === 'bottom-left' ? workH - v : v;
+      const currentVal = axis === 'x' ? displayPivotX : displayPivotY;
+      const delta = axis === 'y' && originPosition === 'bottom-left'
+        ? svgTarget - currentVal
+        : v - (axis === 'x' ? displayPivotX : displayY);
+      // Apply delta using the SVG coordinate directly
+      for (const l of layers) {
+        if (axis === 'x') {
+          onUpdate(l.id, { offsetX: l.offsetX + (svgTarget - displayPivotX) });
+        } else {
+          onUpdate(l.id, { offsetY: l.offsetY + (svgTarget - displayPivotY) });
+        }
+      }
     } else {
-      // For bottom-left origin, user Y is measured from bottom: svgY = workH - userY
-      const svgY = originPosition === 'bottom-left' ? workH - v : v;
-      onUpdate(layer.id, { offsetY: svgY - layer.scaleY * pivotNatY });
+      if (axis === 'x') {
+        onUpdate(layer.id, { offsetX: v - layer.scaleX * pivotNatX });
+      } else {
+        // For bottom-left origin, user Y is measured from bottom: svgY = workH - userY
+        const svgY = originPosition === 'bottom-left' ? workH - v : v;
+        onUpdate(layer.id, { offsetY: svgY - layer.scaleY * pivotNatY });
+      }
     }
-  }, [layer.id, layer.scaleX, layer.scaleY, pivotNatX, pivotNatY, onUpdate, originPosition, workH]);
+  }, [multi, layers, layer.id, layer.scaleX, layer.scaleY, pivotNatX, pivotNatY, displayPivotX, displayPivotY, displayY, onUpdate, originPosition, workH]);
 
   /** Apply a relative delta to the current offset and reset delta fields. */
   const commitDelta = useCallback(() => {
@@ -241,13 +279,8 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
       {/* ── Position & Rotation abs/rel toggle ── */}
       <div className="flex items-center gap-1 mb-0.5">
         <label className="text-xs text-gray-500 flex-1">Position &amp; Rotation</label>
-        {!multi && (
-          <>
-            <button onClick={() => { setPosRotMode('absolute'); setDeltaX('0'); setDeltaY('0'); setDeltaRot('0'); }} className={effectivePosRotMode === 'absolute' ? btnActive : btnInactive}>Abs</button>
-            <button onClick={() => { setPosRotMode('relative'); setDeltaX('0'); setDeltaY('0'); setDeltaRot('0'); }} className={effectivePosRotMode === 'relative' ? btnActive : btnInactive}>Rel</button>
-          </>
-        )}
-        {multi && <span className="text-xs text-gray-600 italic">relative</span>}
+        <button onClick={() => { setPosRotMode('absolute'); setDeltaX('0'); setDeltaY('0'); setDeltaRot('0'); }} className={effectivePosRotMode === 'absolute' ? btnActive : btnInactive}>Abs</button>
+        <button onClick={() => { setPosRotMode('relative'); setDeltaX('0'); setDeltaY('0'); setDeltaRot('0'); }} className={effectivePosRotMode === 'relative' ? btnActive : btnInactive}>Rel</button>
       </div>
 
       {/* ── Position ── */}
@@ -322,13 +355,14 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
       <div>
         <div className="flex items-center gap-1 mb-0.5">
           <label className="text-xs text-gray-500 flex-1">Size</label>
-          {!multi && effectivePosRotMode === 'absolute' && (
+          {effectivePosRotMode === 'absolute' && !multi && (
             <>
               <button onClick={() => setSizeMode('scale')} className={sizeMode === 'scale' ? btnActive : btnInactive}>Scale ×</button>
               <button onClick={() => setSizeMode('absolute')} className={sizeMode === 'absolute' ? btnActive : btnInactive}>mm</button>
             </>
           )}
-          {(multi || effectivePosRotMode === 'relative') && <span className="text-xs text-gray-600 italic">relative ×</span>}
+          {(multi && effectivePosRotMode === 'absolute') && <span className="text-xs text-gray-600 italic">{multiWorldBBox ? `${multiWorldBBox.width.toFixed(1)}×${multiWorldBBox.height.toFixed(1)} mm` : 'relative ×'}</span>}
+          {effectivePosRotMode === 'relative' && <span className="text-xs text-gray-600 italic">relative ×</span>}
           <button
             onClick={() => setRatioLocked(!ratioLocked)}
             className={`flex-shrink-0 text-xs px-1.5 py-0.5 rounded transition-colors ${ratioLocked ? 'bg-orange-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
@@ -338,7 +372,7 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
           </button>
         </div>
 
-        {(multi || effectivePosRotMode === 'relative') ? (
+        {(effectivePosRotMode === 'relative' || (multi && effectivePosRotMode === 'absolute')) ? (
           /* Relative scale multiplier (multi-layer or single layer in relative mode) */
           <div className="flex items-end gap-1">
             <div className="flex-1">
@@ -509,6 +543,27 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
             </div>
           </div>
         )}
+        {multi && effectivePosRotMode === 'absolute' && (
+          <div className="ml-1">
+            <label className="text-xs text-gray-500 mb-1 block">Pivot</label>
+            <div className="inline-grid grid-cols-3 gap-0.5">
+              {PIVOT_GRID.map((row) =>
+                row.map((anchor) => (
+                  <button
+                    key={anchor}
+                    onClick={() => setMultiPivot(anchor)}
+                    className={`w-4 h-4 rounded-sm transition-colors ${
+                      multiPivot === anchor
+                        ? 'bg-orange-500'
+                        : 'bg-gray-700 hover:bg-gray-600'
+                    }`}
+                    title={anchor}
+                  />
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Info line */}
@@ -517,6 +572,12 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
           {naturalW.toFixed(1)}×{naturalH.toFixed(1)} mm
           {sizeMode === 'scale' && ` → ${absW.toFixed(1)}×${absH.toFixed(1)} mm`}
           {' · pivot '}({pivotWorldX.toFixed(1)}, {displayY.toFixed(1)})
+        </p>
+      )}
+      {multi && multiWorldBBox && (
+        <p className="text-xs text-gray-600">
+          {multiWorldBBox.width.toFixed(1)}×{multiWorldBBox.height.toFixed(1)} mm
+          {' · pivot '}({displayPivotX.toFixed(1)}, {displayY.toFixed(1)})
         </p>
       )}
     </div>
