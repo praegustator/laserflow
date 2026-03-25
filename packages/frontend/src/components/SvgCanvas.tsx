@@ -156,8 +156,8 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, selecte
             ];
 
             // Inverse scale factor so bounding box / pivot stay constant screen size
-            const invSx = 1 / Math.abs(sxm || 1);
-            const invSy = 1 / Math.abs(sym || 1);
+            const invSx = 1 / Math.max(Math.abs(sxm), 0.001);
+            const invSy = 1 / Math.max(Math.abs(sym), 0.001);
             // Cross-hair arm length in shape-local units (constant visual size)
             const armX = 2 * invSx;
             const armY = 2 * invSy;

@@ -109,8 +109,8 @@ function bboxFromPaths(paths: string[]): BBox | null {
         continue;
       }
 
-      // CUBIC CURVE_TO (type 8 in some builds, we also check by property)
-      if ('x1' in cmd && 'y1' in cmd && 'x2' in cmd && 'y2' in cmd && 'x' in cmd && 'y' in cmd) {
+      // CUBIC CURVE_TO
+      if (type === SVGPathData.CURVE_TO) {
         const c = cmd as { x1: number; y1: number; x2: number; y2: number; x: number; y: number };
         // Start and end points are always on the curve
         expand(curX, bx);
@@ -130,7 +130,7 @@ function bboxFromPaths(paths: string[]): BBox | null {
       }
 
       // QUADRATIC CURVE_TO
-      if ('x1' in cmd && 'y1' in cmd && 'x' in cmd && 'y' in cmd && !('x2' in cmd)) {
+      if (type === SVGPathData.QUAD_TO) {
         const c = cmd as { x1: number; y1: number; x: number; y: number };
         expand(curX, bx);
         expand(curY, by);
