@@ -308,8 +308,8 @@ export default function OperationsPanel({ project, layers, originPosition, selec
     }
     try {
       await startJob(project.jobId);
-      addToast('success', 'Job started');
-      void navigate('/console');
+      addToast('success', 'Job sent to queue');
+      void navigate('/queue');
     } catch (err) {
       addToast('error', err instanceof Error ? err.message : 'Failed to start job');
     }

@@ -140,15 +140,17 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
     setDeltaY('0');
   }, [layers, deltaX, deltaY, onUpdate]);
 
+  /** Commit absolute scale, adjusting offset to keep pivot fixed. */
   const commitScale = useCallback((axis: 'x' | 'y', raw: string) => {
     const v = parseDecimal(raw);
     if (!Number.isFinite(v) || v <= 0) return;
-    if (ratioLocked) {
-      onUpdate(layer.id, { scaleX: v, scaleY: v });
-    } else {
-      onUpdate(layer.id, axis === 'x' ? { scaleX: v } : { scaleY: v });
-    }
-  }, [layer.id, ratioLocked, onUpdate]);
+    const newSx = (ratioLocked || axis === 'x') ? v : layer.scaleX;
+    const newSy = (ratioLocked || axis === 'y') ? v : layer.scaleY;
+    // Adjust offset so the pivot world position stays fixed
+    const newOffsetX = pivotWorldX - newSx * pivotNatX;
+    const newOffsetY = pivotWorldY - newSy * pivotNatY;
+    onUpdate(layer.id, { scaleX: newSx, scaleY: newSy, offsetX: newOffsetX, offsetY: newOffsetY });
+  }, [layer.id, layer.scaleX, layer.scaleY, ratioLocked, pivotWorldX, pivotWorldY, pivotNatX, pivotNatY, onUpdate]);
 
   const commitAbsSize = useCallback((axis: 'w' | 'h', raw: string) => {
     const v = parseDecimal(raw);
@@ -156,12 +158,13 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
     const refDim = axis === 'w' ? naturalW : naturalH;
     if (refDim === 0) return;
     const newScale = v / refDim;
-    if (ratioLocked) {
-      onUpdate(layer.id, { scaleX: newScale, scaleY: newScale });
-    } else {
-      onUpdate(layer.id, axis === 'w' ? { scaleX: newScale } : { scaleY: newScale });
-    }
-  }, [layer.id, ratioLocked, naturalW, naturalH, onUpdate]);
+    const newSx = (ratioLocked || axis === 'w') ? newScale : layer.scaleX;
+    const newSy = (ratioLocked || axis === 'h') ? newScale : layer.scaleY;
+    // Adjust offset so the pivot world position stays fixed
+    const newOffsetX = pivotWorldX - newSx * pivotNatX;
+    const newOffsetY = pivotWorldY - newSy * pivotNatY;
+    onUpdate(layer.id, { scaleX: newSx, scaleY: newSy, offsetX: newOffsetX, offsetY: newOffsetY });
+  }, [layer.id, layer.scaleX, layer.scaleY, ratioLocked, naturalW, naturalH, pivotWorldX, pivotWorldY, pivotNatX, pivotNatY, onUpdate]);
 
   const commitRotation = useCallback((raw: string) => {
     const v = parseDecimal(raw);
@@ -181,13 +184,26 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
     setDeltaRot('0');
   }, [layers, deltaRot, onUpdate]);
 
-  /** Apply a relative scale multiplier to all selected layers and reset. */
+  /** Apply a relative scale multiplier to selected layer(s) and reset.
+   *  Used for both multi-layer and single-layer relative mode.
+   *  Adjusts offset so each layer's pivot world position stays fixed. */
   const commitDeltaScale = useCallback(() => {
     const dsx = parseDecimal(deltaScaleX);
     const dsy = ratioLocked ? dsx : parseDecimal(deltaScaleY);
     if (!Number.isFinite(dsx) || dsx <= 0 || !Number.isFinite(dsy) || dsy <= 0) return;
     for (const l of layers) {
-      onUpdate(l.id, { scaleX: l.scaleX * dsx, scaleY: l.scaleY * dsy });
+      const lbbox = computeShapesBoundingBox(l.shapes);
+      const { px, py } = getPivotCoords(lbbox, l.pivot ?? 'tl');
+      const oldWorldX = l.offsetX + l.scaleX * px;
+      const oldWorldY = l.offsetY + l.scaleY * py;
+      const newSx = l.scaleX * dsx;
+      const newSy = l.scaleY * dsy;
+      onUpdate(l.id, {
+        scaleX: newSx,
+        scaleY: newSy,
+        offsetX: oldWorldX - newSx * px,
+        offsetY: oldWorldY - newSy * py,
+      });
     }
     setDeltaScaleX('1');
     setDeltaScaleY('1');
@@ -306,13 +322,13 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
       <div>
         <div className="flex items-center gap-1 mb-0.5">
           <label className="text-xs text-gray-500 flex-1">Size</label>
-          {!multi && (
+          {!multi && effectivePosRotMode === 'absolute' && (
             <>
               <button onClick={() => setSizeMode('scale')} className={sizeMode === 'scale' ? btnActive : btnInactive}>Scale ×</button>
               <button onClick={() => setSizeMode('absolute')} className={sizeMode === 'absolute' ? btnActive : btnInactive}>mm</button>
             </>
           )}
-          {multi && <span className="text-xs text-gray-600 italic">relative ×</span>}
+          {(multi || effectivePosRotMode === 'relative') && <span className="text-xs text-gray-600 italic">relative ×</span>}
           <button
             onClick={() => setRatioLocked(!ratioLocked)}
             className={`flex-shrink-0 text-xs px-1.5 py-0.5 rounded transition-colors ${ratioLocked ? 'bg-orange-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
@@ -322,8 +338,8 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
           </button>
         </div>
 
-        {multi ? (
-          /* Multi-layer: relative scale multiplier */
+        {(multi || effectivePosRotMode === 'relative') ? (
+          /* Relative scale multiplier (multi-layer or single layer in relative mode) */
           <div className="flex items-end gap-1">
             <div className="flex-1">
               <label className="text-xs text-gray-500">×X</label>
@@ -474,8 +490,8 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
         </div>
         {!multi && (
           <div className="ml-1">
-            <label className="text-xs text-gray-500 mb-0.5 block">Pivot</label>
-            <div className="inline-grid grid-cols-3 gap-px">
+            <label className="text-xs text-gray-500 mb-1 block">Pivot</label>
+            <div className="inline-grid grid-cols-3 gap-0.5">
               {PIVOT_GRID.map((row) =>
                 row.map((anchor) => (
                   <button
