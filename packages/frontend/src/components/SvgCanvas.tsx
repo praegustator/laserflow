@@ -227,24 +227,40 @@ export default function SvgCanvas({ layers, operations, selectedLayerIds, select
               >
                 {layer.shapes.map((shape) => {
                   const isShapeSelected = selectedShapeIds?.has(shape.id) ?? false;
+                  // When a layer is selected (single or multi), give its shapes a brighter stroke
+                  const strokeColor = isShapeSelected ? '#facc15' : isSelected ? '#ffffff' : color;
+                  const sw = isShapeSelected ? 0.8 : isSelected ? 0.6 : 0.4;
                   return (
-                    <path
-                      key={shape.id}
-                      d={shape.d}
-                      fill="none"
-                      stroke={isShapeSelected ? '#facc15' : color}
-                      strokeWidth={isShapeSelected ? 0.8 : isSelected ? 0.6 : 0.4}
-                      opacity={0.9}
-                      vectorEffect="non-scaling-stroke"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (onSelectShape) {
-                          onSelectShape(shape.id, layer.id, e);
-                        } else {
-                          onSelectLayer(layer.id);
-                        }
-                      }}
-                    />
+                    <g key={shape.id}>
+                      {/* Selection glow for shapes in selected layers */}
+                      {isSelected && !isShapeSelected && (
+                        <path
+                          d={shape.d}
+                          fill="none"
+                          stroke={color}
+                          strokeWidth={1.6}
+                          opacity={0.25}
+                          vectorEffect="non-scaling-stroke"
+                          style={{ pointerEvents: 'none' }}
+                        />
+                      )}
+                      <path
+                        d={shape.d}
+                        fill="none"
+                        stroke={strokeColor}
+                        strokeWidth={sw}
+                        opacity={0.9}
+                        vectorEffect="non-scaling-stroke"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onSelectShape) {
+                            onSelectShape(shape.id, layer.id, e);
+                          } else {
+                            onSelectLayer(layer.id);
+                          }
+                        }}
+                      />
+                    </g>
                   );
                 })}
                 {/* Bounding box and pivot point for selected layer — non-scaling */}
@@ -304,15 +320,28 @@ export default function SvgCanvas({ layers, operations, selectedLayerIds, select
             })
           )}
 
-          {/* Origin cross — positioned according to origin setting */}
+          {/* Origin cross and axis direction arrows */}
           {(() => {
             const ox = 0;
             const oy = originPosition === 'bottom-left' ? workH : 0;
+            // Arrow length in work-area mm
+            const arrLen = 15;
+            // Y arrow direction: for bottom-left, +Y goes up (SVG negative), for top-left +Y goes down (SVG positive)
+            const yDir = originPosition === 'bottom-left' ? -1 : 1;
+            const ah = 2; // arrowhead size
             return (
               <>
                 <circle cx={ox} cy={oy} r={1} fill="#f97316" />
                 <line x1={ox - 3} y1={oy} x2={ox + 3} y2={oy} stroke="#f97316" strokeWidth={0.3} />
                 <line x1={ox} y1={oy - 3} x2={ox} y2={oy + 3} stroke="#f97316" strokeWidth={0.3} />
+                {/* X axis arrow — always goes right */}
+                <line x1={ox} y1={oy} x2={ox + arrLen} y2={oy} stroke="#f97316" strokeWidth={0.5} opacity={0.7} />
+                <polygon points={`${ox + arrLen},${oy} ${ox + arrLen - ah},${oy - ah * 0.6} ${ox + arrLen - ah},${oy + ah * 0.6}`} fill="#f97316" opacity={0.7} />
+                <text x={ox + arrLen + 1.5} y={oy + 1.2} fill="#f97316" fontSize={4} opacity={0.8}>X</text>
+                {/* Y axis arrow */}
+                <line x1={ox} y1={oy} x2={ox} y2={oy + yDir * arrLen} stroke="#f97316" strokeWidth={0.5} opacity={0.7} />
+                <polygon points={`${ox},${oy + yDir * arrLen} ${ox - ah * 0.6},${oy + yDir * (arrLen - ah)} ${ox + ah * 0.6},${oy + yDir * (arrLen - ah)}`} fill="#f97316" opacity={0.7} />
+                <text x={ox + 1.5} y={oy + yDir * (arrLen + 4)} fill="#f97316" fontSize={4} opacity={0.8}>Y</text>
               </>
             );
           })()}
