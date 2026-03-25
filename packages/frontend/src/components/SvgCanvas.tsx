@@ -133,26 +133,10 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, selecte
             const rotation = layer.rotation ?? 0;
             const mX = layer.mirrorX ?? false;
             const mY = layer.mirrorY ?? false;
+            const sxm = mX ? -layer.scaleX : layer.scaleX;
+            const sym = mY ? -layer.scaleY : layer.scaleY;
 
-            // Build transform: translate, then rotate/mirror around the offset point, then scale
-            const parts: string[] = [];
-            parts.push(`translate(${layer.offsetX},${layer.offsetY})`);
-            parts.push(`scale(${mX ? -layer.scaleX : layer.scaleX},${mY ? -layer.scaleY : layer.scaleY})`);
-            if (rotation !== 0) {
-              // Rotate around the pivot point within the bounding box
-              const bbox = computeShapesBoundingBox(layer.shapes);
-              const pivot = layer.pivot ?? 'tl';
-              let cx = 0, cy = 0;
-              if (bbox) {
-                const col = pivot[1] === 'l' ? 0 : pivot[1] === 'c' ? 0.5 : 1;
-                const row = pivot[0] === 't' ? 0 : pivot[0] === 'm' ? 0.5 : 1;
-                cx = bbox.minX + bbox.width * col;
-                cy = bbox.minY + bbox.height * row;
-              }
-              parts.push(`rotate(${rotation},${cx},${cy})`);
-            }
-
-            // Compute bounding box for overlay
+            // Compute pivot in natural (unscaled) space from the bounding box
             const bbox = computeShapesBoundingBox(layer.shapes);
             const pivot = layer.pivot ?? 'tl';
             let pivotX = 0, pivotY = 0;
@@ -162,6 +146,15 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, selecte
               pivotX = bbox.minX + bbox.width * col;
               pivotY = bbox.minY + bbox.height * row;
             }
+
+            // Correct pivot-centric transform order (right-to-left application to shape coords):
+            //   1. scale/mirror   2. rotate around scaled pivot   3. translate
+            // This ensures rotation and mirroring both happen around the layer's pivot point.
+            const parts: string[] = [
+              `translate(${layer.offsetX},${layer.offsetY})`,
+              `rotate(${rotation},${sxm * pivotX},${sym * pivotY})`,
+              `scale(${sxm},${sym})`,
+            ];
 
             return (
               <g

@@ -28,6 +28,7 @@ interface ProjectStore {
   toggleLayerVisibility: (layerId: string) => void;
   moveLayerUp: (layerId: string) => void;
   moveLayerDown: (layerId: string) => void;
+  reorderLayer: (layerId: string, toIndex: number) => void;
 
   // Shape management
   moveShapeToLayer: (shapeId: string, fromLayerId: string, toLayerId: string) => void;
@@ -43,6 +44,7 @@ interface ProjectStore {
   removeOperation: (opId: string) => void;
   moveOperationUp: (opId: string) => void;
   moveOperationDown: (opId: string) => void;
+  reorderOperation: (opId: string, toIndex: number) => void;
   toggleOperationEnabled: (opId: string) => void;
   assignLayerToOperation: (opId: string, layerId: string) => void;
   unassignLayerFromOperation: (opId: string, layerId: string) => void;
@@ -151,6 +153,7 @@ export const useProjectStore = create<ProjectStore>()(
             ...p,
             files: [...p.files, projectFile],
             layers: [...p.layers, layer],
+            gcodeUpToDate: false,
           })),
         }));
       },
@@ -191,6 +194,7 @@ export const useProjectStore = create<ProjectStore>()(
               ...op,
               layerIds: op.layerIds.filter(lid => lid !== layerId),
             })),
+            gcodeUpToDate: false,
           })),
         }));
       },
@@ -213,6 +217,7 @@ export const useProjectStore = create<ProjectStore>()(
           projects: updateProject(s.projects, activeProjectId, p => ({
             ...p,
             layers: p.layers.map(l => l.id === layerId ? { ...l, ...partial } : l),
+            gcodeUpToDate: false,
           })),
         }));
       },
@@ -251,6 +256,21 @@ export const useProjectStore = create<ProjectStore>()(
             if (idx < 0 || idx >= p.layers.length - 1) return p;
             const next = [...p.layers];
             [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+            return { ...p, layers: next };
+          }),
+        }));
+      },
+
+      reorderLayer: (layerId: string, toIndex: number) => {
+        const { activeProjectId } = get();
+        if (!activeProjectId) return;
+        set(s => ({
+          projects: updateProject(s.projects, activeProjectId, p => {
+            const idx = p.layers.findIndex(l => l.id === layerId);
+            if (idx < 0) return p;
+            const next = [...p.layers];
+            const [item] = next.splice(idx, 1);
+            next.splice(Math.max(0, Math.min(toIndex, next.length)), 0, item);
             return { ...p, layers: next };
           }),
         }));
@@ -377,6 +397,7 @@ export const useProjectStore = create<ProjectStore>()(
             layers: p.layers.map(l =>
               l.id === layerId ? { ...l, shapes: l.shapes.filter(sh => !shapeIds.includes(sh.id)) } : l
             ),
+            gcodeUpToDate: false,
           })),
         }));
       },
@@ -412,6 +433,7 @@ export const useProjectStore = create<ProjectStore>()(
           projects: updateProject(s.projects, activeProjectId, p => ({
             ...p,
             operations: [...p.operations, op],
+            gcodeUpToDate: false,
           })),
         }));
       },
@@ -423,6 +445,7 @@ export const useProjectStore = create<ProjectStore>()(
           projects: updateProject(s.projects, activeProjectId, p => ({
             ...p,
             operations: p.operations.map(op => op.id === opId ? { ...op, ...partial } : op),
+            gcodeUpToDate: false,
           })),
         }));
       },
@@ -434,6 +457,7 @@ export const useProjectStore = create<ProjectStore>()(
           projects: updateProject(s.projects, activeProjectId, p => ({
             ...p,
             operations: p.operations.filter(op => op.id !== opId),
+            gcodeUpToDate: false,
           })),
         }));
       },
@@ -447,7 +471,7 @@ export const useProjectStore = create<ProjectStore>()(
             if (idx <= 0) return p;
             const next = [...p.operations];
             [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
-            return { ...p, operations: next };
+            return { ...p, operations: next, gcodeUpToDate: false };
           }),
         }));
       },
@@ -466,6 +490,21 @@ export const useProjectStore = create<ProjectStore>()(
         }));
       },
 
+      reorderOperation: (opId: string, toIndex: number) => {
+        const { activeProjectId } = get();
+        if (!activeProjectId) return;
+        set(s => ({
+          projects: updateProject(s.projects, activeProjectId, p => {
+            const idx = p.operations.findIndex(op => op.id === opId);
+            if (idx < 0) return p;
+            const next = [...p.operations];
+            const [item] = next.splice(idx, 1);
+            next.splice(Math.max(0, Math.min(toIndex, next.length)), 0, item);
+            return { ...p, operations: next, gcodeUpToDate: false };
+          }),
+        }));
+      },
+
       toggleOperationEnabled: (opId: string) => {
         const { activeProjectId } = get();
         if (!activeProjectId) return;
@@ -475,6 +514,7 @@ export const useProjectStore = create<ProjectStore>()(
             operations: p.operations.map(op =>
               op.id === opId ? { ...op, enabled: !op.enabled } : op
             ),
+            gcodeUpToDate: false,
           })),
         }));
       },
@@ -490,6 +530,7 @@ export const useProjectStore = create<ProjectStore>()(
                 ? { ...op, layerIds: [...op.layerIds, layerId] }
                 : op
             ),
+            gcodeUpToDate: false,
           })),
         }));
       },
@@ -505,6 +546,7 @@ export const useProjectStore = create<ProjectStore>()(
                 ? { ...op, layerIds: op.layerIds.filter(lid => lid !== layerId) }
                 : op
             ),
+            gcodeUpToDate: false,
           })),
         }));
       },
@@ -525,7 +567,7 @@ export const useProjectStore = create<ProjectStore>()(
           projects: updateProject(s.projects, activeProjectId!, p => {
             const ops = [...p.operations];
             ops.splice(idx + 1, 0, dup);
-            return { ...p, operations: ops };
+            return { ...p, operations: ops, gcodeUpToDate: false };
           }),
         }));
       },
@@ -564,6 +606,7 @@ export const useProjectStore = create<ProjectStore>()(
             files: structuredClone(version.snapshot.files),
             layers: structuredClone(version.snapshot.layers),
             operations: structuredClone(version.snapshot.operations),
+            gcodeUpToDate: false,
           })),
         }));
       },
@@ -636,6 +679,7 @@ export const useProjectStore = create<ProjectStore>()(
             ...p,
             jobId: result.id,
             gcode: result.gcode,
+            gcodeUpToDate: true,
           })),
         }));
 
