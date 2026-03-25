@@ -9,6 +9,7 @@ interface Props {
   onUpdate: (id: string, partial: Partial<Layer>) => void;
   originPosition?: 'bottom-left' | 'top-left';
   workH?: number;
+  onPreviewChange?: (preview: { deltaX: number; deltaY: number; deltaRotation: number }) => void;
 }
 
 /** Parse a decimal string that may use comma or dot as separator */
@@ -36,7 +37,7 @@ function getPivotCoords(bbox: BBox | null, pivot: PivotAnchor): { px: number; py
   };
 }
 
-export default function LayerTransformPanel({ layers, onUpdate, originPosition = 'top-left', workH = 200 }: Props) {
+export default function LayerTransformPanel({ layers, onUpdate, originPosition = 'top-left', workH = 200, onPreviewChange }: Props) {
   const multi = layers.length > 1;
   const layer = layers[0]; // Primary layer for single-layer mode
   const [sizeMode, setSizeMode] = useState<SizeMode>('scale');
@@ -92,6 +93,23 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
     const dy = originPosition === 'bottom-left' ? workH - pivotWorldY : pivotWorldY;
     setLocalPivotY(String(Math.round(dy * 100) / 100));
   }, [layer.scaleX, layer.scaleY, layer.offsetX, layer.offsetY, layer.rotation, naturalW, naturalH, pivotWorldX, pivotWorldY, originPosition, workH]);
+
+  // Send preview delta to parent when relative values change
+  useEffect(() => {
+    if (!onPreviewChange) return;
+    if (effectivePosRotMode !== 'relative') {
+      onPreviewChange({ deltaX: 0, deltaY: 0, deltaRotation: 0 });
+      return;
+    }
+    const dx = parseDecimal(deltaX);
+    const dy = parseDecimal(deltaY);
+    const dr = parseDecimal(deltaRot);
+    onPreviewChange({
+      deltaX: Number.isFinite(dx) ? dx : 0,
+      deltaY: Number.isFinite(dy) ? dy : 0,
+      deltaRotation: Number.isFinite(dr) ? dr : 0,
+    });
+  }, [deltaX, deltaY, deltaRot, effectivePosRotMode, onPreviewChange]);
 
   /** Commit absolute pivot position — compute the required offset. */
   const commitPivotPos = useCallback((axis: 'x' | 'y', raw: string) => {

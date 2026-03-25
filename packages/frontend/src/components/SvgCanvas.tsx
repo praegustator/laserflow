@@ -3,6 +3,13 @@ import type { Layer, Operation, MachineProfile } from '../types';
 import { computeShapesBoundingBox } from '../utils/geometry';
 import { useAppSettings } from '../store/appSettingsStore';
 
+/** Preview delta applied to selected layers (for relative transform preview) */
+export interface TransformPreview {
+  deltaX: number;
+  deltaY: number;
+  deltaRotation: number;
+}
+
 interface Props {
   layers: Layer[];
   operations: Operation[];
@@ -13,6 +20,8 @@ interface Props {
   onUpdateLayer?: (id: string, partial: Partial<Layer>) => void;
   originPosition: 'bottom-left' | 'top-left';
   machineProfile?: MachineProfile | null;
+  /** When set, renders a ghost preview of selected layers shifted by this delta */
+  transformPreview?: TransformPreview;
 }
 
 const OP_COLORS: Record<string, string> = {
@@ -25,7 +34,7 @@ const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#1
 
 const GRID_SPACING = 10; // mm
 
-export default function SvgCanvas({ layers, operations, selectedLayerIds, selectedShapeIds, onSelectLayer, onSelectShape, onUpdateLayer, originPosition, machineProfile }: Props) {
+export default function SvgCanvas({ layers, operations, selectedLayerIds, selectedShapeIds, onSelectLayer, onSelectShape, onUpdateLayer, originPosition, machineProfile, transformPreview }: Props) {
   const settingsWorkW = useAppSettings(s => s.workAreaWidth);
   const settingsWorkH = useAppSettings(s => s.workAreaHeight);
   const workW = machineProfile?.workArea.x ?? settingsWorkW;
@@ -259,6 +268,38 @@ export default function SvgCanvas({ layers, operations, selectedLayerIds, select
               </g>
             );
           })}
+
+          {/* Ghost preview for relative transform */}
+          {transformPreview && (transformPreview.deltaX !== 0 || transformPreview.deltaY !== 0 || transformPreview.deltaRotation !== 0) && (
+            layers.filter(l => selectedLayerIds.has(l.id) && l.visible).map((layer) => {
+              const rotation = (layer.rotation ?? 0) + transformPreview.deltaRotation;
+              const mX = layer.mirrorX ?? false;
+              const mY = layer.mirrorY ?? false;
+              const sxm = mX ? -layer.scaleX : layer.scaleX;
+              const sym = mY ? -layer.scaleY : layer.scaleY;
+              const gBbox = computeShapesBoundingBox(layer.shapes);
+              const pivot = layer.pivot ?? 'tl';
+              let gPivotX = 0, gPivotY = 0;
+              if (gBbox) {
+                const col = pivot[1] === 'l' ? 0 : pivot[1] === 'c' ? 0.5 : 1;
+                const row = pivot[0] === 't' ? 0 : pivot[0] === 'm' ? 0.5 : 1;
+                gPivotX = gBbox.minX + gBbox.width * col;
+                gPivotY = gBbox.minY + gBbox.height * row;
+              }
+              const gParts = [
+                `translate(${layer.offsetX + transformPreview.deltaX},${layer.offsetY + transformPreview.deltaY})`,
+                `rotate(${rotation},${sxm * gPivotX},${sym * gPivotY})`,
+                `scale(${sxm},${sym})`,
+              ];
+              return (
+                <g key={`preview-${layer.id}`} transform={gParts.join(' ')} opacity={0.3} style={{ pointerEvents: 'none' }}>
+                  {layer.shapes.map(shape => (
+                    <path key={shape.id} d={shape.d} fill="none" stroke="#facc15" strokeWidth={0.5} strokeDasharray="3 2" vectorEffect="non-scaling-stroke" />
+                  ))}
+                </g>
+              );
+            })
+          )}
 
           {/* Origin cross — positioned according to origin setting */}
           {(() => {

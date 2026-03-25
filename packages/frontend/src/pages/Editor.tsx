@@ -6,7 +6,7 @@ import { useMachineStore } from '../store/machineStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { useToastStore } from '../store/toastStore';
 import { useKeyboardShortcuts, type ShortcutDef } from '../hooks/useKeyboardShortcuts';
-import SvgCanvas from '../components/SvgCanvas';
+import SvgCanvas, { type TransformPreview } from '../components/SvgCanvas';
 import OperationsPanel from '../components/OperationsPanel';
 import LayerTransformPanel from '../components/LayerTransformPanel';
 import { computeShapesBoundingBox } from '../utils/geometry';
@@ -60,6 +60,8 @@ export default function Editor() {
   // Transform panel height (resizable via drag handle)
   const [transformPanelHeight, setTransformPanelHeight] = useState(400);
   const transformDragRef = useRef<{ startY: number; startH: number } | null>(null);
+  // Preview delta for relative transforms
+  const [transformPreview, setTransformPreview] = useState<TransformPreview>({ deltaX: 0, deltaY: 0, deltaRotation: 0 });
 
   const project = projects.find(p => p.id === activeProjectId) ?? null;
 
@@ -611,6 +613,7 @@ export default function Editor() {
                       onUpdate={(id, partial) => updateLayerTransform(id, partial)}
                       originPosition={originPosition}
                       workH={workAreaHeight}
+                      onPreviewChange={setTransformPreview}
                     />
                   </div>
                 </div>
@@ -633,6 +636,7 @@ export default function Editor() {
               onSelectShape={handleCanvasShapeClick}
               onUpdateLayer={(id, partial) => updateLayerTransform(id, partial)}
               originPosition={originPosition}
+              transformPreview={transformPreview}
             />
           </Panel>
 
