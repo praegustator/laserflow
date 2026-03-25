@@ -31,6 +31,7 @@ export default function Editor() {
   const moveShapeToLayer = useProjectStore(s => s.moveShapeToLayer);
   const removeShapes = useProjectStore(s => s.removeShapes);
   const renameShape = useProjectStore(s => s.renameShape);
+  const mergeLayers = useProjectStore(s => s.mergeLayers);
   const saveVersion = useProjectStore(s => s.saveVersion);
   const restoreVersion = useProjectStore(s => s.restoreVersion);
   const deleteVersion = useProjectStore(s => s.deleteVersion);
@@ -554,19 +555,11 @@ export default function Editor() {
                       e.stopPropagation();
                       if (!project) return;
                       const ids = Array.from(selectedLayerIds);
-                      const mergeLayers = ids.map(id => project.layers.find(l => l.id === id)).filter(Boolean) as Layer[];
-                      if (mergeLayers.length < 2) return;
-                      const target = mergeLayers[0];
-                      const rest = mergeLayers.slice(1);
-                      // Move all shapes to the first layer, then remove empty layers
-                      for (const l of rest) {
-                        for (const s of l.shapes) {
-                          moveShapeToLayer(s.id, l.id, target.id);
-                        }
-                      }
-                      for (const l of rest) removeLayer(l.id);
-                      setSelectedLayerIds(new Set([target.id]));
-                      addToast('info', `Merged ${mergeLayers.length} layers into "${target.name}"`);
+                      const targetId = mergeLayers(ids);
+                      if (!targetId) return;
+                      setSelectedLayerIds(new Set([targetId]));
+                      const targetName = project.layers.find(l => l.id === targetId)?.name ?? 'layer';
+                      addToast('info', `Merged ${ids.length} layers into "${targetName}"`);
                     }}
                     className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1"
                     title="Merge selected layers into one"

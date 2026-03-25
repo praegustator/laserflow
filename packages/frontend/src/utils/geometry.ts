@@ -1,5 +1,5 @@
 import { SVGPathData, SVGPathDataTransformer } from 'svg-pathdata';
-import type { PathGeometry, Shape } from '../types';
+import type { Layer, PathGeometry, Shape } from '../types';
 
 export interface BBox {
   minX: number;
@@ -183,4 +183,139 @@ export function computeBoundingBox(geometry: PathGeometry[]): BBox | null {
 /** Compute bounding box from an array of Shape objects. */
 export function computeShapesBoundingBox(shapes: Shape[]): BBox | null {
   return bboxFromPaths(shapes.map(s => s.d));
+}
+
+/* ── Layer transform helpers ─────────────────────────────────────────── */
+
+/** 2×3 affine matrix [a, b, c, d, e, f] where x'=ax+cy+e, y'=bx+dy+f */
+export type AffineMatrix = [number, number, number, number, number, number];
+
+/**
+ * Compute the affine matrix that maps a shape's natural coordinates to world
+ * coordinates for a given layer. Accounts for offset, scale, mirror, rotation
+ * and the pivot anchor.
+ *
+ * SVG transform order (right-to-left):
+ *   translate(tx,ty) · rotate(θ, cx,cy) · scale(sx,sy)
+ * where cx = sx*pivotX, cy = sy*pivotY.
+ */
+export function computeLayerMatrix(layer: Layer): AffineMatrix {
+  const bbox = computeShapesBoundingBox(layer.shapes);
+  const pivot = layer.pivot ?? 'tl';
+  let pivotX = 0, pivotY = 0;
+  if (bbox) {
+    const col = pivot[1] === 'l' ? 0 : pivot[1] === 'c' ? 0.5 : 1;
+    const row = pivot[0] === 't' ? 0 : pivot[0] === 'm' ? 0.5 : 1;
+    pivotX = bbox.minX + bbox.width * col;
+    pivotY = bbox.minY + bbox.height * row;
+  }
+
+  const mX = layer.mirrorX ?? false;
+  const mY = layer.mirrorY ?? false;
+  const sx = mX ? -layer.scaleX : layer.scaleX;
+  const sy = mY ? -layer.scaleY : layer.scaleY;
+  const tx = layer.offsetX;
+  const ty = layer.offsetY;
+  const theta = ((layer.rotation ?? 0) * Math.PI) / 180;
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+
+  // Pivot in scaled space
+  const cx = sx * pivotX;
+  const cy = sy * pivotY;
+
+  // Matrix = T(tx,ty) · T(cx,cy) · R(θ) · T(-cx,-cy) · S(sx,sy)
+  const a = cos * sx;
+  const b = sin * sx;
+  const c = -sin * sy;
+  const d = cos * sy;
+  const e = -cos * cx + sin * cy + cx + tx;
+  const f = -sin * cx - cos * cy + cy + ty;
+
+  return [a, b, c, d, e, f];
+}
+
+/**
+ * Apply a 2×3 affine matrix to every coordinate in an SVG path string.
+ * Returns the transformed path as a string.
+ */
+export function transformPath(pathD: string, [a, b, c, d, e, f]: AffineMatrix): string {
+  try {
+    return new SVGPathData(pathD)
+      .toAbs()
+      .transform(SVGPathDataTransformer.MATRIX(a, b, c, d, e, f))
+      .encode();
+  } catch {
+    return pathD;
+  }
+}
+
+/**
+ * Bake a layer's transform (offset, scale, rotation, mirror) into all of its
+ * shapes' path data, returning new shapes with transformed `d` strings.
+ * After baking, the layer should have its transform reset to identity.
+ */
+export function bakeLayerTransform(layer: Layer): Shape[] {
+  const matrix = computeLayerMatrix(layer);
+  // If the matrix is already identity, skip the transform
+  const [a, b, c, d, e, f] = matrix;
+  const isIdentity =
+    Math.abs(a - 1) < 1e-9 && Math.abs(b) < 1e-9 &&
+    Math.abs(c) < 1e-9 && Math.abs(d - 1) < 1e-9 &&
+    Math.abs(e) < 1e-9 && Math.abs(f) < 1e-9;
+  if (isIdentity) return layer.shapes;
+
+  return layer.shapes.map(shape => ({
+    ...shape,
+    d: transformPath(shape.d, matrix),
+  }));
+}
+
+/**
+ * Compute the world-space bounding box of a layer by transforming its natural
+ * bounding-box corners through the layer matrix. For non-zero rotation, the
+ * result is the axis-aligned enclosure of the rotated rectangle.
+ */
+export function computeLayerWorldBBox(layer: Layer): BBox | null {
+  const bbox = computeShapesBoundingBox(layer.shapes);
+  if (!bbox) return null;
+  const m = computeLayerMatrix(layer);
+
+  // Transform the 4 corners of the natural bbox
+  const corners: [number, number][] = [
+    [bbox.minX, bbox.minY],
+    [bbox.maxX, bbox.minY],
+    [bbox.maxX, bbox.maxY],
+    [bbox.minX, bbox.maxY],
+  ];
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of corners) {
+    const wx = m[0] * x + m[2] * y + m[4];
+    const wy = m[1] * x + m[3] * y + m[5];
+    if (wx < minX) minX = wx;
+    if (wy < minY) minY = wy;
+    if (wx > maxX) maxX = wx;
+    if (wy > maxY) maxY = wy;
+  }
+  return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+}
+
+/**
+ * Compute the combined world-space bounding box across multiple layers.
+ */
+export function computeMultiLayerWorldBBox(layers: Layer[]): BBox | null {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let found = false;
+  for (const layer of layers) {
+    const wb = computeLayerWorldBBox(layer);
+    if (!wb) continue;
+    found = true;
+    if (wb.minX < minX) minX = wb.minX;
+    if (wb.minY < minY) minY = wb.minY;
+    if (wb.maxX > maxX) maxX = wb.maxX;
+    if (wb.maxY > maxY) maxY = wb.maxY;
+  }
+  if (!found) return null;
+  return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
 }

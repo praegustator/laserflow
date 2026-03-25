@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '../api/client';
 import type { Project, ProjectFile, ProjectVersion, Layer, Shape, Operation, PathGeometry, Job } from '../types';
-import { computeShapesBoundingBox } from '../utils/geometry';
+import { computeShapesBoundingBox, bakeLayerTransform } from '../utils/geometry';
 import { useAppSettings } from './appSettingsStore';
 
 function uid(): string {
@@ -39,6 +39,9 @@ interface ProjectStore {
   moveShapesToNewLayer: (shapeIds: string[], fromLayerId: string, newLayerName: string) => void;
   removeShapes: (shapeIds: string[], layerId: string) => void;
   renameShape: (shapeId: string, layerId: string, name: string) => void;
+
+  /** Merge multiple layers into one, baking each layer's transform into its shape paths. */
+  mergeLayers: (layerIds: string[]) => string | null;
 
   // Operations
   addOperation: () => void;
@@ -434,6 +437,53 @@ export const useProjectStore = create<ProjectStore>()(
             ),
           })),
         }));
+      },
+
+      mergeLayers: (layerIds: string[]) => {
+        const { activeProjectId } = get();
+        if (!activeProjectId || layerIds.length < 2) return null;
+        const project = getActiveProject(get().projects, activeProjectId);
+        if (!project) return null;
+        const mergingLayers = layerIds.map(id => project.layers.find(l => l.id === id)).filter(Boolean) as Layer[];
+        if (mergingLayers.length < 2) return null;
+        const target = mergingLayers[0];
+        const rest = mergingLayers.slice(1);
+        const restIds = new Set(rest.map(l => l.id));
+
+        // Bake all layers' transforms into their shapes' path data
+        const targetShapes = bakeLayerTransform(target);
+        const otherShapes: Shape[] = [];
+        for (const l of rest) {
+          otherShapes.push(...bakeLayerTransform(l));
+        }
+        const allShapes = [...targetShapes, ...otherShapes];
+
+        set(s => ({
+          projects: updateProject(s.projects, activeProjectId, p => ({
+            ...p,
+            layers: p.layers
+              .filter(l => !restIds.has(l.id))
+              .map(l => l.id === target.id ? {
+                ...l,
+                shapes: allShapes,
+                offsetX: 0,
+                offsetY: 0,
+                scaleX: 1,
+                scaleY: 1,
+                rotation: 0,
+                mirrorX: false,
+                mirrorY: false,
+                pivot: 'tl' as const,
+              } : l),
+            operations: p.operations.map(op => ({
+              ...op,
+              layerIds: op.layerIds.map(lid => restIds.has(lid) ? target.id : lid)
+                .filter((lid, i, arr) => arr.indexOf(lid) === i),
+            })),
+            gcodeUpToDate: false,
+          })),
+        }));
+        return target.id;
       },
 
       addOperation: () => {
