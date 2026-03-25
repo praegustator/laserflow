@@ -8,7 +8,6 @@ import { useMachineStore } from '../store/machineStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { api } from '../api/client';
 import { computeBoundingBox } from '../utils/geometry';
-import type { PathGeometry } from '../types';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCircle as faCircleSolid, faTrash, faClone, faChevronUp, faChevronDown, faGears, faEye, faPaperPlane, faBorderAll } from '@fortawesome/free-solid-svg-icons';
 import { faCircle as faCircleRegular } from '@fortawesome/free-regular-svg-icons';
@@ -324,44 +323,23 @@ export default function OperationsPanel({ project, layers, originPosition, selec
   };
 
   /** Trace the bounding-box frame of all enabled-operation geometry with laser off. */
-  const handleTraceFrame = () => {
+  const handleTraceFrame = async () => {
     const enabledOps = project.operations.filter(o => o.enabled && o.type !== 'ignore');
     if (enabledOps.length === 0) {
       addToast('error', 'No enabled operations');
       return;
     }
 
-    // Collect all geometry referenced by enabled operations
-    const geometry: PathGeometry[] = [];
-    for (const op of enabledOps) {
-      for (const layerId of op.layerIds) {
-        const layer = layers.find(l => l.id === layerId);
-        if (!layer) continue;
-        for (const shape of layer.shapes) {
-          geometry.push({ d: shape.d, layerId });
-        }
-      }
-    }
-
-    if (geometry.length === 0) {
-      addToast('error', 'No geometry in enabled operations');
-      return;
-    }
-
-    const bbox = computeBoundingBox(geometry);
-    if (!bbox) {
-      addToast('error', 'Cannot compute bounding box');
-      return;
-    }
-
-    // Apply layer transforms to get world coordinates
+    // Compute the bounding box of all operation geometry with layer transforms applied
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let hasGeometry = false;
     for (const op of enabledOps) {
       for (const layerId of op.layerIds) {
         const layer = layers.find(l => l.id === layerId);
-        if (!layer) continue;
+        if (!layer || layer.shapes.length === 0) continue;
         const layerBbox = computeBoundingBox(layer.shapes.map(s => ({ d: s.d })));
         if (!layerBbox) continue;
+        hasGeometry = true;
         // Transform the four corners of the layer bbox through the layer transform
         const corners = [
           [layerBbox.minX, layerBbox.minY],
@@ -383,23 +361,27 @@ export default function OperationsPanel({ project, layers, originPosition, selec
       }
     }
 
-    if (!Number.isFinite(minX)) {
-      addToast('error', 'Cannot compute frame');
+    if (!hasGeometry || !Number.isFinite(minX)) {
+      addToast('error', 'No geometry in enabled operations');
       return;
     }
 
     const fmt = (n: number) => n.toFixed(3);
     const feedRate = Math.max(...enabledOps.map(o => o.feedRate));
 
-    // Send G-code to trace the frame rectangle with laser off
-    void sendCommand('M5');
-    void sendCommand('G90');
-    void sendCommand(`G0 X${fmt(minX)} Y${fmt(minY)}`);
-    void sendCommand(`G1 X${fmt(maxX)} Y${fmt(minY)} F${feedRate}`);
-    void sendCommand(`G1 X${fmt(maxX)} Y${fmt(maxY)} F${feedRate}`);
-    void sendCommand(`G1 X${fmt(minX)} Y${fmt(maxY)} F${feedRate}`);
-    void sendCommand(`G1 X${fmt(minX)} Y${fmt(minY)} F${feedRate}`);
-    addToast('success', 'Tracing job frame…');
+    // Send G-code commands sequentially to trace the frame rectangle with laser off
+    try {
+      await sendCommand('M5');
+      await sendCommand('G90');
+      await sendCommand(`G0 X${fmt(minX)} Y${fmt(minY)}`);
+      await sendCommand(`G1 X${fmt(maxX)} Y${fmt(minY)} F${feedRate}`);
+      await sendCommand(`G1 X${fmt(maxX)} Y${fmt(maxY)} F${feedRate}`);
+      await sendCommand(`G1 X${fmt(minX)} Y${fmt(maxY)} F${feedRate}`);
+      await sendCommand(`G1 X${fmt(minX)} Y${fmt(minY)} F${feedRate}`);
+      addToast('success', 'Tracing job frame…');
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : 'Failed to trace frame');
+    }
   };
 
   const operations = project.operations;
@@ -471,7 +453,7 @@ export default function OperationsPanel({ project, layers, originPosition, selec
         </div>
 
         <button
-          onClick={handleTraceFrame}
+          onClick={() => { void handleTraceFrame(); }}
           disabled={!hasEnabledOps || connectionStatus !== 'connected'}
           className="w-full py-1.5 text-sm rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 font-semibold transition-colors"
           title="Trace the bounding box of all operation geometry with laser off"
