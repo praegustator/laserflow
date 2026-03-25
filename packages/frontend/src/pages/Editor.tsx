@@ -52,6 +52,9 @@ export default function Editor() {
   // Drag-and-drop state for layer reordering
   const dragLayerId = useRef<string | null>(null);
   const [dragOverLayerId, setDragOverLayerId] = useState<string | null>(null);
+  // Transform panel height (resizable via drag handle)
+  const [transformPanelHeight, setTransformPanelHeight] = useState(280);
+  const transformDragRef = useRef<{ startY: number; startH: number } | null>(null);
 
   const project = projects.find(p => p.id === activeProjectId) ?? null;
 
@@ -260,15 +263,7 @@ export default function Editor() {
   return (
     <div
       className="flex flex-col h-full min-h-0"
-      onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={handleDrop}
     >
-      {dragOver && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-950/80 border-4 border-dashed border-orange-400 pointer-events-none">
-          <p className="text-2xl font-bold text-orange-400">Drop SVG file(s)</p>
-        </div>
-      )}
       {/* Top bar */}
       <div className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center gap-3">
         <label className="text-xs text-gray-500 uppercase flex-shrink-0">Project</label>
@@ -361,9 +356,19 @@ export default function Editor() {
         >
           {/* Left panel: Layers/Shapes + transform */}
           <Panel defaultSize="22%" minSize="200px" groupResizeBehavior="preserve-pixel-size" className="bg-gray-900 flex flex-col min-h-0">
-            <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between flex-shrink-0">
+            <div
+              className="px-3 py-2 border-b border-gray-700 flex items-center justify-between flex-shrink-0 relative"
+              onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+              onDragLeave={e => { e.stopPropagation(); setDragOver(false); }}
+              onDrop={e => { e.stopPropagation(); handleDrop(e); }}
+            >
               <span className="text-sm font-semibold text-gray-200">🔲 Shapes &amp; Layers</span>
               <button onClick={() => fileInputRef.current?.click()} className="text-xs text-orange-400 hover:text-orange-300">+ Import</button>
+              {dragOver && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-950/80 border-2 border-dashed border-orange-400 rounded pointer-events-none">
+                  <p className="text-sm font-bold text-orange-400">Drop SVG file(s)</p>
+                </div>
+              )}
             </div>
 
             {/* Layers list */}
@@ -485,14 +490,34 @@ export default function Editor() {
 
             {/* Layer transform panel — shown at bottom when a layer is selected */}
             {selectedLayerId && project.layers.find(l => l.id === selectedLayerId) && (
-              <div className="flex-shrink-0 border-t border-gray-700 px-3 py-2 overflow-y-auto max-h-72">
-                <p className="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wide">
-                  Transform — {project.layers.find(l => l.id === selectedLayerId)!.name}
-                </p>
-                <LayerTransformPanel
-                  layer={project.layers.find(l => l.id === selectedLayerId)!}
-                  onUpdate={(id, partial) => updateLayerTransform(id, partial)}
-                />
+              <div className="flex-shrink-0 flex flex-col" style={{ height: transformPanelHeight, minHeight: 120, maxHeight: '60%' }}>
+                {/* Draggable resize handle */}
+                <div
+                  className="h-1.5 cursor-row-resize bg-gray-700 hover:bg-orange-500/60 active:bg-orange-500 transition-colors flex items-center justify-center"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    transformDragRef.current = { startY: e.clientY, startH: transformPanelHeight };
+                    const onMove = (ev: MouseEvent) => {
+                      if (!transformDragRef.current) return;
+                      const delta = transformDragRef.current.startY - ev.clientY;
+                      setTransformPanelHeight(Math.max(120, Math.min(600, transformDragRef.current.startH + delta)));
+                    };
+                    const onUp = () => { transformDragRef.current = null; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+                    window.addEventListener('mousemove', onMove);
+                    window.addEventListener('mouseup', onUp);
+                  }}
+                >
+                  <div className="w-8 h-0.5 rounded-full bg-gray-600" />
+                </div>
+                <div className="flex-1 overflow-y-auto px-3 py-2">
+                  <p className="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wide">
+                    Transform — {project.layers.find(l => l.id === selectedLayerId)!.name}
+                  </p>
+                  <LayerTransformPanel
+                    layer={project.layers.find(l => l.id === selectedLayerId)!}
+                    onUpdate={(id, partial) => updateLayerTransform(id, partial)}
+                  />
+                </div>
               </div>
             )}
           </Panel>

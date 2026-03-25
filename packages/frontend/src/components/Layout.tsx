@@ -14,10 +14,11 @@ const navItems = [
 export default function Layout() {
   const navigate = useNavigate();
 
-  // Cmd+Shift+1–5 to navigate between tabs (issue #30)
+  // Alt+1–5 to navigate between tabs (issue #30)
+  // Previously used Cmd+Shift+N but Cmd+Shift+3/4 conflict with macOS screenshot shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
+      if (!e.altKey) return;
       const num = parseInt(e.key, 10);
       if (num >= 1 && num <= navItems.length) {
         e.preventDefault();
@@ -42,7 +43,7 @@ export default function Layout() {
               key={to}
               to={to}
               end={end}
-              title={`${label} (Cmd+Shift+${i + 1})`}
+              title={`${label} (Alt+${i + 1})`}
               className={({ isActive }) =>
                 `flex items-center gap-1.5 px-3 text-sm font-medium transition-colors border-b-2 ${
                   isActive

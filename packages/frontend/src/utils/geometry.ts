@@ -1,3 +1,4 @@
+import { SVGPathData } from 'svg-pathdata';
 import type { PathGeometry, Shape } from '../types';
 
 export interface BBox {
@@ -9,6 +10,11 @@ export interface BBox {
   height: number;
 }
 
+/**
+ * Compute the bounding box by properly parsing SVG path data into absolute
+ * coordinates. Uses svg-pathdata to handle all command types (M, L, C, Q, A,
+ * H, V, Z, and their relative variants) correctly.
+ */
 function bboxFromPaths(paths: string[]): BBox | null {
   let minX = Infinity;
   let minY = Infinity;
@@ -16,16 +22,42 @@ function bboxFromPaths(paths: string[]): BBox | null {
   let maxY = -Infinity;
 
   for (const d of paths) {
-    const nums = d.match(/-?\d+(?:\.\d+)?/g);
-    if (!nums || nums.length < 2) continue;
-    for (let i = 0; i < nums.length - 1; i += 2) {
-      const x = Number(nums[i]);
-      const y = Number(nums[i + 1]);
-      if (Number.isFinite(x) && Number.isFinite(y)) {
-        minX = Math.min(minX, x);
-        maxX = Math.max(maxX, x);
-        minY = Math.min(minY, y);
-        maxY = Math.max(maxY, y);
+    let pathData: SVGPathData;
+    try {
+      pathData = new SVGPathData(d).toAbs().normalizeHVZ();
+    } catch {
+      continue;
+    }
+
+    for (const cmd of pathData.commands) {
+      // MOVE_TO, LINE_TO – just x/y
+      if ('x' in cmd && 'y' in cmd) {
+        const { x, y } = cmd as { x: number; y: number };
+        if (Number.isFinite(x) && Number.isFinite(y)) {
+          minX = Math.min(minX, x);
+          maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y);
+          maxY = Math.max(maxY, y);
+        }
+      }
+      // CURVE_TO (cubic) – include control points
+      if ('x1' in cmd && 'y1' in cmd) {
+        const c = cmd as { x1: number; y1: number };
+        if (Number.isFinite(c.x1) && Number.isFinite(c.y1)) {
+          minX = Math.min(minX, c.x1);
+          maxX = Math.max(maxX, c.x1);
+          minY = Math.min(minY, c.y1);
+          maxY = Math.max(maxY, c.y1);
+        }
+      }
+      if ('x2' in cmd && 'y2' in cmd) {
+        const c = cmd as { x2: number; y2: number };
+        if (Number.isFinite(c.x2) && Number.isFinite(c.y2)) {
+          minX = Math.min(minX, c.x2);
+          maxX = Math.max(maxX, c.x2);
+          minY = Math.min(minY, c.y2);
+          maxY = Math.max(maxY, c.y2);
+        }
       }
     }
   }
