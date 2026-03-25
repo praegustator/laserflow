@@ -1,4 +1,4 @@
-import { SVGPathData } from 'svg-pathdata';
+import { SVGPathData, SVGPathDataTransformer } from 'svg-pathdata';
 import type { PathGeometry, Operation, MachineProfile } from '../types/index.js';
 
 export interface PathTransform {
@@ -27,13 +27,28 @@ function fmt(n: number): string {
   return n.toFixed(3);
 }
 
+/** Maximum distance (mm) between consecutive linearized points on a curve. */
+const CURVE_TOLERANCE = 0.5;
+const MIN_SEGMENTS = 2;
+
+function adaptiveSegments(controlPolygonLength: number): number {
+  return Math.max(MIN_SEGMENTS, Math.ceil(controlPolygonLength / CURVE_TOLERANCE));
+}
+
 function cubicBezierPoints(
   x0: number, y0: number,
   x1: number, y1: number,
   x2: number, y2: number,
   x3: number, y3: number,
-  segments: number
+  segments?: number
 ): Array<[number, number]> {
+  if (segments === undefined) {
+    const polyLen =
+      Math.hypot(x1 - x0, y1 - y0) +
+      Math.hypot(x2 - x1, y2 - y1) +
+      Math.hypot(x3 - x2, y3 - y2);
+    segments = adaptiveSegments(polyLen);
+  }
   const pts: Array<[number, number]> = [];
   for (let i = 1; i <= segments; i++) {
     const t = i / segments;
@@ -49,8 +64,14 @@ function quadraticBezierPoints(
   x0: number, y0: number,
   x1: number, y1: number,
   x2: number, y2: number,
-  segments: number
+  segments?: number
 ): Array<[number, number]> {
+  if (segments === undefined) {
+    const polyLen =
+      Math.hypot(x1 - x0, y1 - y0) +
+      Math.hypot(x2 - x1, y2 - y1);
+    segments = adaptiveSegments(polyLen);
+  }
   const pts: Array<[number, number]> = [];
   for (let i = 1; i <= segments; i++) {
     const t = i / segments;
@@ -64,7 +85,11 @@ function quadraticBezierPoints(
 
 function pathToGcode(d: string, feedRate: number, sValue: number, transform: PathTransform = IDENTITY_TRANSFORM): string {
   const lines: string[] = [];
-  const pathData = new SVGPathData(d).toAbs().normalizeHVZ();
+  const pathData = new SVGPathData(d)
+    .toAbs()
+    .normalizeHVZ()
+    .transform(SVGPathDataTransformer.NORMALIZE_ST())
+    .transform(SVGPathDataTransformer.A_TO_C());
   const commands = pathData.commands;
 
   let startX = 0;
@@ -91,7 +116,7 @@ function pathToGcode(d: string, feedRate: number, sValue: number, transform: Pat
         break;
       }
       case SVGPathData.CURVE_TO: {
-        const pts = cubicBezierPoints(curX, curY, cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.x, cmd.y, 10);
+        const pts = cubicBezierPoints(curX, curY, cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.x, cmd.y);
         for (const [px, py] of pts) {
           const [tx, ty] = applyTransform(px, py, transform);
           lines.push(`G1 X${fmt(tx)} Y${fmt(ty)} F${feedRate} S${sValue}`);
@@ -101,7 +126,7 @@ function pathToGcode(d: string, feedRate: number, sValue: number, transform: Pat
         break;
       }
       case SVGPathData.QUAD_TO: {
-        const pts = quadraticBezierPoints(curX, curY, cmd.x1, cmd.y1, cmd.x, cmd.y, 10);
+        const pts = quadraticBezierPoints(curX, curY, cmd.x1, cmd.y1, cmd.x, cmd.y);
         for (const [px, py] of pts) {
           const [tx, ty] = applyTransform(px, py, transform);
           lines.push(`G1 X${fmt(tx)} Y${fmt(ty)} F${feedRate} S${sValue}`);

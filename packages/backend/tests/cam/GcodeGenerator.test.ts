@@ -125,4 +125,53 @@ describe('GcodeGenerator', () => {
     expect(gcode).toContain('X10.000');
     expect(gcode).toContain('X50.000');
   });
+
+  it('converts arc commands (circles) into G1 moves', () => {
+    // Circle: center (50,50), radius 50 — uses SVG arc commands
+    const circlePath = 'M 0 50 A 50 50 0 1 0 100 50 A 50 50 0 1 0 0 50 Z';
+    const geometry: PathGeometry[] = [{ d: circlePath }];
+    const operations: Operation[] = [{
+      id: 'arc-op',
+      type: 'cut',
+      feedRate: 600,
+      power: 100,
+      passes: 1,
+    }];
+
+    const gcode = generateGcode(geometry, operations, defaultProfile);
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+
+    // Arcs must be linearized into many G1 segments (not dropped)
+    expect(g1Lines.length).toBeGreaterThan(10);
+
+    // The linearized circle should pass through roughly (50,0) — the top — and (50,100) — the bottom
+    const coords = g1Lines.map(l => {
+      const xm = l.match(/X([\d.-]+)/);
+      const ym = l.match(/Y([\d.-]+)/);
+      return [parseFloat(xm?.[1] ?? '0'), parseFloat(ym?.[1] ?? '0')];
+    });
+    const nearTop = coords.some(([x, y]) => Math.abs(x - 50) < 2 && Math.abs(y - 0) < 2);
+    const nearBottom = coords.some(([x, y]) => Math.abs(x - 50) < 2 && Math.abs(y - 100) < 2);
+    expect(nearTop).toBe(true);
+    expect(nearBottom).toBe(true);
+  });
+
+  it('uses more segments for larger curves than for smaller ones', () => {
+    // Small curve (~5mm span)
+    const smallCurve = 'M 0 0 C 1 2 4 3 5 0';
+    // Large curve (~200mm span)
+    const largeCurve = 'M 0 0 C 50 100 150 100 200 0';
+
+    const makeGcode = (d: string) => {
+      const geometry: PathGeometry[] = [{ d }];
+      const ops: Operation[] = [{ id: 'op', type: 'cut', feedRate: 600, power: 100, passes: 1 }];
+      return generateGcode(geometry, ops, defaultProfile);
+    };
+
+    const smallG1 = makeGcode(smallCurve).split('\n').filter(l => l.startsWith('G1')).length;
+    const largeG1 = makeGcode(largeCurve).split('\n').filter(l => l.startsWith('G1')).length;
+
+    // Larger curves should produce more segments
+    expect(largeG1).toBeGreaterThan(smallG1);
+  });
 });
