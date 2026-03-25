@@ -10,6 +10,7 @@ interface Props {
   selectedShapeIds?: Set<string>;
   onSelectLayer: (id: string) => void;
   onSelectShape?: (shapeId: string, layerId: string, e: React.MouseEvent) => void;
+  onUpdateLayer?: (id: string, partial: Partial<Layer>) => void;
   originPosition: 'bottom-left' | 'top-left';
   machineProfile?: MachineProfile | null;
 }
@@ -24,7 +25,7 @@ const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#1
 
 const GRID_SPACING = 10; // mm
 
-export default function SvgCanvas({ layers, operations, selectedLayerIds, selectedShapeIds, onSelectLayer, onSelectShape, originPosition, machineProfile }: Props) {
+export default function SvgCanvas({ layers, operations, selectedLayerIds, selectedShapeIds, onSelectLayer, onSelectShape, onUpdateLayer, originPosition, machineProfile }: Props) {
   const settingsWorkW = useAppSettings(s => s.workAreaWidth);
   const settingsWorkH = useAppSettings(s => s.workAreaHeight);
   const workW = machineProfile?.workArea.x ?? settingsWorkW;
@@ -34,6 +35,13 @@ export default function SvgCanvas({ layers, operations, selectedLayerIds, select
   const dragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
+
+  // Shift-drag (move) / Alt-drag (rotate) state
+  type InteractMode = 'pan' | 'move' | 'rotate';
+  const interactMode = useRef<InteractMode>('pan');
+  const interactStart = useRef({ x: 0, y: 0 });
+  // Store initial layer offsets/rotations at drag start for smooth interactive editing
+  const interactLayerSnap = useRef<Map<string, { offsetX: number; offsetY: number; rotation: number }>>(new Map());
 
   useEffect(() => {
     const el = svgRef.current;
@@ -68,19 +76,51 @@ export default function SvgCanvas({ layers, operations, selectedLayerIds, select
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
     dragging.current = true;
-    dragStart.current = { x: e.clientX, y: e.clientY, tx: transform.tx, ty: transform.ty };
-  }, [transform]);
+
+    // Determine interaction mode
+    if ((e.shiftKey || e.altKey) && selectedLayerIds.size > 0 && onUpdateLayer) {
+      interactMode.current = e.altKey ? 'rotate' : 'move';
+      interactStart.current = { x: e.clientX, y: e.clientY };
+      // Snapshot current layer state
+      const snap = new Map<string, { offsetX: number; offsetY: number; rotation: number }>();
+      for (const lid of selectedLayerIds) {
+        const l = layers.find(la => la.id === lid);
+        if (l) snap.set(lid, { offsetX: l.offsetX, offsetY: l.offsetY, rotation: l.rotation ?? 0 });
+      }
+      interactLayerSnap.current = snap;
+    } else {
+      interactMode.current = 'pan';
+      dragStart.current = { x: e.clientX, y: e.clientY, tx: transform.tx, ty: transform.ty };
+    }
+  }, [transform, selectedLayerIds, layers, onUpdateLayer]);
 
   const onMouseMove = useCallback((e: React.MouseEvent) => {
     if (!dragging.current) return;
-    setTransform((t) => ({
-      ...t,
-      tx: dragStart.current.tx + e.clientX - dragStart.current.x,
-      ty: dragStart.current.ty + e.clientY - dragStart.current.y,
-    }));
-  }, []);
+    if (interactMode.current === 'move' && onUpdateLayer) {
+      const dx = (e.clientX - interactStart.current.x) / transform.scale;
+      const dy = (e.clientY - interactStart.current.y) / transform.scale;
+      for (const [lid, snap] of interactLayerSnap.current) {
+        onUpdateLayer(lid, { offsetX: snap.offsetX + dx, offsetY: snap.offsetY + dy });
+      }
+    } else if (interactMode.current === 'rotate' && onUpdateLayer) {
+      const dx = e.clientX - interactStart.current.x;
+      const angleDelta = dx * 0.5; // 0.5 degrees per pixel
+      for (const [lid, snap] of interactLayerSnap.current) {
+        onUpdateLayer(lid, { rotation: (snap.rotation + angleDelta) % 360 });
+      }
+    } else {
+      setTransform((t) => ({
+        ...t,
+        tx: dragStart.current.tx + e.clientX - dragStart.current.x,
+        ty: dragStart.current.ty + e.clientY - dragStart.current.y,
+      }));
+    }
+  }, [transform.scale, onUpdateLayer]);
 
-  const onMouseUp = useCallback(() => { dragging.current = false; }, []);
+  const onMouseUp = useCallback(() => {
+    dragging.current = false;
+    interactMode.current = 'pan';
+  }, []);
 
   // Get color for a layer based on operations
   const getLayerColor = (layerId: string, layerIdx: number) => {

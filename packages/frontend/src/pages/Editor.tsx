@@ -631,6 +631,7 @@ export default function Editor() {
               selectedShapeIds={selectedShapeIds}
               onSelectLayer={(id) => setSelectedLayerIds(new Set([id]))}
               onSelectShape={handleCanvasShapeClick}
+              onUpdateLayer={(id, partial) => updateLayerTransform(id, partial)}
               originPosition={originPosition}
             />
           </Panel>
