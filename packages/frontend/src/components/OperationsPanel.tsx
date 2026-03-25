@@ -6,7 +6,7 @@ import { useJobStore } from '../store/jobStore';
 import { useToastStore } from '../store/toastStore';
 import { api } from '../api/client';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCircle as faCircleSolid } from '@fortawesome/free-solid-svg-icons';
+import { faCircle as faCircleSolid, faTrash, faClone, faChevronUp, faChevronDown } from '@fortawesome/free-solid-svg-icons';
 import { faCircle as faCircleRegular } from '@fortawesome/free-regular-svg-icons';
 
 const OP_TYPE_LABELS: Record<OperationType, string> = {
@@ -39,6 +39,14 @@ interface OperationRowProps {
 
 function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, presets, layers, onAssignLayer, onUnassignLayer, onDragStart, onDragOver, onDrop, isDragOver }: OperationRowProps) {
   const [expanded, setExpanded] = useState(false);
+  const [editingLabel, setEditingLabel] = useState(false);
+  const [localLabel, setLocalLabel] = useState(op.label ?? '');
+
+  const commitLabel = () => {
+    const trimmed = localLabel.trim();
+    onChange({ label: trimmed || undefined });
+    setEditingLabel(false);
+  };
 
   return (
     <div
@@ -65,16 +73,44 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
           <span className={`text-sm font-semibold ${OP_COLORS[op.type]}`}>
             {OP_TYPE_LABELS[op.type]}
           </span>
-          {op.label && <span className="text-xs text-gray-500 truncate">({op.label})</span>}
+          {editingLabel ? (
+            <input
+              type="text"
+              value={localLabel}
+              onChange={e => setLocalLabel(e.target.value)}
+              onBlur={commitLabel}
+              onKeyDown={e => { if (e.key === 'Enter') commitLabel(); if (e.key === 'Escape') { setEditingLabel(false); setLocalLabel(op.label ?? ''); } }}
+              onClick={e => e.stopPropagation()}
+              autoFocus
+              className="flex-1 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 focus:outline-none min-w-0"
+            />
+          ) : (
+            <>
+              {op.label && (
+                <span
+                  className="text-xs text-gray-500 truncate"
+                  title="Double-click to rename"
+                  onDoubleClick={e => { e.stopPropagation(); setLocalLabel(op.label ?? ''); setEditingLabel(true); }}
+                >({op.label})</span>
+              )}
+              {!op.label && (
+                <span
+                  className="text-xs text-gray-600 truncate italic"
+                  title="Double-click to add a label"
+                  onDoubleClick={e => { e.stopPropagation(); setLocalLabel(''); setEditingLabel(true); }}
+                />
+              )}
+            </>
+          )}
           <span className="text-xs text-gray-500 ml-auto flex-shrink-0">
             {op.feedRate}mm/min · {op.power}% · ×{op.passes}
           </span>
-          <span className="text-gray-500 text-xs flex-shrink-0">{expanded ? '▲' : '▼'}</span>
+          <span className="text-gray-500 text-xs flex-shrink-0"><FontAwesomeIcon icon={expanded ? faChevronUp : faChevronDown} /></span>
         </button>
 
         <div className="flex gap-0.5 flex-shrink-0">
-          <button onClick={onDuplicate} className="text-gray-500 hover:text-gray-200 text-xs" title="Duplicate">⧉</button>
-          <button onClick={onRemove} className="text-gray-500 hover:text-red-400 text-xs" title="Remove">✕</button>
+          <button onClick={onDuplicate} className="text-gray-500 hover:text-gray-200 text-xs" title="Duplicate"><FontAwesomeIcon icon={faClone} /></button>
+          <button onClick={onRemove} className="text-gray-500 hover:text-red-400 text-xs" title="Remove"><FontAwesomeIcon icon={faTrash} /></button>
         </div>
       </div>
 
@@ -220,10 +256,12 @@ interface Props {
   project: Project;
   layers: Layer[];
   originPosition: string;
+  selectedLayerIds?: Set<string>;
 }
 
-export default function OperationsPanel({ project, layers, originPosition }: Props) {
+export default function OperationsPanel({ project, layers, originPosition, selectedLayerIds }: Props) {
   const addOperation = useProjectStore(s => s.addOperation);
+  const addOperationForLayers = useProjectStore(s => s.addOperationForLayers);
   const updateOperation = useProjectStore(s => s.updateOperation);
   const removeOperation = useProjectStore(s => s.removeOperation);
   const reorderOperation = useProjectStore(s => s.reorderOperation);
@@ -325,9 +363,18 @@ export default function OperationsPanel({ project, layers, originPosition }: Pro
 
       <div className="px-4 py-3 border-t border-gray-700 space-y-2">
         <button
-          onClick={addOperation}
+          onClick={() => {
+            const ids = selectedLayerIds ? Array.from(selectedLayerIds) : [];
+            if (ids.length > 0) {
+              addOperationForLayers(ids);
+            } else {
+              addOperation();
+            }
+          }}
           className="w-full py-1.5 text-sm rounded border border-dashed border-gray-600 text-gray-400 hover:border-orange-500 hover:text-orange-400 transition-colors"
-        >+ Add Operation</button>
+        >{selectedLayerIds && selectedLayerIds.size > 0
+          ? `+ Add Operation for ${selectedLayerIds.size} layer${selectedLayerIds.size !== 1 ? 's' : ''}`
+          : '+ Add Operation'}</button>
 
         <button
           onClick={() => {

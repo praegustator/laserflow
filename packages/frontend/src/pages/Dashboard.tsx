@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProjectStore } from '../store/projectStore';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faTrash } from '@fortawesome/free-solid-svg-icons';
 
 export default function Dashboard() {
   const projects = useProjectStore(s => s.projects);
@@ -112,7 +114,7 @@ export default function Dashboard() {
                 <button
                   onClick={() => deleteProject(project.id)}
                   className="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-red-900 text-gray-400 hover:text-red-300 transition-colors ml-auto"
-                >🗑</button>
+                ><FontAwesomeIcon icon={faTrash} /></button>
               </div>
             </div>
           ))}

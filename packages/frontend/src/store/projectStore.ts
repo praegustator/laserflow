@@ -40,6 +40,7 @@ interface ProjectStore {
 
   // Operations
   addOperation: () => void;
+  addOperationForLayers: (layerIds: string[]) => void;
   updateOperation: (opId: string, partial: Partial<Operation>) => void;
   removeOperation: (opId: string) => void;
   moveOperationUp: (opId: string) => void;
@@ -427,6 +428,27 @@ export const useProjectStore = create<ProjectStore>()(
           power: 80,
           passes: 1,
           layerIds: [],
+          enabled: true,
+        };
+        set(s => ({
+          projects: updateProject(s.projects, activeProjectId, p => ({
+            ...p,
+            operations: [...p.operations, op],
+            gcodeUpToDate: false,
+          })),
+        }));
+      },
+
+      addOperationForLayers: (layerIds: string[]) => {
+        const { activeProjectId } = get();
+        if (!activeProjectId) return;
+        const op: Operation = {
+          id: uid(),
+          type: 'cut',
+          feedRate: 800,
+          power: 80,
+          passes: 1,
+          layerIds,
           enabled: true,
         };
         set(s => ({

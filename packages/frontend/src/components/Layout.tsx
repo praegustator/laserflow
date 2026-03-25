@@ -2,13 +2,15 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import MachineStatus from './MachineStatus';
 import Footer from './Footer';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faFolderOpen, faPenToSquare, faKeyboard, faCode, faGear } from '@fortawesome/free-solid-svg-icons';
 
 const navItems = [
-  { to: '/', label: 'Projects', icon: '📁', end: true },
-  { to: '/editor', label: 'Editor', icon: '✏' },
-  { to: '/console', label: 'Console', icon: '⌨' },
-  { to: '/gcode-preview', label: 'G-code', icon: '📋' },
-  { to: '/settings', label: 'Settings', icon: '⚙' },
+  { to: '/', label: 'Projects', icon: faFolderOpen, end: true },
+  { to: '/editor', label: 'Editor', icon: faPenToSquare },
+  { to: '/console', label: 'Console', icon: faKeyboard },
+  { to: '/gcode-preview', label: 'G-code', icon: faCode },
+  { to: '/settings', label: 'Settings', icon: faGear },
 ];
 
 export default function Layout() {
@@ -52,7 +54,7 @@ export default function Layout() {
                 }`
               }
             >
-              <span className="text-sm">{icon}</span>
+              <span className="text-sm"><FontAwesomeIcon icon={icon} /></span>
               <span>{label}</span>
             </NavLink>
           ))}
