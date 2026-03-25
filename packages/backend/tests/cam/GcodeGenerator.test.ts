@@ -148,7 +148,7 @@ describe('GcodeGenerator', () => {
     const coords = g1Lines.map(l => {
       const xm = l.match(/X([\d.-]+)/);
       const ym = l.match(/Y([\d.-]+)/);
-      return [parseFloat(xm![1]), parseFloat(ym![1])];
+      return [parseFloat(xm?.[1] ?? '0'), parseFloat(ym?.[1] ?? '0')];
     });
     const nearTop = coords.some(([x, y]) => Math.abs(x - 50) < 2 && Math.abs(y - 0) < 2);
     const nearBottom = coords.some(([x, y]) => Math.abs(x - 50) < 2 && Math.abs(y - 100) < 2);
