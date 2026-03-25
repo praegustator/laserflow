@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faFileExport, faFileImport, faPlus, faPencil, faTrash } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../api/client';
 import { useAppSettings, isMixedContent, type OriginPosition } from '../store/appSettingsStore';
 import type { MachineProfile, MaterialPreset } from '../types';
@@ -79,7 +81,7 @@ function ProfileForm({
           />
         </div>
         <div>
-          <label className="text-xs text-gray-500 uppercase">Max Spindle Speed</label>
+          <label className="text-xs text-gray-500 uppercase">Max Laser Power (S-value, GRBL $30)</label>
           <input
             type="number"
             value={form.maxSpindleSpeed}
@@ -233,10 +235,6 @@ export default function Settings() {
   const setBackendUrl = useAppSettings((s) => s.setBackendUrl);
   const originPosition = useAppSettings((s) => s.originPosition);
   const setOriginPosition = useAppSettings((s) => s.setOriginPosition);
-  const workAreaWidth = useAppSettings((s) => s.workAreaWidth);
-  const setWorkAreaWidth = useAppSettings((s) => s.setWorkAreaWidth);
-  const workAreaHeight = useAppSettings((s) => s.workAreaHeight);
-  const setWorkAreaHeight = useAppSettings((s) => s.setWorkAreaHeight);
   const units = useAppSettings((s) => s.units);
   const setUnits = useAppSettings((s) => s.setUnits);
   const safetyConfirmation = useAppSettings((s) => s.safetyConfirmation);
@@ -513,23 +511,26 @@ export default function Settings() {
           <div className="flex gap-2">
             <button
               onClick={() => exportJson('machine-profiles.json', profiles)}
-              className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
+              className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors flex items-center gap-1.5"
             >
-              ↓ Export All
+              <FontAwesomeIcon icon={faFileExport} />
+              Export All
             </button>
             <button
               onClick={() => profileImportRef.current?.click()}
-              className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
+              className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors flex items-center gap-1.5"
             >
-              ↑ Import JSON
+              <FontAwesomeIcon icon={faFileImport} />
+              Import JSON
             </button>
             <input type="file" accept=".json" className="hidden" ref={profileImportRef} onChange={e => { void handleProfileImportFile(e); }} />
             {!addingProfile && !editingProfile && (
               <button
                 onClick={() => setAddingProfile(true)}
-                className="px-3 py-1.5 text-xs rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold transition-colors"
+                className="px-3 py-1.5 text-xs rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold transition-colors flex items-center gap-1.5"
               >
-                + Add Profile
+                <FontAwesomeIcon icon={faPlus} />
+                Add Profile
               </button>
             )}
           </div>
@@ -567,21 +568,31 @@ export default function Settings() {
                 <div>
                   <div className="font-medium text-gray-100">{p.name}</div>
                   <div className="text-xs text-gray-500 mt-0.5">
-                    {p.workArea.x}×{p.workArea.y} mm · max {p.maxSpindleSpeed} RPM
+                    {p.workArea.x}×{p.workArea.y} mm · max S={p.maxSpindleSpeed}
                     {p.homingEnabled ? ' · homing on' : ''}
                   </div>
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setEditingProfile(p)}
-                    className="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
+                    onClick={() => exportJson(`machine-profile-${p.name}.json`, p)}
+                    className="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors flex items-center gap-1.5"
+                    title="Export this profile"
                   >
+                    <FontAwesomeIcon icon={faFileExport} />
+                    Export
+                  </button>
+                  <button
+                    onClick={() => setEditingProfile(p)}
+                    className="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors flex items-center gap-1.5"
+                  >
+                    <FontAwesomeIcon icon={faPencil} />
                     Edit
                   </button>
                   <button
                     onClick={() => { void deleteProfile(p.id); }}
-                    className="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-red-900 text-gray-400 hover:text-red-300 transition-colors"
+                    className="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-red-900 text-gray-400 hover:text-red-300 transition-colors flex items-center gap-1.5"
                   >
+                    <FontAwesomeIcon icon={faTrash} />
                     Delete
                   </button>
                 </div>
@@ -607,23 +618,26 @@ export default function Settings() {
           <div className="flex gap-2">
             <button
               onClick={() => exportJson('material-presets.json', presets)}
-              className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
+              className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors flex items-center gap-1.5"
             >
-              ↓ Export All
+              <FontAwesomeIcon icon={faFileExport} />
+              Export All
             </button>
             <button
               onClick={() => presetImportRef.current?.click()}
-              className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
+              className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors flex items-center gap-1.5"
             >
-              ↑ Import JSON
+              <FontAwesomeIcon icon={faFileImport} />
+              Import JSON
             </button>
             <input type="file" accept=".json" className="hidden" ref={presetImportRef} onChange={e => { void handlePresetImportFile(e); }} />
             {!addingPreset && !editingPreset && (
               <button
                 onClick={() => setAddingPreset(true)}
-                className="px-3 py-1.5 text-xs rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold transition-colors"
+                className="px-3 py-1.5 text-xs rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold transition-colors flex items-center gap-1.5"
               >
-                + Add Preset
+                <FontAwesomeIcon icon={faPlus} />
+                Add Preset
               </button>
             )}
           </div>
@@ -667,15 +681,25 @@ export default function Settings() {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setEditingPreset(p)}
-                    className="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
+                    onClick={() => exportJson(`material-preset-${p.name}.json`, p)}
+                    className="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors flex items-center gap-1.5"
+                    title="Export this preset"
                   >
+                    <FontAwesomeIcon icon={faFileExport} />
+                    Export
+                  </button>
+                  <button
+                    onClick={() => setEditingPreset(p)}
+                    className="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors flex items-center gap-1.5"
+                  >
+                    <FontAwesomeIcon icon={faPencil} />
                     Edit
                   </button>
                   <button
                     onClick={() => { void deletePreset(p.id); }}
-                    className="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-red-900 text-gray-400 hover:text-red-300 transition-colors"
+                    className="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-red-900 text-gray-400 hover:text-red-300 transition-colors flex items-center gap-1.5"
                   >
+                    <FontAwesomeIcon icon={faTrash} />
                     Delete
                   </button>
                 </div>
@@ -711,33 +735,6 @@ export default function Settings() {
               <option value="bottom-left">Bottom-Left (standard GRBL)</option>
               <option value="top-left">Top-Left</option>
             </select>
-          </div>
-          <div className="border-t border-gray-700" />
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm text-gray-200">Work Area</div>
-              <div className="text-xs text-gray-500">Machine bed dimensions (width × height in mm)</div>
-            </div>
-            <div className="flex items-center gap-1">
-              <input
-                type="number"
-                min={1}
-                value={workAreaWidth}
-                onChange={e => { const v = Number(e.target.value); if (v > 0) setWorkAreaWidth(v); }}
-                className="w-16 bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
-                title="Work area width (mm)"
-              />
-              <span className="text-gray-500 text-sm">×</span>
-              <input
-                type="number"
-                min={1}
-                value={workAreaHeight}
-                onChange={e => { const v = Number(e.target.value); if (v > 0) setWorkAreaHeight(v); }}
-                className="w-16 bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
-                title="Work area height (mm)"
-              />
-              <span className="text-xs text-gray-500">mm</span>
-            </div>
           </div>
           <div className="border-t border-gray-700" />
           <div className="flex items-center justify-between">
