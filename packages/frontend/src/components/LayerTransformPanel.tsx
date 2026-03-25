@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Layer, PivotAnchor } from '../types';
 import { computeShapesBoundingBox, type BBox } from '../utils/geometry';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faArrowsLeftRight, faArrowsUpDown } from '@fortawesome/free-solid-svg-icons';
 
 interface Props {
   layer: Layer;
@@ -33,24 +35,6 @@ function getPivotCoords(bbox: BBox | null, pivot: PivotAnchor): { px: number; py
   };
 }
 
-/** SVG icon for horizontal flip */
-function FlipHIcon({ className }: { className?: string }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className={className ?? 'w-3.5 h-3.5'}>
-      <path d="M7 1v14H6V1h1zm3 2l4 5-4 5V3zM5 3v10l-4-5 4-5z" />
-    </svg>
-  );
-}
-
-/** SVG icon for vertical flip */
-function FlipVIcon({ className }: { className?: string }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className={className ?? 'w-3.5 h-3.5'}>
-      <path d="M1 8h14v1H1V8zm2-2V2l5 4H3zm0 4v4l5-4H3zm6-4V2l5 4H9zm0 4v4l5-4H9z" />
-    </svg>
-  );
-}
-
 export default function LayerTransformPanel({ layer, onUpdate }: Props) {
   const [sizeMode, setSizeMode] = useState<SizeMode>('scale');
   const [posMode, setPosMode] = useState<PositionMode>('absolute');
@@ -61,8 +45,6 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
   // Local text state so the user can type freely (including commas)
   const [localScaleX, setLocalScaleX] = useState(String(layer.scaleX));
   const [localScaleY, setLocalScaleY] = useState(String(layer.scaleY));
-  const [localOffsetX, setLocalOffsetX] = useState(String(layer.offsetX));
-  const [localOffsetY, setLocalOffsetY] = useState(String(layer.offsetY));
   const [localRotation, setLocalRotation] = useState(String(layer.rotation ?? 0));
   // Delta inputs for relative positioning mode
   const [deltaX, setDeltaX] = useState('0');
@@ -82,25 +64,33 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
   const pivotWorldX = layer.offsetX + layer.scaleX * pivotNatX;
   const pivotWorldY = layer.offsetY + layer.scaleY * pivotNatY;
 
+  // For absolute position inputs, show/edit the pivot world position (not the raw offset)
+  const [localPivotX, setLocalPivotX] = useState(String(Math.round(pivotWorldX * 100) / 100));
+  const [localPivotY, setLocalPivotY] = useState(String(Math.round(pivotWorldY * 100) / 100));
+
   // Sync local text state when the layer prop changes externally
   useEffect(() => {
     setLocalScaleX(String(layer.scaleX));
     setLocalScaleY(String(layer.scaleY));
-    setLocalOffsetX(String(layer.offsetX));
-    setLocalOffsetY(String(layer.offsetY));
     setLocalRotation(String(layer.rotation ?? 0));
     const w = naturalW * layer.scaleX;
     const h = naturalH * layer.scaleY;
     setLocalAbsW(String(Math.round(w * 100) / 100));
     setLocalAbsH(String(Math.round(h * 100) / 100));
-  }, [layer.scaleX, layer.scaleY, layer.offsetX, layer.offsetY, layer.rotation, naturalW, naturalH]);
+    setLocalPivotX(String(Math.round(pivotWorldX * 100) / 100));
+    setLocalPivotY(String(Math.round(pivotWorldY * 100) / 100));
+  }, [layer.scaleX, layer.scaleY, layer.offsetX, layer.offsetY, layer.rotation, naturalW, naturalH, pivotWorldX, pivotWorldY]);
 
-  const commitOffset = useCallback((field: 'offsetX' | 'offsetY', raw: string) => {
+  /** Commit absolute pivot position — compute the required offset. */
+  const commitPivotPos = useCallback((axis: 'x' | 'y', raw: string) => {
     const v = parseDecimal(raw);
-    if (Number.isFinite(v)) {
-      onUpdate(layer.id, { [field]: v });
+    if (!Number.isFinite(v)) return;
+    if (axis === 'x') {
+      onUpdate(layer.id, { offsetX: v - layer.scaleX * pivotNatX });
+    } else {
+      onUpdate(layer.id, { offsetY: v - layer.scaleY * pivotNatY });
     }
-  }, [layer.id, onUpdate]);
+  }, [layer.id, layer.scaleX, layer.scaleY, pivotNatX, pivotNatY, onUpdate]);
 
   /** Apply a relative delta to the current offset and reset delta fields. */
   const commitDelta = useCallback(() => {
@@ -193,10 +183,10 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
               <input
                 type="text"
                 inputMode="decimal"
-                value={localOffsetX}
-                onChange={e => setLocalOffsetX(e.target.value)}
-                onBlur={() => commitOffset('offsetX', localOffsetX)}
-                onKeyDown={e => { if (e.key === 'Enter') commitOffset('offsetX', localOffsetX); }}
+                value={localPivotX}
+                onChange={e => setLocalPivotX(e.target.value)}
+                onBlur={() => commitPivotPos('x', localPivotX)}
+                onKeyDown={e => { if (e.key === 'Enter') commitPivotPos('x', localPivotX); }}
                 className={inputClass}
               />
             </div>
@@ -205,10 +195,10 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
               <input
                 type="text"
                 inputMode="decimal"
-                value={localOffsetY}
-                onChange={e => setLocalOffsetY(e.target.value)}
-                onBlur={() => commitOffset('offsetY', localOffsetY)}
-                onKeyDown={e => { if (e.key === 'Enter') commitOffset('offsetY', localOffsetY); }}
+                value={localPivotY}
+                onChange={e => setLocalPivotY(e.target.value)}
+                onBlur={() => commitPivotPos('y', localPivotY)}
+                onKeyDown={e => { if (e.key === 'Enter') commitPivotPos('y', localPivotY); }}
                 className={inputClass}
               />
             </div>
@@ -377,12 +367,12 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
               onClick={handleFlipX}
               className="flex items-center justify-center w-7 h-7 rounded transition-colors bg-gray-700 text-gray-400 hover:bg-gray-600 active:bg-orange-600 active:text-white"
               title="Flip horizontally around pivot"
-            ><FlipHIcon /></button>
+            ><FontAwesomeIcon icon={faArrowsLeftRight} className="text-xs" /></button>
             <button
               onClick={handleFlipY}
               className="flex items-center justify-center w-7 h-7 rounded transition-colors bg-gray-700 text-gray-400 hover:bg-gray-600 active:bg-orange-600 active:text-white"
               title="Flip vertically around pivot"
-            ><FlipVIcon /></button>
+            ><FontAwesomeIcon icon={faArrowsUpDown} className="text-xs" /></button>
           </div>
         </div>
         <div>

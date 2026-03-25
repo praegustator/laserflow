@@ -5,6 +5,9 @@ import { useProjectStore } from '../store/projectStore';
 import { useJobStore } from '../store/jobStore';
 import { useToastStore } from '../store/toastStore';
 import { api } from '../api/client';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faCircle as faCircleSolid } from '@fortawesome/free-solid-svg-icons';
+import { faCircle as faCircleRegular } from '@fortawesome/free-regular-svg-icons';
 
 const OP_TYPE_LABELS: Record<OperationType, string> = {
   cut: '✂ Cut',
@@ -53,7 +56,7 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
           onClick={onToggleEnabled}
           className={`text-xs w-6 text-center flex-shrink-0 ${op.enabled ? 'text-green-400' : 'text-gray-600'}`}
           title={op.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable'}
-        >{op.enabled ? '●' : '○'}</button>
+        ><FontAwesomeIcon icon={op.enabled ? faCircleSolid : faCircleRegular} /></button>
 
         <button
           onClick={() => setExpanded(e => !e)}
@@ -327,11 +330,17 @@ export default function OperationsPanel({ project, layers, originPosition }: Pro
         >+ Add Operation</button>
 
         <button
-          onClick={() => { void handleGenerate(); }}
-          disabled={generating || !hasEnabledOps || gcodeUpToDate}
+          onClick={() => {
+            if (gcodeUpToDate) {
+              void navigate('/gcode-preview');
+            } else {
+              void handleGenerate();
+            }
+          }}
+          disabled={generating || !hasEnabledOps}
           className="w-full py-2 text-sm rounded bg-orange-600 hover:bg-orange-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
-          title={gcodeUpToDate ? 'G-code is up to date — no changes since last generation' : undefined}
-        >{generating ? 'Generating…' : '⚙ Generate G-code'}</button>
+          title={gcodeUpToDate ? 'G-code is up to date — click to preview' : 'Generate G-code from operations'}
+        >{generating ? 'Generating…' : gcodeUpToDate ? '📋 Preview G-code →' : '⚙ Generate G-code'}</button>
 
         {project.gcode && (
           <p className={`text-xs text-center ${gcodeUpToDate ? 'text-green-400' : 'text-yellow-500'}`}>
@@ -340,16 +349,10 @@ export default function OperationsPanel({ project, layers, originPosition }: Pro
           </p>
         )}
         {project.gcode && (
-          <>
-            <button
-              onClick={() => { void navigate('/gcode-preview'); }}
-              className="w-full py-1.5 text-sm rounded border border-gray-600 text-gray-300 hover:border-orange-500 hover:text-orange-400 transition-colors"
-            >📋 Preview G-code →</button>
-            <button
-              onClick={() => { void handleStart(); }}
-              className="w-full py-2 text-sm rounded bg-green-700 hover:bg-green-600 text-white font-semibold transition-colors"
-            >▶ Start Job</button>
-          </>
+          <button
+            onClick={() => { void handleStart(); }}
+            className="w-full py-2 text-sm rounded bg-green-700 hover:bg-green-600 text-white font-semibold transition-colors"
+          >▶ Start Job</button>
         )}
       </div>
     </div>
