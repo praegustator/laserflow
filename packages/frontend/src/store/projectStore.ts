@@ -242,7 +242,7 @@ export const useProjectStore = create<ProjectStore>()(
             if (idx <= 0) return p;
             const next = [...p.layers];
             [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
-            return { ...p, layers: next };
+            return { ...p, layers: next, gcodeUpToDate: false };
           }),
         }));
       },
@@ -256,7 +256,7 @@ export const useProjectStore = create<ProjectStore>()(
             if (idx < 0 || idx >= p.layers.length - 1) return p;
             const next = [...p.layers];
             [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
-            return { ...p, layers: next };
+            return { ...p, layers: next, gcodeUpToDate: false };
           }),
         }));
       },
@@ -485,7 +485,7 @@ export const useProjectStore = create<ProjectStore>()(
             if (idx < 0 || idx >= p.operations.length - 1) return p;
             const next = [...p.operations];
             [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
-            return { ...p, operations: next };
+            return { ...p, operations: next, gcodeUpToDate: false };
           }),
         }));
       },
