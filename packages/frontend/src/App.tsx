@@ -7,6 +7,7 @@ import Console from './pages/Console';
 import Editor from './pages/Editor';
 import Settings from './pages/Settings';
 import GcodePreview from './pages/GcodePreview';
+import Queue from './pages/Queue';
 import { createWebSocket } from './api/client';
 import { useMachineStore } from './store/machineStore';
 import { useJobStore } from './store/jobStore';
@@ -82,6 +83,7 @@ function AppInner() {
         <Route path="editor" element={<Editor />} />
         <Route path="settings" element={<Settings />} />
         <Route path="gcode-preview" element={<GcodePreview />} />
+        <Route path="queue" element={<Queue />} />
       </Route>
     </Routes>
   );
