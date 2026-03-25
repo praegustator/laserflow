@@ -85,22 +85,11 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
               className="flex-1 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 focus:outline-none min-w-0"
             />
           ) : (
-            <>
-              {op.label && (
-                <span
-                  className="text-xs text-gray-500 truncate"
-                  title="Double-click to rename"
-                  onDoubleClick={e => { e.stopPropagation(); setLocalLabel(op.label ?? ''); setEditingLabel(true); }}
-                >({op.label})</span>
-              )}
-              {!op.label && (
-                <span
-                  className="text-xs text-gray-600 truncate italic"
-                  title="Double-click to add a label"
-                  onDoubleClick={e => { e.stopPropagation(); setLocalLabel(''); setEditingLabel(true); }}
-                />
-              )}
-            </>
+            <span
+              className={`text-xs truncate ${op.label ? 'text-gray-500' : 'text-gray-600 italic'}`}
+              title="Double-click to rename"
+              onDoubleClick={e => { e.stopPropagation(); setLocalLabel(op.label ?? ''); setEditingLabel(true); }}
+            >{op.label ? `(${op.label})` : ''}</span>
           )}
           <span className="text-xs text-gray-500 ml-auto flex-shrink-0">
             {op.feedRate}mm/min · {op.power}% · ×{op.passes}
