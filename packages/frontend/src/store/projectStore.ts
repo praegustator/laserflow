@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '../api/client';
 import type { Project, ProjectFile, ProjectVersion, Layer, Shape, Operation, PathGeometry, Job } from '../types';
+import { computeShapesBoundingBox } from '../utils/geometry';
+import { useAppSettings } from './appSettingsStore';
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -132,6 +134,22 @@ export const useProjectStore = create<ProjectStore>()(
           shapes,
         };
 
+        // Compute bounding box to position the layer based on origin setting
+        const bbox = computeShapesBoundingBox(shapes);
+        const { originPosition, workAreaHeight } = useAppSettings.getState();
+
+        // For top-left origin: align shape top to board top, left to board left.
+        // For bottom-left origin: align shape bottom to board bottom (machine origin), left to board left.
+        const offsetX = bbox ? -bbox.minX : 0;
+        let offsetY = 0;
+        if (bbox) {
+          if (originPosition === 'bottom-left') {
+            offsetY = workAreaHeight - bbox.maxY;
+          } else {
+            offsetY = -bbox.minY;
+          }
+        }
+
         // Create a default layer for this file with all shapes
         const layerId = uid();
         const layer: Layer = {
@@ -139,8 +157,8 @@ export const useProjectStore = create<ProjectStore>()(
           name: file.name.replace(/\.svg$/i, ''),
           shapes: [...shapes],
           visible: true,
-          offsetX: 0,
-          offsetY: 0,
+          offsetX,
+          offsetY,
           scaleX: 1,
           scaleY: 1,
           rotation: 0,

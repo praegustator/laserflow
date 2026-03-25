@@ -35,6 +35,7 @@ export default function Editor() {
   const connectionStatus = useMachineStore(s => s.connectionStatus);
   const sendCommand = useMachineStore(s => s.sendCommand);
   const originPosition = useAppSettings(s => s.originPosition);
+  const workAreaHeight = useAppSettings(s => s.workAreaHeight);
   const addToast = useToastStore(s => s.addToast);
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -545,6 +546,8 @@ export default function Editor() {
                     <LayerTransformPanel
                       layer={selectedLayer}
                       onUpdate={(id, partial) => updateLayerTransform(id, partial)}
+                      originPosition={originPosition}
+                      workH={workAreaHeight}
                     />
                   </div>
                 </div>

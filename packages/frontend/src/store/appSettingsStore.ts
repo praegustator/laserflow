@@ -6,11 +6,15 @@ export type OriginPosition = 'bottom-left' | 'top-left';
 interface AppSettings {
   backendUrl: string;
   originPosition: OriginPosition;
+  workAreaWidth: number;
+  workAreaHeight: number;
   units: 'mm' | 'in';
   safetyConfirmation: boolean;
   autoScrollConsole: boolean;
   setBackendUrl: (url: string) => void;
   setOriginPosition: (pos: OriginPosition) => void;
+  setWorkAreaWidth: (w: number) => void;
+  setWorkAreaHeight: (h: number) => void;
   setUnits: (units: 'mm' | 'in') => void;
   setSafetyConfirmation: (v: boolean) => void;
   setAutoScrollConsole: (v: boolean) => void;
@@ -21,11 +25,15 @@ export const useAppSettings = create<AppSettings>()(
     (set) => ({
       backendUrl: 'http://localhost:3001',
       originPosition: 'bottom-left',
+      workAreaWidth: 300,
+      workAreaHeight: 200,
       units: 'mm',
       safetyConfirmation: true,
       autoScrollConsole: true,
       setBackendUrl: (url) => set({ backendUrl: url }),
       setOriginPosition: (pos) => set({ originPosition: pos }),
+      setWorkAreaWidth: (w) => set({ workAreaWidth: w }),
+      setWorkAreaHeight: (h) => set({ workAreaHeight: h }),
       setUnits: (units) => set({ units }),
       setSafetyConfirmation: (v) => set({ safetyConfirmation: v }),
       setAutoScrollConsole: (v) => set({ autoScrollConsole: v }),

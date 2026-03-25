@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import type { Layer, Operation, MachineProfile } from '../types';
 import { computeShapesBoundingBox } from '../utils/geometry';
+import { useAppSettings } from '../store/appSettingsStore';
 
 interface Props {
   layers: Layer[];
@@ -24,8 +25,10 @@ const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#1
 const GRID_SPACING = 10; // mm
 
 export default function SvgCanvas({ layers, operations, selectedLayerId, selectedShapeIds, onSelectLayer, onSelectShape, originPosition, machineProfile }: Props) {
-  const workW = machineProfile?.workArea.x ?? 300;
-  const workH = machineProfile?.workArea.y ?? 200;
+  const settingsWorkW = useAppSettings(s => s.workAreaWidth);
+  const settingsWorkH = useAppSettings(s => s.workAreaHeight);
+  const workW = machineProfile?.workArea.x ?? settingsWorkW;
+  const workH = machineProfile?.workArea.y ?? settingsWorkH;
 
   const [transform, setTransform] = useState({ tx: 40, ty: 40, scale: 1.5 });
   const dragging = useRef(false);

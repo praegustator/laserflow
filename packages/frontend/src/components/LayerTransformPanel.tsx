@@ -7,6 +7,8 @@ import { faArrowsLeftRight, faArrowsUpDown } from '@fortawesome/free-solid-svg-i
 interface Props {
   layer: Layer;
   onUpdate: (id: string, partial: Partial<Layer>) => void;
+  originPosition?: 'bottom-left' | 'top-left';
+  workH?: number;
 }
 
 /** Parse a decimal string that may use comma or dot as separator */
@@ -34,7 +36,7 @@ function getPivotCoords(bbox: BBox | null, pivot: PivotAnchor): { px: number; py
   };
 }
 
-export default function LayerTransformPanel({ layer, onUpdate }: Props) {
+export default function LayerTransformPanel({ layer, onUpdate, originPosition = 'top-left', workH = 200 }: Props) {
   const [sizeMode, setSizeMode] = useState<SizeMode>('scale');
   const [posRotMode, setPosRotMode] = useState<PosRotMode>('absolute');
   const [ratioLocked, setRatioLocked] = useState(true);
@@ -62,9 +64,12 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
   const pivotWorldX = layer.offsetX + layer.scaleX * pivotNatX;
   const pivotWorldY = layer.offsetY + layer.scaleY * pivotNatY;
 
+  // Convert Y to user-facing coordinate: for bottom-left origin, Y=0 is at the bottom (workH in SVG space)
+  const displayY = originPosition === 'bottom-left' ? workH - pivotWorldY : pivotWorldY;
+
   // For absolute position inputs, show/edit the pivot world position (not the raw offset)
   const [localPivotX, setLocalPivotX] = useState(String(Math.round(pivotWorldX * 100) / 100));
-  const [localPivotY, setLocalPivotY] = useState(String(Math.round(pivotWorldY * 100) / 100));
+  const [localPivotY, setLocalPivotY] = useState(String(Math.round(displayY * 100) / 100));
 
   // Sync local text state when the layer prop changes externally
   useEffect(() => {
@@ -76,8 +81,9 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
     setLocalAbsW(String(Math.round(w * 100) / 100));
     setLocalAbsH(String(Math.round(h * 100) / 100));
     setLocalPivotX(String(Math.round(pivotWorldX * 100) / 100));
-    setLocalPivotY(String(Math.round(pivotWorldY * 100) / 100));
-  }, [layer.scaleX, layer.scaleY, layer.offsetX, layer.offsetY, layer.rotation, naturalW, naturalH, pivotWorldX, pivotWorldY]);
+    const dy = originPosition === 'bottom-left' ? workH - pivotWorldY : pivotWorldY;
+    setLocalPivotY(String(Math.round(dy * 100) / 100));
+  }, [layer.scaleX, layer.scaleY, layer.offsetX, layer.offsetY, layer.rotation, naturalW, naturalH, pivotWorldX, pivotWorldY, originPosition, workH]);
 
   /** Commit absolute pivot position — compute the required offset. */
   const commitPivotPos = useCallback((axis: 'x' | 'y', raw: string) => {
@@ -86,9 +92,11 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
     if (axis === 'x') {
       onUpdate(layer.id, { offsetX: v - layer.scaleX * pivotNatX });
     } else {
-      onUpdate(layer.id, { offsetY: v - layer.scaleY * pivotNatY });
+      // For bottom-left origin, user Y is measured from bottom: svgY = workH - userY
+      const svgY = originPosition === 'bottom-left' ? workH - v : v;
+      onUpdate(layer.id, { offsetY: svgY - layer.scaleY * pivotNatY });
     }
-  }, [layer.id, layer.scaleX, layer.scaleY, pivotNatX, pivotNatY, onUpdate]);
+  }, [layer.id, layer.scaleX, layer.scaleY, pivotNatX, pivotNatY, onUpdate, originPosition, workH]);
 
   /** Apply a relative delta to the current offset and reset delta fields. */
   const commitDelta = useCallback(() => {
@@ -398,7 +406,7 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
         <p className="text-xs text-gray-600">
           {naturalW.toFixed(1)}×{naturalH.toFixed(1)} mm
           {sizeMode === 'scale' && ` → ${absW.toFixed(1)}×${absH.toFixed(1)} mm`}
-          {' · pivot '}({pivotWorldX.toFixed(1)}, {pivotWorldY.toFixed(1)})
+          {' · pivot '}({pivotWorldX.toFixed(1)}, {displayY.toFixed(1)})
         </p>
       )}
     </div>
