@@ -14,6 +14,7 @@ function parseDecimal(v: string): number {
 
 type SizeMode = 'scale' | 'absolute';
 type PositionMode = 'absolute' | 'relative';
+type RotationMode = 'absolute' | 'relative';
 
 const PIVOT_GRID: PivotAnchor[][] = [
   ['tl', 'tc', 'tr'],
@@ -32,9 +33,28 @@ function getPivotCoords(bbox: BBox | null, pivot: PivotAnchor): { px: number; py
   };
 }
 
+/** SVG icon for horizontal flip */
+function FlipHIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className={className ?? 'w-3.5 h-3.5'}>
+      <path d="M7 1v14H6V1h1zm3 2l4 5-4 5V3zM5 3v10l-4-5 4-5z" />
+    </svg>
+  );
+}
+
+/** SVG icon for vertical flip */
+function FlipVIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className={className ?? 'w-3.5 h-3.5'}>
+      <path d="M1 8h14v1H1V8zm2-2V2l5 4H3zm0 4v4l5-4H3zm6-4V2l5 4H9zm0 4v4l5-4H9z" />
+    </svg>
+  );
+}
+
 export default function LayerTransformPanel({ layer, onUpdate }: Props) {
   const [sizeMode, setSizeMode] = useState<SizeMode>('scale');
   const [posMode, setPosMode] = useState<PositionMode>('absolute');
+  const [rotMode, setRotMode] = useState<RotationMode>('absolute');
   const [ratioLocked, setRatioLocked] = useState(true);
   const bbox = computeShapesBoundingBox(layer.shapes);
 
@@ -47,6 +67,7 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
   // Delta inputs for relative positioning mode
   const [deltaX, setDeltaX] = useState('0');
   const [deltaY, setDeltaY] = useState('0');
+  const [deltaRot, setDeltaRot] = useState('0');
 
   // Derived absolute sizes
   const naturalW = bbox?.width ?? 0;
@@ -55,6 +76,11 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
   const absH = naturalH * layer.scaleY;
   const [localAbsW, setLocalAbsW] = useState(String(Math.round(absW * 100) / 100));
   const [localAbsH, setLocalAbsH] = useState(String(Math.round(absH * 100) / 100));
+
+  // Compute pivot world position for display
+  const { px: pivotNatX, py: pivotNatY } = getPivotCoords(bbox, layer.pivot ?? 'tl');
+  const pivotWorldX = layer.offsetX + layer.scaleX * pivotNatX;
+  const pivotWorldY = layer.offsetY + layer.scaleY * pivotNatY;
 
   // Sync local text state when the layer prop changes externally
   useEffect(() => {
@@ -120,13 +146,17 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
     }
   }, [layer.id, onUpdate]);
 
+  /** Apply a relative delta to the current rotation and reset. */
+  const commitDeltaRot = useCallback(() => {
+    const dr = parseDecimal(deltaRot);
+    if (Number.isFinite(dr)) {
+      onUpdate(layer.id, { rotation: ((layer.rotation ?? 0) + dr) % 360 });
+    }
+    setDeltaRot('0');
+  }, [layer.id, layer.rotation, deltaRot, onUpdate]);
+
   /**
    * Flip mirror and adjust the layer offset so the pivot stays at the same world position.
-   * With transform: translate(ox, oy) rotate(a, sxm*pivotX, sym*pivotY) scale(sxm, sym)
-   * The pivot's world X = ox + sxm * pivotX  (independent of rotation at angle=0 or uniform).
-   * When toggling mirrorX (sxm changes sign), to keep pivot_world_X constant:
-   *   new_ox = old_ox + 2 * scaleX * pivotX   (when turning ON mirror)
-   *   new_ox = old_ox - 2 * scaleX * pivotX   (when turning OFF mirror)
    */
   const handleFlipX = useCallback(() => {
     const { px } = getPivotCoords(bbox, layer.pivot ?? 'tl');
@@ -143,224 +173,245 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
   }, [layer, bbox, onUpdate]);
 
   const inputClass = 'w-full text-xs bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-gray-100 focus:outline-none focus:border-orange-500';
+  const btnActive = 'text-xs px-1.5 py-0.5 rounded bg-orange-600 text-white font-medium';
+  const btnInactive = 'text-xs px-1.5 py-0.5 rounded bg-gray-700 text-gray-400 hover:bg-gray-600 transition-colors';
 
   return (
-    <div className="mt-2 space-y-2" onClick={e => e.stopPropagation()}>
-      {/* Position — absolute or relative */}
-      <div className="flex items-center gap-1 mb-0.5">
-        <label className="text-xs text-gray-500 flex-1">Position</label>
-        <button
-          onClick={() => { setPosMode(posMode === 'absolute' ? 'relative' : 'absolute'); setDeltaX('0'); setDeltaY('0'); }}
-          className="text-xs px-1.5 py-0 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"
-          title={posMode === 'absolute' ? 'Switch to relative (move by delta)' : 'Switch to absolute position'}
-        >{posMode === 'absolute' ? 'Abs' : 'Rel'}</button>
-      </div>
-
-      {posMode === 'absolute' ? (
-        <div className="grid grid-cols-2 gap-1">
-          <div>
-            <label className="text-xs text-gray-500">X (mm)</label>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={localOffsetX}
-              onChange={e => setLocalOffsetX(e.target.value)}
-              onBlur={() => commitOffset('offsetX', localOffsetX)}
-              onKeyDown={e => { if (e.key === 'Enter') commitOffset('offsetX', localOffsetX); }}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500">Y (mm)</label>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={localOffsetY}
-              onChange={e => setLocalOffsetY(e.target.value)}
-              onBlur={() => commitOffset('offsetY', localOffsetY)}
-              onKeyDown={e => { if (e.key === 'Enter') commitOffset('offsetY', localOffsetY); }}
-              className={inputClass}
-            />
-          </div>
+    <div className="mt-1 space-y-2" onClick={e => e.stopPropagation()}>
+      {/* ── Position ── */}
+      <div>
+        <div className="flex items-center gap-1 mb-0.5">
+          <label className="text-xs text-gray-500 flex-1">Position</label>
+          <button onClick={() => { setPosMode('absolute'); setDeltaX('0'); setDeltaY('0'); }} className={posMode === 'absolute' ? btnActive : btnInactive}>Abs</button>
+          <button onClick={() => { setPosMode('relative'); setDeltaX('0'); setDeltaY('0'); }} className={posMode === 'relative' ? btnActive : btnInactive}>Rel</button>
         </div>
-      ) : (
-        <div className="space-y-1">
-          <div className="grid grid-cols-2 gap-1">
-            <div>
-              <label className="text-xs text-gray-500">ΔX (mm)</label>
+
+        {posMode === 'absolute' ? (
+          <div className="flex items-end gap-1">
+            <div className="flex-1">
+              <label className="text-xs text-gray-500">X</label>
               <input
                 type="text"
                 inputMode="decimal"
-                value={deltaX}
-                onChange={e => setDeltaX(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') commitDelta(); }}
+                value={localOffsetX}
+                onChange={e => setLocalOffsetX(e.target.value)}
+                onBlur={() => commitOffset('offsetX', localOffsetX)}
+                onKeyDown={e => { if (e.key === 'Enter') commitOffset('offsetX', localOffsetX); }}
                 className={inputClass}
-                placeholder="+10 or -5"
               />
             </div>
-            <div>
-              <label className="text-xs text-gray-500">ΔY (mm)</label>
+            <div className="flex-1">
+              <label className="text-xs text-gray-500">Y</label>
               <input
                 type="text"
                 inputMode="decimal"
-                value={deltaY}
-                onChange={e => setDeltaY(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') commitDelta(); }}
+                value={localOffsetY}
+                onChange={e => setLocalOffsetY(e.target.value)}
+                onBlur={() => commitOffset('offsetY', localOffsetY)}
+                onKeyDown={e => { if (e.key === 'Enter') commitOffset('offsetY', localOffsetY); }}
                 className={inputClass}
-                placeholder="+10 or -5"
+              />
+            </div>
+            <span className="text-xs text-gray-600 pb-0.5 flex-shrink-0">mm</span>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            <div className="flex items-end gap-1">
+              <div className="flex-1">
+                <label className="text-xs text-gray-500">ΔX</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={deltaX}
+                  onChange={e => setDeltaX(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') commitDelta(); }}
+                  className={inputClass}
+                  placeholder="±mm"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-gray-500">ΔY</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={deltaY}
+                  onChange={e => setDeltaY(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') commitDelta(); }}
+                  className={inputClass}
+                  placeholder="±mm"
+                />
+              </div>
+              <button
+                onClick={commitDelta}
+                className="text-xs px-2 py-0.5 rounded bg-orange-600 hover:bg-orange-500 text-white transition-colors flex-shrink-0"
+              >Move</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Size ── */}
+      <div>
+        <div className="flex items-center gap-1 mb-0.5">
+          <label className="text-xs text-gray-500 flex-1">Size</label>
+          <button onClick={() => setSizeMode('scale')} className={sizeMode === 'scale' ? btnActive : btnInactive}>Scale ×</button>
+          <button onClick={() => setSizeMode('absolute')} className={sizeMode === 'absolute' ? btnActive : btnInactive}>mm</button>
+          <button
+            onClick={() => setRatioLocked(!ratioLocked)}
+            className={`flex-shrink-0 text-xs px-1 py-0.5 rounded transition-colors ${ratioLocked ? 'bg-orange-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
+            title={ratioLocked ? 'Aspect ratio locked' : 'Aspect ratio unlocked'}
+          >
+            {ratioLocked ? '🔒' : '🔓'}
+          </button>
+        </div>
+
+        {sizeMode === 'scale' ? (
+          <div className="flex items-end gap-1">
+            <div className="flex-1">
+              <label className="text-xs text-gray-500">X</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={localScaleX}
+                onChange={e => setLocalScaleX(e.target.value)}
+                onBlur={() => commitScale('x', localScaleX)}
+                onKeyDown={e => { if (e.key === 'Enter') commitScale('x', localScaleX); }}
+                className={inputClass}
+              />
+            </div>
+            <div className="flex-1">
+              <label className="text-xs text-gray-500">Y</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={localScaleY}
+                onChange={e => setLocalScaleY(e.target.value)}
+                onBlur={() => commitScale('y', localScaleY)}
+                onKeyDown={e => { if (e.key === 'Enter') commitScale('y', localScaleY); }}
+                className={inputClass}
               />
             </div>
           </div>
-          <button
-            onClick={commitDelta}
-            className="w-full text-xs py-0.5 rounded bg-orange-600 hover:bg-orange-500 text-white transition-colors"
-          >Move by delta</button>
-          <p className="text-xs text-gray-600">
-            Current: ({layer.offsetX.toFixed(2)}, {layer.offsetY.toFixed(2)}) mm
-          </p>
-        </div>
-      )}
-
-      {/* Size mode toggle */}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => setSizeMode(sizeMode === 'scale' ? 'absolute' : 'scale')}
-          className="text-xs px-2 py-0.5 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"
-          title={sizeMode === 'scale' ? 'Switch to absolute size (mm)' : 'Switch to scale multiplier'}
-        >
-          {sizeMode === 'scale' ? 'Scale ×' : 'Size mm'}
-        </button>
+        ) : (
+          <div className="flex items-end gap-1">
+            <div className="flex-1">
+              <label className="text-xs text-gray-500">W</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={localAbsW}
+                onChange={e => setLocalAbsW(e.target.value)}
+                onBlur={() => commitAbsSize('w', localAbsW)}
+                onKeyDown={e => { if (e.key === 'Enter') commitAbsSize('w', localAbsW); }}
+                className={inputClass}
+              />
+            </div>
+            <div className="flex-1">
+              <label className="text-xs text-gray-500">H</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={localAbsH}
+                onChange={e => setLocalAbsH(e.target.value)}
+                onBlur={() => commitAbsSize('h', localAbsH)}
+                onKeyDown={e => { if (e.key === 'Enter') commitAbsSize('h', localAbsH); }}
+                className={inputClass}
+              />
+            </div>
+            <span className="text-xs text-gray-600 pb-0.5 flex-shrink-0">mm</span>
+          </div>
+        )}
       </div>
 
-      {/* Scale or absolute size inputs with ratio lock between them */}
-      {sizeMode === 'scale' ? (
-        <div className="flex items-end gap-1">
-          <div className="flex-1">
-            <label className="text-xs text-gray-500">Scale X</label>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={localScaleX}
-              onChange={e => setLocalScaleX(e.target.value)}
-              onBlur={() => commitScale('x', localScaleX)}
-              onKeyDown={e => { if (e.key === 'Enter') commitScale('x', localScaleX); }}
-              className={inputClass}
-            />
-          </div>
-          <button
-            onClick={() => setRatioLocked(!ratioLocked)}
-            className={`flex-shrink-0 text-xs px-1 py-0.5 rounded transition-colors mb-px ${ratioLocked ? 'bg-orange-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
-            title={ratioLocked ? 'Aspect ratio locked — click to unlock' : 'Aspect ratio unlocked — click to lock'}
-          >
-            {ratioLocked ? '🔒' : '🔓'}
-          </button>
-          <div className="flex-1">
-            <label className="text-xs text-gray-500">Scale Y</label>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={localScaleY}
-              onChange={e => setLocalScaleY(e.target.value)}
-              onBlur={() => commitScale('y', localScaleY)}
-              onKeyDown={e => { if (e.key === 'Enter') commitScale('y', localScaleY); }}
-              className={inputClass}
-            />
-          </div>
+      {/* ── Rotation ── */}
+      <div>
+        <div className="flex items-center gap-1 mb-0.5">
+          <label className="text-xs text-gray-500 flex-1">Rotation</label>
+          <button onClick={() => { setRotMode('absolute'); setDeltaRot('0'); }} className={rotMode === 'absolute' ? btnActive : btnInactive}>Abs</button>
+          <button onClick={() => { setRotMode('relative'); setDeltaRot('0'); }} className={rotMode === 'relative' ? btnActive : btnInactive}>Rel</button>
         </div>
-      ) : (
-        <div className="flex items-end gap-1">
-          <div className="flex-1">
-            <label className="text-xs text-gray-500">W (mm)</label>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={localAbsW}
-              onChange={e => setLocalAbsW(e.target.value)}
-              onBlur={() => commitAbsSize('w', localAbsW)}
-              onKeyDown={e => { if (e.key === 'Enter') commitAbsSize('w', localAbsW); }}
-              className={inputClass}
-            />
-          </div>
-          <button
-            onClick={() => setRatioLocked(!ratioLocked)}
-            className={`flex-shrink-0 text-xs px-1 py-0.5 rounded transition-colors mb-px ${ratioLocked ? 'bg-orange-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
-            title={ratioLocked ? 'Aspect ratio locked — click to unlock' : 'Aspect ratio unlocked — click to lock'}
-          >
-            {ratioLocked ? '🔒' : '🔓'}
-          </button>
-          <div className="flex-1">
-            <label className="text-xs text-gray-500">H (mm)</label>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={localAbsH}
-              onChange={e => setLocalAbsH(e.target.value)}
-              onBlur={() => commitAbsSize('h', localAbsH)}
-              onKeyDown={e => { if (e.key === 'Enter') commitAbsSize('h', localAbsH); }}
-              className={inputClass}
-            />
-          </div>
-        </div>
-      )}
 
-      {/* Rotation */}
-      <div className="grid grid-cols-2 gap-1">
+        {rotMode === 'absolute' ? (
+          <div className="flex items-end gap-1">
+            <div className="flex-1">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={localRotation}
+                onChange={e => setLocalRotation(e.target.value)}
+                onBlur={() => commitRotation(localRotation)}
+                onKeyDown={e => { if (e.key === 'Enter') commitRotation(localRotation); }}
+                className={inputClass}
+              />
+            </div>
+            <span className="text-xs text-gray-600 pb-0.5 flex-shrink-0">°</span>
+          </div>
+        ) : (
+          <div className="flex items-end gap-1">
+            <div className="flex-1">
+              <label className="text-xs text-gray-500">Δ°</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={deltaRot}
+                onChange={e => setDeltaRot(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') commitDeltaRot(); }}
+                className={inputClass}
+                placeholder="±°"
+              />
+            </div>
+            <button
+              onClick={commitDeltaRot}
+              className="text-xs px-2 py-0.5 rounded bg-orange-600 hover:bg-orange-500 text-white transition-colors flex-shrink-0"
+            >Rotate</button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Flip & Pivot ── */}
+      <div className="flex items-start gap-3">
         <div>
-          <label className="text-xs text-gray-500">Rotation (°)</label>
-          <input
-            type="text"
-            inputMode="decimal"
-            value={localRotation}
-            onChange={e => setLocalRotation(e.target.value)}
-            onBlur={() => commitRotation(localRotation)}
-            onKeyDown={e => { if (e.key === 'Enter') commitRotation(localRotation); }}
-            className={inputClass}
-          />
-        </div>
-        {/* Mirror buttons — flip around the layer's pivot point */}
-        <div>
-          <label className="text-xs text-gray-500">Flip (around pivot)</label>
+          <label className="text-xs text-gray-500">Flip</label>
           <div className="flex gap-1 mt-0.5">
             <button
               onClick={handleFlipX}
-              className="flex-1 text-xs py-0.5 rounded transition-colors bg-gray-700 text-gray-400 hover:bg-gray-600 active:bg-orange-600 active:text-white"
+              className="flex items-center justify-center w-7 h-7 rounded transition-colors bg-gray-700 text-gray-400 hover:bg-gray-600 active:bg-orange-600 active:text-white"
               title="Flip horizontally around pivot"
-            >↔ X</button>
+            ><FlipHIcon /></button>
             <button
               onClick={handleFlipY}
-              className="flex-1 text-xs py-0.5 rounded transition-colors bg-gray-700 text-gray-400 hover:bg-gray-600 active:bg-orange-600 active:text-white"
+              className="flex items-center justify-center w-7 h-7 rounded transition-colors bg-gray-700 text-gray-400 hover:bg-gray-600 active:bg-orange-600 active:text-white"
               title="Flip vertically around pivot"
-            >↕ Y</button>
+            ><FlipVIcon /></button>
           </div>
         </div>
-      </div>
-
-      {/* Pivot point selector */}
-      <div>
-        <label className="text-xs text-gray-500">Pivot</label>
-        <div className="inline-grid grid-cols-3 gap-px mt-0.5 ml-2">
-          {PIVOT_GRID.map((row) =>
-            row.map((anchor) => (
-              <button
-                key={anchor}
-                onClick={() => onUpdate(layer.id, { pivot: anchor })}
-                className={`w-4 h-4 rounded-sm transition-colors ${
-                  (layer.pivot ?? 'tl') === anchor
-                    ? 'bg-orange-500'
-                    : 'bg-gray-700 hover:bg-gray-600'
-                }`}
-                title={anchor}
-              />
-            ))
-          )}
+        <div>
+          <label className="text-xs text-gray-500">Pivot</label>
+          <div className="inline-grid grid-cols-3 gap-px mt-0.5">
+            {PIVOT_GRID.map((row) =>
+              row.map((anchor) => (
+                <button
+                  key={anchor}
+                  onClick={() => onUpdate(layer.id, { pivot: anchor })}
+                  className={`w-4 h-4 rounded-sm transition-colors ${
+                    (layer.pivot ?? 'tl') === anchor
+                      ? 'bg-orange-500'
+                      : 'bg-gray-700 hover:bg-gray-600'
+                  }`}
+                  title={anchor}
+                />
+              ))
+            )}
+          </div>
         </div>
       </div>
 
       {/* Info line */}
       {bbox && (
         <p className="text-xs text-gray-600">
-          Natural: {naturalW.toFixed(1)} × {naturalH.toFixed(1)} mm
-          {sizeMode === 'scale' && ` → ${absW.toFixed(1)} × ${absH.toFixed(1)} mm`}
+          {naturalW.toFixed(1)}×{naturalH.toFixed(1)} mm
+          {sizeMode === 'scale' && ` → ${absW.toFixed(1)}×${absH.toFixed(1)} mm`}
+          {' · pivot '}({pivotWorldX.toFixed(1)}, {pivotWorldY.toFixed(1)})
         </p>
       )}
     </div>
