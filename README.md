@@ -4,16 +4,6 @@
 
 LaserFlow is an open-source, browser-based CAM (Computer-Aided Manufacturing) tool and machine controller for GRBL-compatible laser cutters and engravers. Import SVG artwork, arrange operations across layers, generate G-code, and stream it directly to your machine — all from a single web interface.
 
-## Quick Start
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/praegustator/laserflow/main/install.sh | sh
-```
-
-The script will: detect / install **Node.js 20** –> clone repo –> `npm install` –> start backend + frontend in dev mode.
-
-## Features
-
 * 🗂️ Organize your workspace with projects (support versioning)
 * 🖼️ Import SVG files and parse all paths and shapes
 * 🧩 Organize shapes into layers, manipulate them with scale, offset, rotation, and mirror controls
@@ -23,6 +13,13 @@ The script will: detect / install **Node.js 20** –> clone repo –> `npm insta
 * ♻️ Save and reuse material and machine configurations
 * 🧪 Inspect raw serial communication between the app and the machine
 
+## Quick Start
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/praegustator/laserflow/main/install.sh | sh
+```
+
+The script will: detect / install **Node.js 20** –> clone repo –> `npm install` –> start backend + frontend in dev mode.
 
 ## Manual Installation
 
@@ -35,10 +32,9 @@ You will need Node.js (recommended version 20 LTS) and `git` for cloning.
 ```sh
 git clone https://github.com/praegustator/laserflow.git
 cd laserflow
+
 npm install
 ```
-
----
 
 ## Running the Application
 
