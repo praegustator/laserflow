@@ -10,6 +10,8 @@ import SvgCanvas from '../components/SvgCanvas';
 import OperationsPanel from '../components/OperationsPanel';
 import LayerTransformPanel from '../components/LayerTransformPanel';
 import { computeShapesBoundingBox } from '../utils/geometry';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faEye, faEyeSlash, faTrash } from '@fortawesome/free-solid-svg-icons';
 
 const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];
 
@@ -53,7 +55,7 @@ export default function Editor() {
   const dragLayerId = useRef<string | null>(null);
   const [dragOverLayerId, setDragOverLayerId] = useState<string | null>(null);
   // Transform panel height (resizable via drag handle)
-  const [transformPanelHeight, setTransformPanelHeight] = useState(280);
+  const [transformPanelHeight, setTransformPanelHeight] = useState(400);
   const transformDragRef = useRef<{ startY: number; startH: number } | null>(null);
 
   const project = projects.find(p => p.id === activeProjectId) ?? null;
@@ -397,7 +399,7 @@ export default function Editor() {
                       onClick={e => { e.stopPropagation(); toggleLayerVisibility(layer.id); }}
                       className={`text-xs w-5 text-center ${layer.visible ? 'text-gray-200' : 'text-gray-600'}`}
                       title="Toggle visibility"
-                    >{layer.visible ? '👁' : '🚫'}</button>
+                    ><FontAwesomeIcon icon={layer.visible ? faEye : faEyeSlash} /></button>
 
                     {/* Layer name — double-click to edit */}
                     {editingLayerId === layer.id ? (
@@ -427,7 +429,7 @@ export default function Editor() {
                         title={expandedLayerIds.has(layer.id) ? 'Collapse shapes' : `Expand ${layer.shapes.length} shapes`}
                       >{expandedLayerIds.has(layer.id) ? '▾' : `▸ ${layer.shapes.length}`}</button>
                     )}
-                    <button onClick={e => { e.stopPropagation(); removeLayer(layer.id); if (selectedLayerId === layer.id) setSelectedLayerId(null); }} className="text-gray-500 hover:text-red-400 text-xs" title="Delete layer">✕</button>
+                    <button onClick={e => { e.stopPropagation(); removeLayer(layer.id); if (selectedLayerId === layer.id) setSelectedLayerId(null); }} className="text-gray-500 hover:text-red-400 text-xs" title="Delete layer"><FontAwesomeIcon icon={faTrash} /></button>
                   </div>
 
                   {/* Expanded shapes */}
@@ -490,7 +492,7 @@ export default function Editor() {
 
             {/* Layer transform panel — shown at bottom when a layer is selected */}
             {selectedLayerId && project.layers.find(l => l.id === selectedLayerId) && (
-              <div className="flex-shrink-0 flex flex-col" style={{ height: transformPanelHeight, minHeight: 120, maxHeight: '60%' }}>
+              <div className="flex-shrink-0 flex flex-col" style={{ height: transformPanelHeight, minHeight: 120, maxHeight: '70%' }}>
                 {/* Draggable resize handle */}
                 <div
                   className="h-1.5 cursor-row-resize bg-gray-700 hover:bg-orange-500/60 active:bg-orange-500 transition-colors flex items-center justify-center"
@@ -500,7 +502,7 @@ export default function Editor() {
                     const onMove = (ev: MouseEvent) => {
                       if (!transformDragRef.current) return;
                       const delta = transformDragRef.current.startY - ev.clientY;
-                      setTransformPanelHeight(Math.max(120, Math.min(600, transformDragRef.current.startH + delta)));
+                      setTransformPanelHeight(Math.max(120, Math.min(800, transformDragRef.current.startH + delta)));
                     };
                     const onUp = () => { transformDragRef.current = null; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
                     window.addEventListener('mousemove', onMove);

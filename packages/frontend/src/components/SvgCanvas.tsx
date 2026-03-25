@@ -101,9 +101,9 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, selecte
 
   const { tx, ty, scale } = transform;
 
-  const coordGroupTransform = originPosition === 'bottom-left'
-    ? `scale(1,-1) translate(0, ${-workH})`
-    : undefined;
+  // Origin position only affects where the origin marker is drawn.
+  // Shapes always render in native SVG coordinates (Y down) so they are never upside-down.
+  // The actual origin flip for G-code is handled by the backend compiler.
 
   return (
     <svg
@@ -123,9 +123,8 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, selecte
         {/* Border */}
         <rect x={0} y={0} width={workW} height={workH} fill="none" stroke="#4b5563" strokeWidth={0.5} />
 
-        {/* Coordinate group (possibly flipped) */}
-        <g transform={coordGroupTransform}>
-          {/* Layers */}
+        {/* Layers — rendered in native SVG coordinates */}
+        <g>
           {layers.map((layer, idx) => {
             if (!layer.visible) return null;
             const color = getLayerColor(layer.id, idx);
@@ -156,6 +155,13 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, selecte
               `scale(${sxm},${sym})`,
             ];
 
+            // Inverse scale factor so bounding box / pivot stay constant screen size
+            const invSx = 1 / Math.abs(sxm || 1);
+            const invSy = 1 / Math.abs(sym || 1);
+            // Cross-hair arm length in shape-local units (constant visual size)
+            const armX = 2 * invSx;
+            const armY = 2 * invSy;
+
             return (
               <g
                 key={layer.id}
@@ -174,6 +180,7 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, selecte
                       stroke={isShapeSelected ? '#facc15' : color}
                       strokeWidth={isShapeSelected ? 0.8 : isSelected ? 0.6 : 0.4}
                       opacity={0.9}
+                      vectorEffect="non-scaling-stroke"
                       onClick={(e) => {
                         e.stopPropagation();
                         if (onSelectShape) {
@@ -185,7 +192,7 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, selecte
                     />
                   );
                 })}
-                {/* Bounding box and pivot point for selected layer */}
+                {/* Bounding box and pivot point for selected layer — non-scaling */}
                 {isSelected && bbox && (
                   <>
                     <rect
@@ -198,21 +205,30 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, selecte
                       strokeWidth={0.3}
                       strokeDasharray="2 1.5"
                       opacity={0.5}
+                      vectorEffect="non-scaling-stroke"
                     />
-                    {/* Pivot point */}
-                    <circle cx={pivotX} cy={pivotY} r={1.2} fill={color} opacity={0.7} />
-                    <line x1={pivotX - 2} y1={pivotY} x2={pivotX + 2} y2={pivotY} stroke={color} strokeWidth={0.3} opacity={0.7} />
-                    <line x1={pivotX} y1={pivotY - 2} x2={pivotX} y2={pivotY + 2} stroke={color} strokeWidth={0.3} opacity={0.7} />
+                    {/* Pivot point — fixed visual size regardless of layer scale */}
+                    <ellipse cx={pivotX} cy={pivotY} rx={1.2 * invSx} ry={1.2 * invSy} fill={color} opacity={0.7} />
+                    <line x1={pivotX - armX} y1={pivotY} x2={pivotX + armX} y2={pivotY} stroke={color} strokeWidth={0.3} opacity={0.7} vectorEffect="non-scaling-stroke" />
+                    <line x1={pivotX} y1={pivotY - armY} x2={pivotX} y2={pivotY + armY} stroke={color} strokeWidth={0.3} opacity={0.7} vectorEffect="non-scaling-stroke" />
                   </>
                 )}
               </g>
             );
           })}
 
-          {/* Origin cross */}
-          <circle cx={0} cy={0} r={1} fill="#f97316" />
-          <line x1={-3} y1={0} x2={3} y2={0} stroke="#f97316" strokeWidth={0.3} />
-          <line x1={0} y1={-3} x2={0} y2={3} stroke="#f97316" strokeWidth={0.3} />
+          {/* Origin cross — positioned according to origin setting */}
+          {(() => {
+            const ox = 0;
+            const oy = originPosition === 'bottom-left' ? workH : 0;
+            return (
+              <>
+                <circle cx={ox} cy={oy} r={1} fill="#f97316" />
+                <line x1={ox - 3} y1={oy} x2={ox + 3} y2={oy} stroke="#f97316" strokeWidth={0.3} />
+                <line x1={ox} y1={oy - 3} x2={ox} y2={oy + 3} stroke="#f97316" strokeWidth={0.3} />
+              </>
+            );
+          })()}
         </g>
       </g>
       {/* Scale indicator */}
