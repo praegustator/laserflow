@@ -25,9 +25,9 @@ export default function Editor() {
   const moveLayerDown = useProjectStore(s => s.moveLayerDown);
   const updateLayerTransform = useProjectStore(s => s.updateLayerTransform);
   const moveShapeToNewLayer = useProjectStore(s => s.moveShapeToNewLayer);
-  const moveShapesToLayer = useProjectStore(s => s.moveShapesToLayer);
   const moveShapesToNewLayer = useProjectStore(s => s.moveShapesToNewLayer);
   const removeShapes = useProjectStore(s => s.removeShapes);
+  const renameShape = useProjectStore(s => s.renameShape);
   const saveVersion = useProjectStore(s => s.saveVersion);
   const restoreVersion = useProjectStore(s => s.restoreVersion);
   const deleteVersion = useProjectStore(s => s.deleteVersion);
@@ -47,6 +47,9 @@ export default function Editor() {
   const [showVersions, setShowVersions] = useState(false);
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
   const [editingLayerName, setEditingLayerName] = useState('');
+  const [editingShapeId, setEditingShapeId] = useState<string | null>(null);
+  const [editingShapeLayerId, setEditingShapeLayerId] = useState<string | null>(null);
+  const [editingShapeName, setEditingShapeName] = useState('');
 
   const project = projects.find(p => p.id === activeProjectId) ?? null;
 
@@ -137,6 +140,22 @@ export default function Editor() {
     setEditingLayerName('');
   };
 
+  /** Double-click on shape name to start inline editing */
+  const startEditingShapeName = (shapeId: string, layerId: string, currentName: string) => {
+    setEditingShapeId(shapeId);
+    setEditingShapeLayerId(layerId);
+    setEditingShapeName(currentName);
+  };
+
+  const commitShapeName = () => {
+    if (editingShapeId && editingShapeLayerId && editingShapeName.trim()) {
+      renameShape(editingShapeId, editingShapeLayerId, editingShapeName.trim());
+    }
+    setEditingShapeId(null);
+    setEditingShapeLayerId(null);
+    setEditingShapeName('');
+  };
+
   /** Shape selection — supports Shift/Cmd multi-select */
   const handleShapeClick = (shapeId: string, layerId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -154,24 +173,32 @@ export default function Editor() {
     }
   };
 
-  /** Shape clicked on the canvas */
-  const handleCanvasShapeClick = (shapeId: string, layerId: string) => {
-    setSelectedLayerId(layerId);
-    setSelectedShapeIds(new Set([shapeId]));
+  /** Shape clicked on the canvas — supports Cmd/Ctrl multi-select */
+  const handleCanvasShapeClick = (shapeId: string, layerId: string, e: React.MouseEvent) => {
+    if (e.metaKey || e.ctrlKey) {
+      // Multi-select: toggle shape in selection within same layer
+      if (selectedLayerId === layerId) {
+        setSelectedShapeIds(prev => {
+          const next = new Set(prev);
+          if (next.has(shapeId)) next.delete(shapeId);
+          else next.add(shapeId);
+          return next;
+        });
+      } else {
+        // Different layer — start fresh selection in new layer
+        setSelectedLayerId(layerId);
+        setSelectedShapeIds(new Set([shapeId]));
+      }
+    } else {
+      setSelectedLayerId(layerId);
+      setSelectedShapeIds(new Set([shapeId]));
+    }
     // Auto-expand the layer to show shapes
     setExpandedLayerIds(prev => {
       const next = new Set(prev);
       next.add(layerId);
       return next;
     });
-  };
-
-  /** Move selected shapes to another layer */
-  const handleMoveSelectedToLayer = (toLayerId: string) => {
-    if (!selectedLayerId || selectedShapeIds.size === 0) return;
-    moveShapesToLayer(Array.from(selectedShapeIds), selectedLayerId, toLayerId);
-    addToast('info', `Moved ${selectedShapeIds.size} shape(s) to another layer`);
-    setSelectedShapeIds(new Set());
   };
 
   /** Delete selected shapes */
@@ -321,23 +348,9 @@ export default function Editor() {
           {/* Left panel: Files/Layers/Shapes */}
           <Panel defaultSize="22%" minSize="200px" groupResizeBehavior="preserve-pixel-size" className="bg-gray-900 flex flex-col min-h-0">
             <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between">
-              <span className="text-xs font-semibold text-gray-300 uppercase">Layers &amp; Shapes</span>
+              <span className="text-sm font-semibold text-gray-200 uppercase tracking-wide">🔲 Shapes &amp; Layers</span>
               <button onClick={() => fileInputRef.current?.click()} className="text-xs text-orange-400 hover:text-orange-300">+ Import</button>
             </div>
-
-            {/* Files section */}
-            {project.files.length > 0 && (
-              <div className="px-3 py-1 border-b border-gray-800">
-                <span className="text-xs text-gray-500 uppercase">Files ({project.files.length})</span>
-                <div className="mt-1 space-y-0.5">
-                  {project.files.map(file => (
-                    <div key={file.id} className="text-xs text-gray-400 truncate" title={file.name}>
-                      📄 {file.name} ({file.shapes.length} shape{file.shapes.length !== 1 ? 's' : ''})
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* Layers list */}
             <div className="flex-1 overflow-y-auto p-2 space-y-1 min-h-0">
@@ -396,7 +409,7 @@ export default function Editor() {
 
                   {/* Expanded shapes */}
                   {expandedLayerIds.has(layer.id) && (
-                    <div className="mt-1.5 ml-5 space-y-0.5">
+                    <div className="mt-1.5 ml-5 space-y-0.5 select-none">
                       {layer.shapes.map(shape => {
                         const isShapeSelected = selectedShapeIds.has(shape.id);
                         return (
@@ -407,16 +420,24 @@ export default function Editor() {
                               isShapeSelected ? 'bg-yellow-900/40 text-yellow-200' : 'hover:bg-gray-700/50'
                             }`}
                           >
-                            <span className={`truncate flex-1 ${isShapeSelected ? 'text-yellow-200' : 'text-gray-400'}`} title={shape.name}>{shape.name}</span>
-                            <button
-                              onClick={e => {
-                                e.stopPropagation();
-                                moveShapeToNewLayer(shape.id, layer.id, shape.name);
-                                addToast('info', `Moved "${shape.name}" to new layer`);
-                              }}
-                              className="text-gray-500 hover:text-orange-400 text-xs flex-shrink-0"
-                              title="Move to new layer"
-                            >↗</button>
+                            {editingShapeId === shape.id ? (
+                              <input
+                                type="text"
+                                value={editingShapeName}
+                                onChange={e => setEditingShapeName(e.target.value)}
+                                onBlur={commitShapeName}
+                                onKeyDown={e => { if (e.key === 'Enter') commitShapeName(); if (e.key === 'Escape') { setEditingShapeId(null); setEditingShapeName(''); } }}
+                                onClick={e => e.stopPropagation()}
+                                autoFocus
+                                className="flex-1 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 focus:outline-none min-w-0"
+                              />
+                            ) : (
+                              <span
+                                className={`truncate flex-1 ${isShapeSelected ? 'text-yellow-200' : 'text-gray-400'}`}
+                                title={`${shape.name} — double-click to rename`}
+                                onDoubleClick={e => { e.stopPropagation(); startEditingShapeName(shape.id, layer.id, shape.name); }}
+                              >{shape.name}</span>
+                            )}
                           </div>
                         );
                       })}
@@ -429,27 +450,13 @@ export default function Editor() {
                           <button
                             onClick={e => { e.stopPropagation(); handlePopSelectedToNewLayer(); }}
                             className="text-xs text-orange-400 hover:text-orange-300"
-                            title="Pop selected shapes to new layer(s)"
-                          >↗ Pop</button>
-                          {/* Move to layer dropdown */}
-                          {project.layers.length > 1 && (
-                            <select
-                              value=""
-                              onChange={e => { if (e.target.value) handleMoveSelectedToLayer(e.target.value); }}
-                              onClick={e => e.stopPropagation()}
-                              className="text-xs bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-100 focus:outline-none focus:border-orange-500"
-                            >
-                              <option value="">→ Move to…</option>
-                              {project.layers.filter(l => l.id !== layer.id).map(l => (
-                                <option key={l.id} value={l.id}>{l.name}</option>
-                              ))}
-                            </select>
-                          )}
+                            title="Pop selected shapes to new layer"
+                          >Pop</button>
                           <button
                             onClick={e => { e.stopPropagation(); handleDeleteSelectedShapes(); }}
-                            className="text-xs text-gray-500 hover:text-red-400"
+                            className="text-xs text-red-400 hover:text-red-300"
                             title="Delete selected shapes"
-                          >✕</button>
+                          >Delete</button>
                         </div>
                       )}
                     </div>

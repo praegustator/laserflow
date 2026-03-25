@@ -220,17 +220,17 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
         </div>
         {/* Mirror buttons */}
         <div>
-          <label className="text-xs text-gray-500">Mirror</label>
+          <label className="text-xs text-gray-500">Flip</label>
           <div className="flex gap-1 mt-0.5">
             <button
               onClick={() => onUpdate(layer.id, { mirrorX: !(layer.mirrorX ?? false) })}
-              className={`flex-1 text-xs py-0.5 rounded transition-colors ${layer.mirrorX ? 'bg-orange-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
-              title="Mirror horizontally"
+              className="flex-1 text-xs py-0.5 rounded transition-colors bg-gray-700 text-gray-400 hover:bg-gray-600 active:bg-orange-600 active:text-white"
+              title="Flip horizontally"
             >↔ X</button>
             <button
               onClick={() => onUpdate(layer.id, { mirrorY: !(layer.mirrorY ?? false) })}
-              className={`flex-1 text-xs py-0.5 rounded transition-colors ${layer.mirrorY ? 'bg-orange-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
-              title="Mirror vertically"
+              className="flex-1 text-xs py-0.5 rounded transition-colors bg-gray-700 text-gray-400 hover:bg-gray-600 active:bg-orange-600 active:text-white"
+              title="Flip vertically"
             >↕ Y</button>
           </div>
         </div>

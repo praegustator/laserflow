@@ -8,7 +8,7 @@ interface Props {
   selectedLayerId: string | null;
   selectedShapeIds?: Set<string>;
   onSelectLayer: (id: string) => void;
-  onSelectShape?: (shapeId: string, layerId: string) => void;
+  onSelectShape?: (shapeId: string, layerId: string, e: React.MouseEvent) => void;
   originPosition: 'bottom-left' | 'top-left';
   machineProfile?: MachineProfile | null;
 }
@@ -152,6 +152,17 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, selecte
               parts.push(`rotate(${rotation},${cx},${cy})`);
             }
 
+            // Compute bounding box for overlay
+            const bbox = computeShapesBoundingBox(layer.shapes);
+            const pivot = layer.pivot ?? 'tl';
+            let pivotX = 0, pivotY = 0;
+            if (bbox) {
+              const col = pivot[1] === 'l' ? 0 : pivot[1] === 'c' ? 0.5 : 1;
+              const row = pivot[0] === 't' ? 0 : pivot[0] === 'm' ? 0.5 : 1;
+              pivotX = bbox.minX + bbox.width * col;
+              pivotY = bbox.minY + bbox.height * row;
+            }
+
             return (
               <g
                 key={layer.id}
@@ -173,7 +184,7 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, selecte
                       onClick={(e) => {
                         e.stopPropagation();
                         if (onSelectShape) {
-                          onSelectShape(shape.id, layer.id);
+                          onSelectShape(shape.id, layer.id, e);
                         } else {
                           onSelectLayer(layer.id);
                         }
@@ -181,6 +192,26 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, selecte
                     />
                   );
                 })}
+                {/* Bounding box and pivot point for selected layer */}
+                {isSelected && bbox && (
+                  <>
+                    <rect
+                      x={bbox.minX}
+                      y={bbox.minY}
+                      width={bbox.width}
+                      height={bbox.height}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth={0.3}
+                      strokeDasharray="2 1.5"
+                      opacity={0.5}
+                    />
+                    {/* Pivot point */}
+                    <circle cx={pivotX} cy={pivotY} r={1.2} fill={color} opacity={0.7} />
+                    <line x1={pivotX - 2} y1={pivotY} x2={pivotX + 2} y2={pivotY} stroke={color} strokeWidth={0.3} opacity={0.7} />
+                    <line x1={pivotX} y1={pivotY - 2} x2={pivotX} y2={pivotY + 2} stroke={color} strokeWidth={0.3} opacity={0.7} />
+                  </>
+                )}
               </g>
             );
           })}
