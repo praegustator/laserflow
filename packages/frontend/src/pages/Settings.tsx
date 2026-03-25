@@ -287,6 +287,9 @@ export default function Settings() {
   };
 
   // Export helpers
+  const sanitizeFilename = (name: string) =>
+    name.replace(/[^a-zA-Z0-9_\-. ]/g, '_').trim() || 'export';
+
   const exportJson = (filename: string, data: unknown) => {
     const json = JSON.stringify(data, null, 2);
     const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
@@ -574,7 +577,7 @@ export default function Settings() {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => exportJson(`machine-profile-${p.name}.json`, p)}
+                    onClick={() => exportJson(`machine-profile-${sanitizeFilename(p.name)}.json`, p)}
                     className="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors flex items-center gap-1.5"
                     title="Export this profile"
                   >
@@ -681,7 +684,7 @@ export default function Settings() {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => exportJson(`material-preset-${p.name}.json`, p)}
+                    onClick={() => exportJson(`material-preset-${sanitizeFilename(p.name)}.json`, p)}
                     className="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors flex items-center gap-1.5"
                     title="Export this preset"
                   >
