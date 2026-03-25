@@ -184,15 +184,10 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
   /** Apply a relative scale multiplier to all selected layers and reset. */
   const commitDeltaScale = useCallback(() => {
     const dsx = parseDecimal(deltaScaleX);
-    const dsy = parseDecimal(deltaScaleY);
-    if (!Number.isFinite(dsx) || dsx <= 0) return;
-    if (!Number.isFinite(dsy) || dsy <= 0) return;
+    const dsy = ratioLocked ? dsx : parseDecimal(deltaScaleY);
+    if (!Number.isFinite(dsx) || dsx <= 0 || !Number.isFinite(dsy) || dsy <= 0) return;
     for (const l of layers) {
-      if (ratioLocked) {
-        onUpdate(l.id, { scaleX: l.scaleX * dsx, scaleY: l.scaleY * dsx });
-      } else {
-        onUpdate(l.id, { scaleX: l.scaleX * dsx, scaleY: l.scaleY * dsy });
-      }
+      onUpdate(l.id, { scaleX: l.scaleX * dsx, scaleY: l.scaleY * dsy });
     }
     setDeltaScaleX('1');
     setDeltaScaleY('1');

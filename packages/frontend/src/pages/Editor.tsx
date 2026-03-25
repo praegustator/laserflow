@@ -554,7 +554,7 @@ export default function Editor() {
                       e.stopPropagation();
                       if (!project) return;
                       const ids = Array.from(selectedLayerIds);
-                      const mergeLayers = ids.map(id => project.layers.find(l => l.id === id)).filter(Boolean) as typeof project.layers;
+                      const mergeLayers = ids.map(id => project.layers.find(l => l.id === id)).filter(Boolean) as Layer[];
                       if (mergeLayers.length < 2) return;
                       const target = mergeLayers[0];
                       const rest = mergeLayers.slice(1);

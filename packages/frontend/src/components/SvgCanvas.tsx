@@ -34,6 +34,9 @@ const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#1
 
 const GRID_SPACING = 10; // mm
 
+/** Degrees of rotation per pixel of horizontal mouse drag */
+const ROTATE_SENSITIVITY = 0.5;
+
 export default function SvgCanvas({ layers, operations, selectedLayerIds, selectedShapeIds, onSelectLayer, onSelectShape, onUpdateLayer, originPosition, machineProfile, transformPreview }: Props) {
   const settingsWorkW = useAppSettings(s => s.workAreaWidth);
   const settingsWorkH = useAppSettings(s => s.workAreaHeight);
@@ -113,7 +116,7 @@ export default function SvgCanvas({ layers, operations, selectedLayerIds, select
       }
     } else if (interactMode.current === 'rotate' && onUpdateLayer) {
       const dx = e.clientX - interactStart.current.x;
-      const angleDelta = dx * 0.5; // 0.5 degrees per pixel
+      const angleDelta = dx * ROTATE_SENSITIVITY;
       for (const [lid, snap] of interactLayerSnap.current) {
         onUpdateLayer(lid, { rotation: (snap.rotation + angleDelta) % 360 });
       }
