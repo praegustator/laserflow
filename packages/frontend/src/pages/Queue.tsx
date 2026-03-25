@@ -226,7 +226,7 @@ export default function Queue() {
               key={job.id}
               job={job}
               progress={jobProgress[job.id]}
-              onStart={() => { void wrap(() => startJob(job.id), 'Job started')(); }}
+              onStart={() => { void wrap(() => startJob(job.id), 'Job sent to queue')(); }}
               onPause={() => { void wrap(() => pauseJob(job.id), 'Job paused')(); }}
               onResume={() => { void wrap(() => resumeJob(job.id), 'Job resumed')(); }}
               onAbort={() => { void wrap(() => abortJob(job.id), 'Job cancelled')(); }}

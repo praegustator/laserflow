@@ -184,7 +184,8 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
     setDeltaRot('0');
   }, [layers, deltaRot, onUpdate]);
 
-  /** Apply a relative scale multiplier to all selected layers and reset.
+  /** Apply a relative scale multiplier to selected layer(s) and reset.
+   *  Used for both multi-layer and single-layer relative mode.
    *  Adjusts offset so each layer's pivot world position stays fixed. */
   const commitDeltaScale = useCallback(() => {
     const dsx = parseDecimal(deltaScaleX);
