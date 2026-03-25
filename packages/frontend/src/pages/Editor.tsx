@@ -40,7 +40,7 @@ export default function Editor() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
+  const [selectedLayerIds, setSelectedLayerIds] = useState<Set<string>>(new Set());
   const [selectedShapeIds, setSelectedShapeIds] = useState<Set<string>>(new Set());
   const [expandedLayerIds, setExpandedLayerIds] = useState<Set<string>>(new Set());
   const [dragOver, setDragOver] = useState(false);
@@ -167,7 +167,7 @@ export default function Editor() {
   /** Shape selection — supports Shift/Cmd multi-select */
   const handleShapeClick = (shapeId: string, layerId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setSelectedLayerId(layerId);
+    setSelectedLayerIds(new Set([layerId]));
     if (e.shiftKey || e.metaKey || e.ctrlKey) {
       // Toggle selection
       setSelectedShapeIds(prev => {
@@ -183,9 +183,10 @@ export default function Editor() {
 
   /** Shape clicked on the canvas — supports Cmd/Ctrl multi-select */
   const handleCanvasShapeClick = (shapeId: string, layerId: string, e: React.MouseEvent) => {
+    const currentSingleLayer = selectedLayerIds.size === 1 ? Array.from(selectedLayerIds)[0] : null;
     if (e.metaKey || e.ctrlKey) {
       // Multi-select: toggle shape in selection within same layer
-      if (selectedLayerId === layerId) {
+      if (currentSingleLayer === layerId) {
         setSelectedShapeIds(prev => {
           const next = new Set(prev);
           if (next.has(shapeId)) next.delete(shapeId);
@@ -194,11 +195,11 @@ export default function Editor() {
         });
       } else {
         // Different layer — start fresh selection in new layer
-        setSelectedLayerId(layerId);
+        setSelectedLayerIds(new Set([layerId]));
         setSelectedShapeIds(new Set([shapeId]));
       }
     } else {
-      setSelectedLayerId(layerId);
+      setSelectedLayerIds(new Set([layerId]));
       setSelectedShapeIds(new Set([shapeId]));
     }
     // Auto-expand the layer to show shapes
@@ -211,24 +212,26 @@ export default function Editor() {
 
   /** Delete selected shapes */
   const handleDeleteSelectedShapes = () => {
-    if (!selectedLayerId || selectedShapeIds.size === 0) return;
-    removeShapes(Array.from(selectedShapeIds), selectedLayerId);
+    const singleLayerId = selectedLayerIds.size === 1 ? Array.from(selectedLayerIds)[0] : null;
+    if (!singleLayerId || selectedShapeIds.size === 0) return;
+    removeShapes(Array.from(selectedShapeIds), singleLayerId);
     addToast('info', `Removed ${selectedShapeIds.size} shape(s)`);
     setSelectedShapeIds(new Set());
   };
 
   /** Pop selected shapes to new layer */
   const handlePopSelectedToNewLayer = () => {
-    if (!selectedLayerId || selectedShapeIds.size === 0 || !project) return;
-    const layer = project.layers.find(l => l.id === selectedLayerId);
+    const singleLayerId = selectedLayerIds.size === 1 ? Array.from(selectedLayerIds)[0] : null;
+    if (!singleLayerId || selectedShapeIds.size === 0 || !project) return;
+    const layer = project.layers.find(l => l.id === singleLayerId);
     if (!layer) return;
     const shapeIds = Array.from(selectedShapeIds);
     const shapes = layer.shapes.filter(s => selectedShapeIds.has(s.id));
     if (shapes.length === 0) return;
     if (shapes.length === 1) {
-      moveShapeToNewLayer(shapes[0].id, selectedLayerId, shapes[0].name);
+      moveShapeToNewLayer(shapes[0].id, singleLayerId, shapes[0].name);
     } else {
-      moveShapesToNewLayer(shapeIds, selectedLayerId, `${layer.name} (selection)`);
+      moveShapesToNewLayer(shapeIds, singleLayerId, `${layer.name} (selection)`);
     }
     addToast('info', `Popped ${shapes.length} shape(s) to new layer`);
     setSelectedShapeIds(new Set());
@@ -248,19 +251,22 @@ export default function Editor() {
 
   const canFrame = connectionStatus === 'connected' && (project?.layers.length ?? 0) > 0;
 
-  const shortcuts = useMemo<ShortcutDef[]>(() => [
-    { key: 'i', ctrl: true, label: 'Import SVG', handler: () => fileInputRef.current?.click() },
-    { key: 'Delete', label: 'Remove layer', handler: () => {
-      if (selectedShapeIds.size > 0 && selectedLayerId) {
-        removeShapes(Array.from(selectedShapeIds), selectedLayerId);
-        setSelectedShapeIds(new Set());
-      } else if (selectedLayerId) {
-        removeLayer(selectedLayerId);
-        setSelectedLayerId(null);
-      }
-    }},
-    { key: 'Escape', label: 'Deselect', handler: () => { setSelectedLayerId(null); setSelectedShapeIds(new Set()); } },
-  ], [selectedLayerId, selectedShapeIds, removeLayer, removeShapes]);
+  const shortcuts = useMemo<ShortcutDef[]>(() => {
+    const singleLayerId = selectedLayerIds.size === 1 ? Array.from(selectedLayerIds)[0] : null;
+    return [
+      { key: 'i', ctrl: true, label: 'Import SVG', handler: () => fileInputRef.current?.click() },
+      { key: 'Delete', label: 'Remove layer', handler: () => {
+        if (selectedShapeIds.size > 0 && singleLayerId) {
+          removeShapes(Array.from(selectedShapeIds), singleLayerId);
+          setSelectedShapeIds(new Set());
+        } else if (singleLayerId) {
+          removeLayer(singleLayerId);
+          setSelectedLayerIds(new Set());
+        }
+      }},
+      { key: 'Escape', label: 'Deselect', handler: () => { setSelectedLayerIds(new Set()); setSelectedShapeIds(new Set()); } },
+    ];
+  }, [selectedLayerIds, selectedShapeIds, removeLayer, removeShapes]);
   useKeyboardShortcuts(shortcuts);
 
   return (
@@ -374,8 +380,11 @@ export default function Editor() {
               )}
             </div>
 
-            {/* Layers list */}
-            <div className="flex-1 overflow-y-auto p-2 space-y-1 min-h-0">
+            {/* Layers list — click outside layers to deselect */}
+            <div
+              className="flex-1 overflow-y-auto p-2 space-y-1 min-h-0"
+              onClick={() => { setSelectedLayerIds(new Set()); setSelectedShapeIds(new Set()); }}
+            >
               {project.layers.length === 0 && (
                 <p className="text-xs text-gray-600 text-center py-4">No layers yet — import an SVG</p>
               )}
@@ -387,8 +396,22 @@ export default function Editor() {
                   onDragOver={e => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; handleLayerDragOver(layer.id); }}
                   onDrop={e => { e.preventDefault(); e.stopPropagation(); handleLayerDrop(layer.id); }}
                   onDragEnd={() => { dragLayerId.current = null; setDragOverLayerId(null); }}
-                  onClick={() => { setSelectedLayerId(layer.id); setSelectedShapeIds(new Set()); }}
-                  className={`rounded-lg border p-2 cursor-pointer transition-colors ${selectedLayerId === layer.id ? 'border-orange-500 bg-gray-800' : 'border-gray-700 hover:border-gray-600'} ${dragOverLayerId === layer.id ? 'border-blue-400 border-dashed' : ''}`}
+                  onClick={e => {
+                    e.stopPropagation();
+                    if (e.shiftKey || e.metaKey || e.ctrlKey) {
+                      // Multi-select: toggle this layer
+                      setSelectedLayerIds(prev => {
+                        const next = new Set(prev);
+                        if (next.has(layer.id)) next.delete(layer.id);
+                        else next.add(layer.id);
+                        return next;
+                      });
+                    } else {
+                      setSelectedLayerIds(new Set([layer.id]));
+                    }
+                    setSelectedShapeIds(new Set());
+                  }}
+                  className={`rounded-lg border p-2 cursor-pointer transition-colors ${selectedLayerIds.has(layer.id) ? 'border-orange-500 bg-gray-800' : 'border-gray-700 hover:border-gray-600'} ${dragOverLayerId === layer.id ? 'border-blue-400 border-dashed' : ''}`}
                 >
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-gray-600 cursor-grab active:cursor-grabbing select-none mr-0.5" title="Drag to reorder">⠿</span>
@@ -430,7 +453,7 @@ export default function Editor() {
                         title={expandedLayerIds.has(layer.id) ? 'Collapse shapes' : `Expand ${layer.shapes.length} shapes`}
                       >{expandedLayerIds.has(layer.id) ? '▾' : `▸ ${layer.shapes.length}`}</button>
                     )}
-                    <button onClick={e => { e.stopPropagation(); removeLayer(layer.id); if (selectedLayerId === layer.id) setSelectedLayerId(null); }} className="text-gray-500 hover:text-red-400 text-xs" title="Delete layer"><FontAwesomeIcon icon={faTrash} /></button>
+                    <button onClick={e => { e.stopPropagation(); removeLayer(layer.id); if (selectedLayerIds.has(layer.id)) setSelectedLayerIds(prev => { const n = new Set(prev); n.delete(layer.id); return n; }); }} className="text-gray-500 hover:text-red-400 text-xs" title="Delete layer"><FontAwesomeIcon icon={faTrash} /></button>
                   </div>
 
                   {/* Expanded shapes */}
@@ -469,7 +492,7 @@ export default function Editor() {
                       })}
 
                       {/* Shape selection actions */}
-                      {selectedShapeIds.size > 0 && selectedLayerId === layer.id && (
+                      {selectedShapeIds.size > 0 && selectedLayerIds.has(layer.id) && (
                         <div className="flex items-center gap-1 mt-1 pt-1 border-t border-gray-700">
                           <span className="text-xs text-gray-500">{selectedShapeIds.size} selected</span>
                           <div className="flex-1" />
@@ -491,40 +514,45 @@ export default function Editor() {
               ))}
             </div>
 
-            {/* Layer transform panel — shown at bottom when a layer is selected */}
-            {selectedLayerId && project.layers.find(l => l.id === selectedLayerId) && (
-              <div className="flex-shrink-0 flex flex-col" style={{ height: transformPanelHeight, minHeight: 120, maxHeight: '70%' }}>
-                {/* Draggable resize handle */}
-                <div
-                  className="h-1.5 cursor-row-resize bg-gray-700 hover:bg-orange-500/60 active:bg-orange-500 transition-colors flex items-center justify-center"
-                  onMouseDown={e => {
-                    e.preventDefault();
-                    transformDragRef.current = { startY: e.clientY, startH: transformPanelHeight };
-                    const onMove = (ev: MouseEvent) => {
-                      if (!transformDragRef.current) return;
-                      const delta = transformDragRef.current.startY - ev.clientY;
-                      setTransformPanelHeight(Math.max(120, Math.min(800, transformDragRef.current.startH + delta)));
-                    };
-                    const onUp = () => { transformDragRef.current = null; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-                    window.addEventListener('mousemove', onMove);
-                    window.addEventListener('mouseup', onUp);
-                  }}
-                >
-                  <div className="w-8 h-0.5 rounded-full bg-gray-600" />
+            {/* Layer transform panel — shown at bottom when layer(s) are selected */}
+            {selectedLayerIds.size === 1 && (() => {
+              const singleId = Array.from(selectedLayerIds)[0];
+              const selectedLayer = project.layers.find(l => l.id === singleId);
+              if (!selectedLayer) return null;
+              return (
+                <div className="flex-shrink-0 flex flex-col" style={{ height: transformPanelHeight, minHeight: 120, maxHeight: '70%' }}>
+                  {/* Draggable resize handle */}
+                  <div
+                    className="h-1.5 cursor-row-resize bg-gray-700 hover:bg-orange-500/60 active:bg-orange-500 transition-colors flex items-center justify-center"
+                    onMouseDown={e => {
+                      e.preventDefault();
+                      transformDragRef.current = { startY: e.clientY, startH: transformPanelHeight };
+                      const onMove = (ev: MouseEvent) => {
+                        if (!transformDragRef.current) return;
+                        const delta = transformDragRef.current.startY - ev.clientY;
+                        setTransformPanelHeight(Math.max(120, Math.min(800, transformDragRef.current.startH + delta)));
+                      };
+                      const onUp = () => { transformDragRef.current = null; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+                      window.addEventListener('mousemove', onMove);
+                      window.addEventListener('mouseup', onUp);
+                    }}
+                  >
+                    <div className="w-8 h-0.5 rounded-full bg-gray-600" />
+                  </div>
+                  <div className="flex-1 overflow-y-auto px-3 py-2">
+                    <p className="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wide">
+                      Transform — {selectedLayer.name}
+                    </p>
+                    <LayerTransformPanel
+                      layer={selectedLayer}
+                      onUpdate={(id, partial) => updateLayerTransform(id, partial)}
+                      originPosition={originPosition}
+                      workH={workAreaHeight}
+                    />
+                  </div>
                 </div>
-                <div className="flex-1 overflow-y-auto px-3 py-2">
-                  <p className="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wide">
-                    Transform — {project.layers.find(l => l.id === selectedLayerId)!.name}
-                  </p>
-                  <LayerTransformPanel
-                    layer={project.layers.find(l => l.id === selectedLayerId)!}
-                    onUpdate={(id, partial) => updateLayerTransform(id, partial)}
-                    originPosition={originPosition}
-                    workH={workAreaHeight}
-                  />
-                </div>
-              </div>
-            )}
+              );
+            })()}
           </Panel>
 
           <PanelResizeHandle className="group w-2 bg-gray-800 hover:bg-orange-500/60 active:bg-orange-500 transition-colors cursor-col-resize flex items-center justify-center">
@@ -536,9 +564,9 @@ export default function Editor() {
             <SvgCanvas
               layers={project.layers}
               operations={project.operations}
-              selectedLayerId={selectedLayerId}
+              selectedLayerId={selectedLayerIds.size === 1 ? Array.from(selectedLayerIds)[0] : null}
               selectedShapeIds={selectedShapeIds}
-              onSelectLayer={setSelectedLayerId}
+              onSelectLayer={(id) => setSelectedLayerIds(new Set([id]))}
               onSelectShape={handleCanvasShapeClick}
               originPosition={originPosition}
             />
@@ -554,6 +582,7 @@ export default function Editor() {
               project={project}
               layers={project.layers}
               originPosition={originPosition}
+              selectedLayerIds={selectedLayerIds}
             />
           </Panel>
         </PanelGroup>

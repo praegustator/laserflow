@@ -17,8 +17,7 @@ function parseDecimal(v: string): number {
 }
 
 type SizeMode = 'scale' | 'absolute';
-type PositionMode = 'absolute' | 'relative';
-type RotationMode = 'absolute' | 'relative';
+type PosRotMode = 'absolute' | 'relative';
 
 const PIVOT_GRID: PivotAnchor[][] = [
   ['tl', 'tc', 'tr'],
@@ -39,8 +38,7 @@ function getPivotCoords(bbox: BBox | null, pivot: PivotAnchor): { px: number; py
 
 export default function LayerTransformPanel({ layer, onUpdate, originPosition = 'top-left', workH = 200 }: Props) {
   const [sizeMode, setSizeMode] = useState<SizeMode>('scale');
-  const [posMode, setPosMode] = useState<PositionMode>('absolute');
-  const [rotMode, setRotMode] = useState<RotationMode>('absolute');
+  const [posRotMode, setPosRotMode] = useState<PosRotMode>('absolute');
   const [ratioLocked, setRatioLocked] = useState(true);
   const bbox = computeShapesBoundingBox(layer.shapes);
 
@@ -176,15 +174,18 @@ export default function LayerTransformPanel({ layer, onUpdate, originPosition = 
 
   return (
     <div className="mt-1 space-y-2" onClick={e => e.stopPropagation()}>
+      {/* ── Position & Rotation abs/rel toggle ── */}
+      <div className="flex items-center gap-1 mb-0.5">
+        <label className="text-xs text-gray-500 flex-1">Position &amp; Rotation</label>
+        <button onClick={() => { setPosRotMode('absolute'); setDeltaX('0'); setDeltaY('0'); setDeltaRot('0'); }} className={posRotMode === 'absolute' ? btnActive : btnInactive}>Abs</button>
+        <button onClick={() => { setPosRotMode('relative'); setDeltaX('0'); setDeltaY('0'); setDeltaRot('0'); }} className={posRotMode === 'relative' ? btnActive : btnInactive}>Rel</button>
+      </div>
+
       {/* ── Position ── */}
       <div>
-        <div className="flex items-center gap-1 mb-0.5">
-          <label className="text-xs text-gray-500 flex-1">Position</label>
-          <button onClick={() => { setPosMode('absolute'); setDeltaX('0'); setDeltaY('0'); }} className={posMode === 'absolute' ? btnActive : btnInactive}>Abs</button>
-          <button onClick={() => { setPosMode('relative'); setDeltaX('0'); setDeltaY('0'); }} className={posMode === 'relative' ? btnActive : btnInactive}>Rel</button>
-        </div>
+        <label className="text-xs text-gray-500">Position</label>
 
-        {posMode === 'absolute' ? (
+        {posRotMode === 'absolute' ? (
           <div className="flex items-end gap-1">
             <div className="flex-1">
               <label className="text-xs text-gray-500">X</label>
@@ -323,13 +324,9 @@ export default function LayerTransformPanel({ layer, onUpdate, originPosition = 
 
       {/* ── Rotation ── */}
       <div>
-        <div className="flex items-center gap-1 mb-0.5">
-          <label className="text-xs text-gray-500 flex-1">Rotation</label>
-          <button onClick={() => { setRotMode('absolute'); setDeltaRot('0'); }} className={rotMode === 'absolute' ? btnActive : btnInactive}>Abs</button>
-          <button onClick={() => { setRotMode('relative'); setDeltaRot('0'); }} className={rotMode === 'relative' ? btnActive : btnInactive}>Rel</button>
-        </div>
+        <label className="text-xs text-gray-500">Rotation</label>
 
-        {rotMode === 'absolute' ? (
+        {posRotMode === 'absolute' ? (
           <div className="flex items-end gap-1">
             <div className="flex-1">
               <input
@@ -369,8 +366,8 @@ export default function LayerTransformPanel({ layer, onUpdate, originPosition = 
       {/* ── Flip & Pivot ── */}
       <div className="flex items-start gap-3">
         <div>
-          <label className="text-xs text-gray-500">Flip</label>
-          <div className="flex gap-1 mt-0.5">
+          <label className="text-xs text-gray-500 mb-0.5 block">Flip</label>
+          <div className="flex gap-1">
             <button
               onClick={handleFlipX}
               className="flex items-center justify-center w-7 h-7 rounded transition-colors bg-gray-700 text-gray-400 hover:bg-gray-600 active:bg-orange-600 active:text-white"
@@ -384,8 +381,8 @@ export default function LayerTransformPanel({ layer, onUpdate, originPosition = 
           </div>
         </div>
         <div>
-          <label className="text-xs text-gray-500">Pivot</label>
-          <div className="inline-grid grid-cols-3 gap-px mt-0.5">
+          <label className="text-xs text-gray-500 mb-0.5 block">Pivot</label>
+          <div className="inline-grid grid-cols-3 gap-px">
             {PIVOT_GRID.map((row) =>
               row.map((anchor) => (
                 <button
