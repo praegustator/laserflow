@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMachineStore } from '../store/machineStore';
+import { useAppSettings } from '../store/appSettingsStore';
 import type { ConsoleEntry } from '../types';
 
 function EntryRow({ entry }: { entry: ConsoleEntry }) {
@@ -35,7 +36,7 @@ type DirectionFilter = 'all' | 'in' | 'out';
 
 export default function ConsoleLog() {
   const consoleLog = useMachineStore((s) => s.consoleLog);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const autoScrollConsole = useAppSettings((s) => s.autoScrollConsole);
   const containerRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
 
@@ -56,10 +57,14 @@ export default function ConsoleLog() {
   };
 
   useEffect(() => {
+    if (!autoScrollConsole) return;
     if (isAtBottomRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      const el = containerRef.current;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+      }
     }
-  }, [consoleLog]);
+  }, [consoleLog, autoScrollConsole]);
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -104,7 +109,6 @@ export default function ConsoleLog() {
         ) : (
           filteredLog.map((entry) => <EntryRow key={entry.id} entry={entry} />)
         )}
-        <div ref={bottomRef} />
       </div>
     </div>
   );
