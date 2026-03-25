@@ -4,9 +4,13 @@ import type { Operation, OperationType, Layer, MaterialPreset, Project } from '.
 import { useProjectStore } from '../store/projectStore';
 import { useJobStore } from '../store/jobStore';
 import { useToastStore } from '../store/toastStore';
+import { useMachineStore } from '../store/machineStore';
+import { useAppSettings } from '../store/appSettingsStore';
 import { api } from '../api/client';
+import { computeBoundingBox } from '../utils/geometry';
+import type { PathGeometry } from '../types';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCircle as faCircleSolid, faTrash, faClone, faChevronUp, faChevronDown, faGears, faEye, faPaperPlane } from '@fortawesome/free-solid-svg-icons';
+import { faCircle as faCircleSolid, faTrash, faClone, faChevronUp, faChevronDown, faGears, faEye, faPaperPlane, faBorderAll } from '@fortawesome/free-solid-svg-icons';
 import { faCircle as faCircleRegular } from '@fortawesome/free-regular-svg-icons';
 
 const OP_TYPE_LABELS: Record<OperationType, string> = {
@@ -264,6 +268,9 @@ export default function OperationsPanel({ project, layers, originPosition, selec
   const compileJob = useProjectStore(s => s.compileJob);
   const startJob = useJobStore(s => s.startJob);
   const addToast = useToastStore(s => s.addToast);
+  const connectionStatus = useMachineStore(s => s.connectionStatus);
+  const sendCommand = useMachineStore(s => s.sendCommand);
+  const workAreaHeight = useAppSettings(s => s.workAreaHeight);
   const navigate = useNavigate();
   const [generating, setGenerating] = useState(false);
   const [presets, setPresets] = useState<MaterialPreset[]>([]);
@@ -292,6 +299,7 @@ export default function OperationsPanel({ project, layers, originPosition, selec
     try {
       await compileJob({
         originFlip: originPosition === 'bottom-left',
+        workH: workAreaHeight,
       });
       addToast('success', 'G-code generated — job ready');
     } catch (err) {
@@ -313,6 +321,85 @@ export default function OperationsPanel({ project, layers, originPosition, selec
     } catch (err) {
       addToast('error', err instanceof Error ? err.message : 'Failed to start job');
     }
+  };
+
+  /** Trace the bounding-box frame of all enabled-operation geometry with laser off. */
+  const handleTraceFrame = () => {
+    const enabledOps = project.operations.filter(o => o.enabled && o.type !== 'ignore');
+    if (enabledOps.length === 0) {
+      addToast('error', 'No enabled operations');
+      return;
+    }
+
+    // Collect all geometry referenced by enabled operations
+    const geometry: PathGeometry[] = [];
+    for (const op of enabledOps) {
+      for (const layerId of op.layerIds) {
+        const layer = layers.find(l => l.id === layerId);
+        if (!layer) continue;
+        for (const shape of layer.shapes) {
+          geometry.push({ d: shape.d, layerId });
+        }
+      }
+    }
+
+    if (geometry.length === 0) {
+      addToast('error', 'No geometry in enabled operations');
+      return;
+    }
+
+    const bbox = computeBoundingBox(geometry);
+    if (!bbox) {
+      addToast('error', 'Cannot compute bounding box');
+      return;
+    }
+
+    // Apply layer transforms to get world coordinates
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const op of enabledOps) {
+      for (const layerId of op.layerIds) {
+        const layer = layers.find(l => l.id === layerId);
+        if (!layer) continue;
+        const layerBbox = computeBoundingBox(layer.shapes.map(s => ({ d: s.d })));
+        if (!layerBbox) continue;
+        // Transform the four corners of the layer bbox through the layer transform
+        const corners = [
+          [layerBbox.minX, layerBbox.minY],
+          [layerBbox.maxX, layerBbox.minY],
+          [layerBbox.maxX, layerBbox.maxY],
+          [layerBbox.minX, layerBbox.maxY],
+        ];
+        for (const [cx, cy] of corners) {
+          const tx = layer.offsetX + cx * layer.scaleX;
+          let ty = layer.offsetY + cy * layer.scaleY;
+          if (originPosition === 'bottom-left') {
+            ty = workAreaHeight - ty;
+          }
+          if (tx < minX) minX = tx;
+          if (ty < minY) minY = ty;
+          if (tx > maxX) maxX = tx;
+          if (ty > maxY) maxY = ty;
+        }
+      }
+    }
+
+    if (!Number.isFinite(minX)) {
+      addToast('error', 'Cannot compute frame');
+      return;
+    }
+
+    const fmt = (n: number) => n.toFixed(3);
+    const feedRate = Math.max(...enabledOps.map(o => o.feedRate));
+
+    // Send G-code to trace the frame rectangle with laser off
+    void sendCommand('M5');
+    void sendCommand('G90');
+    void sendCommand(`G0 X${fmt(minX)} Y${fmt(minY)}`);
+    void sendCommand(`G1 X${fmt(maxX)} Y${fmt(minY)} F${feedRate}`);
+    void sendCommand(`G1 X${fmt(maxX)} Y${fmt(maxY)} F${feedRate}`);
+    void sendCommand(`G1 X${fmt(minX)} Y${fmt(maxY)} F${feedRate}`);
+    void sendCommand(`G1 X${fmt(minX)} Y${fmt(minY)} F${feedRate}`);
+    addToast('success', 'Tracing job frame…');
   };
 
   const operations = project.operations;
@@ -382,6 +469,13 @@ export default function OperationsPanel({ project, layers, originPosition, selec
             title={gcodeUpToDate ? 'Preview generated G-code' : 'Generate G-code first'}
           ><FontAwesomeIcon icon={faEye} className="mr-1" />Preview</button>
         </div>
+
+        <button
+          onClick={handleTraceFrame}
+          disabled={!hasEnabledOps || connectionStatus !== 'connected'}
+          className="w-full py-1.5 text-sm rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 font-semibold transition-colors"
+          title="Trace the bounding box of all operation geometry with laser off"
+        ><FontAwesomeIcon icon={faBorderAll} className="mr-1" />Trace Frame</button>
 
         {project.gcode && (
           <p className={`text-xs text-center ${gcodeUpToDate ? 'text-green-400' : 'text-yellow-500'}`}>

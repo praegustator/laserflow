@@ -33,6 +33,9 @@ export function parseStatusReport(line: string): Partial<MachineState> {
     } else if (part.startsWith('WPos:')) {
       const coords = part.slice(5).split(',').map(Number);
       result.workPosition = { x: coords[0] ?? 0, y: coords[1] ?? 0, z: coords[2] ?? 0 };
+    } else if (part.startsWith('WCO:')) {
+      const coords = part.slice(4).split(',').map(Number);
+      result.wco = { x: coords[0] ?? 0, y: coords[1] ?? 0, z: coords[2] ?? 0 };
     } else if (part.startsWith('FS:')) {
       const fs = part.slice(3).split(',').map(Number);
       result.feed = fs[0] ?? 0;

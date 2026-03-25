@@ -19,6 +19,22 @@ describe('GrblProtocol', () => {
       const result = parseStatusReport('not a status');
       expect(result.state).toBeUndefined();
     });
+    it('parses WCO field', () => {
+      const result = parseStatusReport('<Idle|MPos:10.000,20.000,0.000|WCO:5.000,3.000,1.000|FS:0,0>');
+      expect(result.wco).toEqual({ x: 5, y: 3, z: 1 });
+    });
+    it('parses WPos field', () => {
+      const result = parseStatusReport('<Idle|WPos:15.000,17.000,-1.000|FS:0,0>');
+      expect(result.workPosition).toEqual({ x: 15, y: 17, z: -1 });
+      expect(result.position).toBeUndefined();
+    });
+    it('parses status with MPos and WCO together', () => {
+      const result = parseStatusReport('<Run|MPos:100.000,200.000,0.000|WCO:10.000,20.000,0.000|FS:500,0>');
+      expect(result.state).toBe('Run');
+      expect(result.position).toEqual({ x: 100, y: 200, z: 0 });
+      expect(result.wco).toEqual({ x: 10, y: 20, z: 0 });
+      expect(result.feed).toBe(500);
+    });
   });
   describe('parseResponse', () => {
     it('parses ok response', () => {

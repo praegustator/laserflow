@@ -30,11 +30,37 @@ export async function buildServer() {
   registerMaterialPresetRoutes(app);
   registerVersionRoutes(app);
 
+  // Maintain last-known Work Coordinate Offset so we can always compute both
+  // MPos and WPos even when GRBL only reports one of them.
+  let lastWco: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 };
+
   serialManager.on('data', (line: string) => {
     wsBroadcaster.broadcast('console', line);
 
     if (line.startsWith('<') && line.endsWith('>')) {
       const state = parseStatusReport(line);
+
+      // Update stored WCO if reported
+      if (state.wco) {
+        lastWco = state.wco;
+      }
+
+      // Derive the missing position type using WCO:
+      //   WPos = MPos − WCO   |   MPos = WPos + WCO
+      if (state.position && !state.workPosition) {
+        state.workPosition = {
+          x: state.position.x - lastWco.x,
+          y: state.position.y - lastWco.y,
+          z: state.position.z - lastWco.z,
+        };
+      } else if (state.workPosition && !state.position) {
+        state.position = {
+          x: state.workPosition.x + lastWco.x,
+          y: state.workPosition.y + lastWco.y,
+          z: state.workPosition.z + lastWco.z,
+        };
+      }
+
       wsBroadcaster.broadcast('machineStatus', state);
     }
   });
