@@ -1,11 +1,29 @@
+import { useEffect, useState } from 'react';
+
 const REPO_URL = 'https://github.com/praegustator/laserflow';
 
 export default function Footer() {
-  const version = import.meta.env.VITE_APP_VERSION ?? '__dev__';
+  const frontendVersion = import.meta.env.VITE_APP_VERSION ?? '__dev__';
+  const [backendVersion, setBackendVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/version')
+      .then((res) => res.json())
+      .then((data: { version: string }) => setBackendVersion(data.version))
+      .catch((err) => {
+        console.error('Failed to fetch backend version:', err);
+        setBackendVersion(null);
+      });
+  }, []);
 
   return (
     <footer className="flex-shrink-0 h-7 bg-gray-900 border-t border-gray-800 flex items-center justify-between px-4 text-xs text-gray-500">
-      <span className="font-mono">{version}</span>
+      <span className="font-mono">
+        frontend: {frontendVersion}
+        {backendVersion !== null && (
+          <> &nbsp;|&nbsp; backend: {backendVersion}</>
+        )}
+      </span>
 
       <div className="flex items-center gap-4">
         <a
