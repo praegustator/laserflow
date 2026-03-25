@@ -21,8 +21,7 @@ export default function Editor() {
   const removeLayer = useProjectStore(s => s.removeLayer);
   const renameLayer = useProjectStore(s => s.renameLayer);
   const toggleLayerVisibility = useProjectStore(s => s.toggleLayerVisibility);
-  const moveLayerUp = useProjectStore(s => s.moveLayerUp);
-  const moveLayerDown = useProjectStore(s => s.moveLayerDown);
+  const reorderLayer = useProjectStore(s => s.reorderLayer);
   const updateLayerTransform = useProjectStore(s => s.updateLayerTransform);
   const moveShapeToNewLayer = useProjectStore(s => s.moveShapeToNewLayer);
   const moveShapesToNewLayer = useProjectStore(s => s.moveShapesToNewLayer);
@@ -50,6 +49,9 @@ export default function Editor() {
   const [editingShapeId, setEditingShapeId] = useState<string | null>(null);
   const [editingShapeLayerId, setEditingShapeLayerId] = useState<string | null>(null);
   const [editingShapeName, setEditingShapeName] = useState('');
+  // Drag-and-drop state for layer reordering
+  const dragLayerId = useRef<string | null>(null);
+  const [dragOverLayerId, setDragOverLayerId] = useState<string | null>(null);
 
   const project = projects.find(p => p.id === activeProjectId) ?? null;
 
@@ -226,6 +228,18 @@ export default function Editor() {
     setSelectedShapeIds(new Set());
   };
 
+  /** Layer drag-and-drop handlers */
+  const handleLayerDragStart = (layerId: string) => { dragLayerId.current = layerId; };
+  const handleLayerDragOver = (layerId: string) => { setDragOverLayerId(layerId); };
+  const handleLayerDrop = (toLayerId: string) => {
+    if (dragLayerId.current && dragLayerId.current !== toLayerId && project) {
+      const toIndex = project.layers.findIndex(l => l.id === toLayerId);
+      if (toIndex >= 0) reorderLayer(dragLayerId.current, toIndex);
+    }
+    dragLayerId.current = null;
+    setDragOverLayerId(null);
+  };
+
   const canFrame = connectionStatus === 'connected' && (project?.layers.length ?? 0) > 0;
 
   const shortcuts = useMemo<ShortcutDef[]>(() => [
@@ -345,10 +359,10 @@ export default function Editor() {
           className="flex-1 min-h-0"
           resizeTargetMinimumSize={{ coarse: 44, fine: 8 }}
         >
-          {/* Left panel: Files/Layers/Shapes */}
+          {/* Left panel: Layers/Shapes + transform */}
           <Panel defaultSize="22%" minSize="200px" groupResizeBehavior="preserve-pixel-size" className="bg-gray-900 flex flex-col min-h-0">
-            <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between">
-              <span className="text-sm font-semibold text-gray-200 uppercase tracking-wide">🔲 Shapes &amp; Layers</span>
+            <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between flex-shrink-0">
+              <span className="text-sm font-semibold text-gray-200">🔲 Shapes &amp; Layers</span>
               <button onClick={() => fileInputRef.current?.click()} className="text-xs text-orange-400 hover:text-orange-300">+ Import</button>
             </div>
 
@@ -360,10 +374,16 @@ export default function Editor() {
               {project.layers.map((layer, idx) => (
                 <div
                   key={layer.id}
+                  draggable
+                  onDragStart={e => { e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; handleLayerDragStart(layer.id); }}
+                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; handleLayerDragOver(layer.id); }}
+                  onDrop={e => { e.preventDefault(); e.stopPropagation(); handleLayerDrop(layer.id); }}
+                  onDragEnd={() => { dragLayerId.current = null; setDragOverLayerId(null); }}
                   onClick={() => { setSelectedLayerId(layer.id); setSelectedShapeIds(new Set()); }}
-                  className={`rounded-lg border p-2 cursor-pointer transition-colors ${selectedLayerId === layer.id ? 'border-orange-500 bg-gray-800' : 'border-gray-700 hover:border-gray-600'}`}
+                  className={`rounded-lg border p-2 cursor-pointer transition-colors ${selectedLayerId === layer.id ? 'border-orange-500 bg-gray-800' : 'border-gray-700 hover:border-gray-600'} ${dragOverLayerId === layer.id ? 'border-blue-400 border-dashed' : ''}`}
                 >
                   <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-gray-600 cursor-grab active:cursor-grabbing select-none mr-0.5" title="Drag to reorder">⠿</span>
                     <span
                       className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                       style={{ backgroundColor: LAYER_COLORS[idx % LAYER_COLORS.length] }}
@@ -402,9 +422,7 @@ export default function Editor() {
                         title={expandedLayerIds.has(layer.id) ? 'Collapse shapes' : `Expand ${layer.shapes.length} shapes`}
                       >{expandedLayerIds.has(layer.id) ? '▾' : `▸ ${layer.shapes.length}`}</button>
                     )}
-                    <button onClick={e => { e.stopPropagation(); moveLayerUp(layer.id); }} className="text-gray-500 hover:text-gray-200 text-xs" title="Move up" disabled={idx === 0}>↑</button>
-                    <button onClick={e => { e.stopPropagation(); moveLayerDown(layer.id); }} className="text-gray-500 hover:text-gray-200 text-xs" title="Move down" disabled={idx === project.layers.length - 1}>↓</button>
-                    <button onClick={e => { e.stopPropagation(); removeLayer(layer.id); if (selectedLayerId === layer.id) setSelectedLayerId(null); }} className="text-gray-500 hover:text-red-400 text-xs" title="Remove">✕</button>
+                    <button onClick={e => { e.stopPropagation(); removeLayer(layer.id); if (selectedLayerId === layer.id) setSelectedLayerId(null); }} className="text-gray-500 hover:text-red-400 text-xs" title="Delete layer">✕</button>
                   </div>
 
                   {/* Expanded shapes */}
@@ -461,17 +479,22 @@ export default function Editor() {
                       )}
                     </div>
                   )}
-
-                  {/* Transform panel when selected */}
-                  {selectedLayerId === layer.id && (
-                    <LayerTransformPanel
-                      layer={layer}
-                      onUpdate={(id, partial) => updateLayerTransform(id, partial)}
-                    />
-                  )}
                 </div>
               ))}
             </div>
+
+            {/* Layer transform panel — shown at bottom when a layer is selected */}
+            {selectedLayerId && project.layers.find(l => l.id === selectedLayerId) && (
+              <div className="flex-shrink-0 border-t border-gray-700 px-3 py-2 overflow-y-auto max-h-72">
+                <p className="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wide">
+                  Transform — {project.layers.find(l => l.id === selectedLayerId)!.name}
+                </p>
+                <LayerTransformPanel
+                  layer={project.layers.find(l => l.id === selectedLayerId)!}
+                  onUpdate={(id, partial) => updateLayerTransform(id, partial)}
+                />
+              </div>
+            )}
           </Panel>
 
           <PanelResizeHandle className="group w-2 bg-gray-800 hover:bg-orange-500/60 active:bg-orange-500 transition-colors cursor-col-resize flex items-center justify-center">

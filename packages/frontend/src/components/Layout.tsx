@@ -1,5 +1,5 @@
-import { NavLink, Outlet } from 'react-router-dom';
-import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import MachineStatus from './MachineStatus';
 import Footer from './Footer';
 
@@ -7,67 +7,66 @@ const navItems = [
   { to: '/', label: 'Projects', icon: '📁', end: true },
   { to: '/editor', label: 'Editor', icon: '✏' },
   { to: '/console', label: 'Console', icon: '⌨' },
-  { to: '/gcode-preview', label: 'G-code Preview', icon: '📋' },
+  { to: '/gcode-preview', label: 'G-code', icon: '📋' },
   { to: '/settings', label: 'Settings', icon: '⚙' },
 ];
 
 export default function Layout() {
+  const navigate = useNavigate();
+
+  // Cmd+Shift+1–5 to navigate between tabs (issue #30)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
+      const num = parseInt(e.key, 10);
+      if (num >= 1 && num <= navItems.length) {
+        e.preventDefault();
+        void navigate(navItems[num - 1].to);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [navigate]);
+
   return (
-    <div className="flex h-screen bg-gray-950 text-gray-100 overflow-hidden">
-      <PanelGroup orientation="horizontal" className="h-full">
-        {/* Sidebar */}
-        <Panel defaultSize="15%" minSize="10%" maxSize="25%" className="bg-gray-900 border-r border-gray-800 flex flex-col min-h-0">
-          {/* Logo */}
-          <div className="px-5 py-4 border-b border-gray-800 flex-shrink-0">
-            <span className="text-xl font-bold tracking-tight text-orange-400 whitespace-nowrap overflow-hidden">
-              🔥 LaserFlow
-            </span>
-          </div>
+    <div className="flex flex-col h-screen bg-gray-950 text-gray-100 overflow-hidden">
+      {/* Header with navigation tabs (Prusa Slicer style) */}
+      <header className="flex-shrink-0 h-12 bg-gray-900 border-b border-gray-800 flex items-center px-4 gap-0">
+        {/* Logo */}
+        <span className="text-base font-bold text-orange-400 whitespace-nowrap mr-4">🔥 LaserFlow</span>
 
-          {/* Nav */}
-          <nav className="flex-1 py-3 overflow-y-auto">
-            {navItems.map(({ to, label, icon, end }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={end}
-                title={label}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-5 py-3 text-sm font-medium transition-colors overflow-hidden ${
-                    isActive
-                      ? 'bg-orange-500/10 text-orange-400 border-r-2 border-orange-400'
-                      : 'text-gray-400 hover:bg-gray-800 hover:text-gray-100'
-                  }`
-                }
-              >
-                <span className="text-base w-5 text-center flex-shrink-0">{icon}</span>
-                <span className="truncate">{label}</span>
-              </NavLink>
-            ))}
-          </nav>
-        </Panel>
+        {/* Tab navigation */}
+        <nav className="flex items-stretch h-full flex-1 gap-0.5">
+          {navItems.map(({ to, label, icon, end }, i) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              title={`${label} (Cmd+Shift+${i + 1})`}
+              className={({ isActive }) =>
+                `flex items-center gap-1.5 px-3 text-sm font-medium transition-colors border-b-2 ${
+                  isActive
+                    ? 'text-orange-400 border-orange-400 bg-orange-500/10'
+                    : 'text-gray-400 border-transparent hover:text-gray-100 hover:bg-gray-800'
+                }`
+              }
+            >
+              <span className="text-sm">{icon}</span>
+              <span>{label}</span>
+            </NavLink>
+          ))}
+        </nav>
 
-        <PanelResizeHandle className="w-1.5 bg-gray-800 hover:bg-orange-500/40 transition-colors cursor-col-resize flex-shrink-0" />
+        {/* Machine status (right side) */}
+        <MachineStatus compact />
+      </header>
 
-        {/* Main area */}
-        <Panel className="flex flex-col min-w-0 min-h-0">
-          {/* Header */}
-          <header className="h-14 flex-shrink-0 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6">
-            <h1 className="text-sm font-semibold text-gray-300 uppercase tracking-widest">
-              LaserFlow Controller
-            </h1>
-            <MachineStatus compact />
-          </header>
+      {/* Page content */}
+      <main className="flex-1 overflow-auto min-h-0">
+        <Outlet />
+      </main>
 
-          {/* Page */}
-          <main className="flex-1 overflow-auto min-h-0">
-            <Outlet />
-          </main>
-
-          {/* Footer */}
-          <Footer />
-        </Panel>
-      </PanelGroup>
+      <Footer />
     </div>
   );
 }

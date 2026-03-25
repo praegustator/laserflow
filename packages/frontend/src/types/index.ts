@@ -88,6 +88,8 @@ export interface Project {
   /** Backend job ID if G-code has been generated */
   jobId?: string;
   gcode?: string;
+  /** True when G-code is current (no changes since last compile). Undefined = never compiled. */
+  gcodeUpToDate?: boolean;
 }
 
 export interface Job {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Operation, OperationType, Layer, MaterialPreset, Project } from '../types';
 import { useProjectStore } from '../store/projectStore';
@@ -22,25 +22,33 @@ interface OperationRowProps {
   op: Operation;
   onChange: (updated: Partial<Operation>) => void;
   onRemove: () => void;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
   onToggleEnabled: () => void;
   onDuplicate: () => void;
-  isFirst: boolean;
-  isLast: boolean;
   presets: MaterialPreset[];
   layers: Layer[];
   onAssignLayer: (layerId: string) => void;
   onUnassignLayer: (layerId: string) => void;
+  onDragStart: (id: string) => void;
+  onDragOver: (id: string) => void;
+  onDrop: () => void;
+  isDragOver: boolean;
 }
 
-function OperationRow({ op, onChange, onRemove, onMoveUp, onMoveDown, onToggleEnabled, onDuplicate, isFirst, isLast, presets, layers, onAssignLayer, onUnassignLayer }: OperationRowProps) {
+function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, presets, layers, onAssignLayer, onUnassignLayer, onDragStart, onDragOver, onDrop, isDragOver }: OperationRowProps) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className={`border rounded-lg overflow-hidden ${op.enabled ? 'border-gray-700' : 'border-gray-800 opacity-60'}`}>
+    <div
+      className={`border rounded-lg overflow-hidden transition-colors ${op.enabled ? 'border-gray-700' : 'border-gray-800 opacity-60'} ${isDragOver ? 'border-orange-400 border-dashed' : ''}`}
+      draggable
+      onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; onDragStart(op.id); }}
+      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOver(op.id); }}
+      onDrop={e => { e.preventDefault(); onDrop(); }}
+      onDragEnd={() => onDrop()}
+    >
       {/* Header */}
-      <div className="flex items-center gap-1 px-2 py-2 bg-gray-800">
+      <div className="flex items-center gap-1 px-2 py-2 bg-gray-800 cursor-grab active:cursor-grabbing">
+        <span className="text-xs text-gray-600 select-none mr-0.5">⠿</span>
         <button
           onClick={onToggleEnabled}
           className={`text-xs w-6 text-center flex-shrink-0 ${op.enabled ? 'text-green-400' : 'text-gray-600'}`}
@@ -63,8 +71,6 @@ function OperationRow({ op, onChange, onRemove, onMoveUp, onMoveDown, onToggleEn
 
         <div className="flex gap-0.5 flex-shrink-0">
           <button onClick={onDuplicate} className="text-gray-500 hover:text-gray-200 text-xs" title="Duplicate">⧉</button>
-          <button onClick={onMoveUp} disabled={isFirst} className="text-gray-500 hover:text-gray-200 text-xs disabled:opacity-30" title="Move up">↑</button>
-          <button onClick={onMoveDown} disabled={isLast} className="text-gray-500 hover:text-gray-200 text-xs disabled:opacity-30" title="Move down">↓</button>
           <button onClick={onRemove} className="text-gray-500 hover:text-red-400 text-xs" title="Remove">✕</button>
         </div>
       </div>
@@ -217,8 +223,7 @@ export default function OperationsPanel({ project, layers, originPosition }: Pro
   const addOperation = useProjectStore(s => s.addOperation);
   const updateOperation = useProjectStore(s => s.updateOperation);
   const removeOperation = useProjectStore(s => s.removeOperation);
-  const moveOperationUp = useProjectStore(s => s.moveOperationUp);
-  const moveOperationDown = useProjectStore(s => s.moveOperationDown);
+  const reorderOperation = useProjectStore(s => s.reorderOperation);
   const toggleOperationEnabled = useProjectStore(s => s.toggleOperationEnabled);
   const assignLayerToOperation = useProjectStore(s => s.assignLayerToOperation);
   const unassignLayerFromOperation = useProjectStore(s => s.unassignLayerFromOperation);
@@ -229,12 +234,25 @@ export default function OperationsPanel({ project, layers, originPosition }: Pro
   const navigate = useNavigate();
   const [generating, setGenerating] = useState(false);
   const [presets, setPresets] = useState<MaterialPreset[]>([]);
+  const dragOpId = useRef<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   useEffect(() => {
     api.get('/api/material-presets')
       .then(data => setPresets(data as MaterialPreset[]))
       .catch(() => { console.warn('Failed to load material presets'); });
   }, []);
+
+  const handleDragStart = (id: string) => { dragOpId.current = id; };
+  const handleDragOver = (id: string) => { setDragOverId(id); };
+  const handleDrop = () => {
+    if (dragOpId.current && dragOverId && dragOpId.current !== dragOverId) {
+      const toIndex = project.operations.findIndex(op => op.id === dragOverId);
+      if (toIndex >= 0) reorderOperation(dragOpId.current, toIndex);
+    }
+    dragOpId.current = null;
+    setDragOverId(null);
+  };
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -265,6 +283,8 @@ export default function OperationsPanel({ project, layers, originPosition }: Pro
   };
 
   const operations = project.operations;
+  const hasEnabledOps = operations.some(o => o.enabled);
+  const gcodeUpToDate = project.gcodeUpToDate === true && !!project.gcode;
 
   return (
     <div className="flex flex-col h-full">
@@ -279,22 +299,22 @@ export default function OperationsPanel({ project, layers, originPosition }: Pro
             No operations. Add one below.
           </div>
         ) : (
-          operations.map((op, i) => (
+          operations.map((op) => (
             <OperationRow
               key={op.id}
               op={op}
               onChange={partial => updateOperation(op.id, partial)}
               onRemove={() => removeOperation(op.id)}
-              onMoveUp={() => moveOperationUp(op.id)}
-              onMoveDown={() => moveOperationDown(op.id)}
               onToggleEnabled={() => toggleOperationEnabled(op.id)}
               onDuplicate={() => duplicateOperation(op.id)}
-              isFirst={i === 0}
-              isLast={i === operations.length - 1}
               presets={presets}
               layers={layers}
               onAssignLayer={layerId => assignLayerToOperation(op.id, layerId)}
               onUnassignLayer={layerId => unassignLayerFromOperation(op.id, layerId)}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              isDragOver={dragOverId === op.id}
             />
           ))
         )}
@@ -308,13 +328,15 @@ export default function OperationsPanel({ project, layers, originPosition }: Pro
 
         <button
           onClick={() => { void handleGenerate(); }}
-          disabled={generating || operations.filter(o => o.enabled).length === 0}
+          disabled={generating || !hasEnabledOps || gcodeUpToDate}
           className="w-full py-2 text-sm rounded bg-orange-600 hover:bg-orange-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
+          title={gcodeUpToDate ? 'G-code is up to date — no changes since last generation' : undefined}
         >{generating ? 'Generating…' : '⚙ Generate G-code'}</button>
 
         {project.gcode && (
-          <p className="text-xs text-green-400 text-center">
-            ✓ G-code ready ({project.gcode.split('\n').length.toLocaleString()} lines)
+          <p className={`text-xs text-center ${gcodeUpToDate ? 'text-green-400' : 'text-yellow-500'}`}>
+            {gcodeUpToDate ? '✓ G-code ready' : '⚠ Changes pending — regenerate'}
+            {' '}({project.gcode.split('\n').length.toLocaleString()} lines)
           </p>
         )}
         {project.gcode && (
