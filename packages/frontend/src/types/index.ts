@@ -29,6 +29,14 @@ export interface Shape {
   sourceFileId: string;
 }
 
+/**
+ * Pivot anchor within the layer bounding box.
+ * 'tl' = top-left, 'tc' = top-center, 'tr' = top-right,
+ * 'ml' = middle-left, 'mc' = middle-center, 'mr' = middle-right,
+ * 'bl' = bottom-left, 'bc' = bottom-center, 'br' = bottom-right.
+ */
+export type PivotAnchor = 'tl' | 'tc' | 'tr' | 'ml' | 'mc' | 'mr' | 'bl' | 'bc' | 'br';
+
 export interface Layer {
   id: string;
   name: string;
@@ -38,6 +46,14 @@ export interface Layer {
   offsetY: number;
   scaleX: number;
   scaleY: number;
+  /** Rotation in degrees (clockwise) */
+  rotation: number;
+  /** Mirror across the X axis */
+  mirrorX: boolean;
+  /** Mirror across the Y axis */
+  mirrorY: boolean;
+  /** Pivot point anchor for transforms */
+  pivot: PivotAnchor;
 }
 
 /** An SVG file imported into a project */

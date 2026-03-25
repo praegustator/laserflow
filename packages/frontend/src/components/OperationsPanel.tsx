@@ -25,6 +25,7 @@ interface OperationRowProps {
   onMoveUp: () => void;
   onMoveDown: () => void;
   onToggleEnabled: () => void;
+  onDuplicate: () => void;
   isFirst: boolean;
   isLast: boolean;
   presets: MaterialPreset[];
@@ -33,7 +34,7 @@ interface OperationRowProps {
   onUnassignLayer: (layerId: string) => void;
 }
 
-function OperationRow({ op, onChange, onRemove, onMoveUp, onMoveDown, onToggleEnabled, isFirst, isLast, presets, layers, onAssignLayer, onUnassignLayer }: OperationRowProps) {
+function OperationRow({ op, onChange, onRemove, onMoveUp, onMoveDown, onToggleEnabled, onDuplicate, isFirst, isLast, presets, layers, onAssignLayer, onUnassignLayer }: OperationRowProps) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -61,6 +62,7 @@ function OperationRow({ op, onChange, onRemove, onMoveUp, onMoveDown, onToggleEn
         </button>
 
         <div className="flex gap-0.5 flex-shrink-0">
+          <button onClick={onDuplicate} className="text-gray-500 hover:text-gray-200 text-xs" title="Duplicate">⧉</button>
           <button onClick={onMoveUp} disabled={isFirst} className="text-gray-500 hover:text-gray-200 text-xs disabled:opacity-30" title="Move up">↑</button>
           <button onClick={onMoveDown} disabled={isLast} className="text-gray-500 hover:text-gray-200 text-xs disabled:opacity-30" title="Move down">↓</button>
           <button onClick={onRemove} className="text-gray-500 hover:text-red-400 text-xs" title="Remove">✕</button>
@@ -220,6 +222,7 @@ export default function OperationsPanel({ project, layers, originPosition }: Pro
   const toggleOperationEnabled = useProjectStore(s => s.toggleOperationEnabled);
   const assignLayerToOperation = useProjectStore(s => s.assignLayerToOperation);
   const unassignLayerFromOperation = useProjectStore(s => s.unassignLayerFromOperation);
+  const duplicateOperation = useProjectStore(s => s.duplicateOperation);
   const compileJob = useProjectStore(s => s.compileJob);
   const startJob = useJobStore(s => s.startJob);
   const addToast = useToastStore(s => s.addToast);
@@ -285,6 +288,7 @@ export default function OperationsPanel({ project, layers, originPosition }: Pro
               onMoveUp={() => moveOperationUp(op.id)}
               onMoveDown={() => moveOperationDown(op.id)}
               onToggleEnabled={() => toggleOperationEnabled(op.id)}
+              onDuplicate={() => duplicateOperation(op.id)}
               isFirst={i === 0}
               isLast={i === operations.length - 1}
               presets={presets}
