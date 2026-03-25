@@ -6,7 +6,7 @@ import { useAppSettings } from '../store/appSettingsStore';
 interface Props {
   layers: Layer[];
   operations: Operation[];
-  selectedLayerId: string | null;
+  selectedLayerIds: Set<string>;
   selectedShapeIds?: Set<string>;
   onSelectLayer: (id: string) => void;
   onSelectShape?: (shapeId: string, layerId: string, e: React.MouseEvent) => void;
@@ -24,7 +24,7 @@ const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#1
 
 const GRID_SPACING = 10; // mm
 
-export default function SvgCanvas({ layers, operations, selectedLayerId, selectedShapeIds, onSelectLayer, onSelectShape, originPosition, machineProfile }: Props) {
+export default function SvgCanvas({ layers, operations, selectedLayerIds, selectedShapeIds, onSelectLayer, onSelectShape, originPosition, machineProfile }: Props) {
   const settingsWorkW = useAppSettings(s => s.workAreaWidth);
   const settingsWorkH = useAppSettings(s => s.workAreaHeight);
   const workW = machineProfile?.workArea.x ?? settingsWorkW;
@@ -131,7 +131,7 @@ export default function SvgCanvas({ layers, operations, selectedLayerId, selecte
           {layers.map((layer, idx) => {
             if (!layer.visible) return null;
             const color = getLayerColor(layer.id, idx);
-            const isSelected = layer.id === selectedLayerId;
+            const isSelected = selectedLayerIds.has(layer.id);
             const rotation = layer.rotation ?? 0;
             const mX = layer.mirrorX ?? false;
             const mY = layer.mirrorY ?? false;

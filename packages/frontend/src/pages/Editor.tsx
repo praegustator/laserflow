@@ -10,8 +10,9 @@ import SvgCanvas from '../components/SvgCanvas';
 import OperationsPanel from '../components/OperationsPanel';
 import LayerTransformPanel from '../components/LayerTransformPanel';
 import { computeShapesBoundingBox } from '../utils/geometry';
+import type { Layer } from '../types';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faEye, faEyeSlash, faTrash } from '@fortawesome/free-solid-svg-icons';
+import { faEye, faEyeSlash, faTrash, faFileImport, faObjectGroup, faLayerGroup } from '@fortawesome/free-solid-svg-icons';
 
 const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];
 
@@ -27,6 +28,7 @@ export default function Editor() {
   const updateLayerTransform = useProjectStore(s => s.updateLayerTransform);
   const moveShapeToNewLayer = useProjectStore(s => s.moveShapeToNewLayer);
   const moveShapesToNewLayer = useProjectStore(s => s.moveShapesToNewLayer);
+  const moveShapeToLayer = useProjectStore(s => s.moveShapeToLayer);
   const removeShapes = useProjectStore(s => s.removeShapes);
   const renameShape = useProjectStore(s => s.renameShape);
   const saveVersion = useProjectStore(s => s.saveVersion);
@@ -251,6 +253,15 @@ export default function Editor() {
 
   const canFrame = connectionStatus === 'connected' && (project?.layers.length ?? 0) > 0;
 
+  /** Delete all currently selected layers */
+  const handleDeleteSelectedLayers = useCallback(() => {
+    if (selectedLayerIds.size === 0) return;
+    for (const lid of selectedLayerIds) removeLayer(lid);
+    addToast('info', `Removed ${selectedLayerIds.size} layer(s)`);
+    setSelectedLayerIds(new Set());
+    setSelectedShapeIds(new Set());
+  }, [selectedLayerIds, removeLayer, addToast]);
+
   const shortcuts = useMemo<ShortcutDef[]>(() => {
     const singleLayerId = selectedLayerIds.size === 1 ? Array.from(selectedLayerIds)[0] : null;
     return [
@@ -259,8 +270,8 @@ export default function Editor() {
         if (selectedShapeIds.size > 0 && singleLayerId) {
           removeShapes(Array.from(selectedShapeIds), singleLayerId);
           setSelectedShapeIds(new Set());
-        } else if (singleLayerId) {
-          removeLayer(singleLayerId);
+        } else if (selectedLayerIds.size > 0) {
+          for (const lid of selectedLayerIds) removeLayer(lid);
           setSelectedLayerIds(new Set());
         }
       }},
@@ -366,29 +377,41 @@ export default function Editor() {
           {/* Left panel: Layers/Shapes + transform */}
           <Panel defaultSize="22%" minSize="200px" groupResizeBehavior="preserve-pixel-size" className="bg-gray-900 flex flex-col min-h-0">
             <div
-              className="px-3 py-2 border-b border-gray-700 flex items-center justify-between flex-shrink-0 relative"
-              onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
-              onDragLeave={e => { e.stopPropagation(); setDragOver(false); }}
-              onDrop={e => { e.stopPropagation(); handleDrop(e); }}
+              className="px-3 py-2 border-b border-gray-700 flex items-center justify-between flex-shrink-0"
             >
-              <span className="text-sm font-semibold text-gray-200">🔲 Shapes &amp; Layers</span>
-              <button onClick={() => fileInputRef.current?.click()} className="text-xs text-orange-400 hover:text-orange-300">+ Import</button>
-              {dragOver && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-950/80 border-2 border-dashed border-orange-400 rounded pointer-events-none">
-                  <p className="text-sm font-bold text-orange-400">Drop SVG file(s)</p>
-                </div>
+              <span className="text-sm font-semibold text-gray-200"><FontAwesomeIcon icon={faLayerGroup} className="mr-1.5" />Shapes &amp; Layers</span>
+              {project.layers.length > 0 && (
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1"
+                ><FontAwesomeIcon icon={faFileImport} /> Import SVG</button>
               )}
             </div>
 
             {/* Layers list — click outside layers to deselect */}
             <div
-              className="flex-1 overflow-y-auto p-2 space-y-1 min-h-0"
+              className="flex-1 overflow-y-auto p-2 space-y-1 min-h-0 relative"
               onClick={() => { setSelectedLayerIds(new Set()); setSelectedShapeIds(new Set()); }}
+              onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+              onDragLeave={e => { e.stopPropagation(); setDragOver(false); }}
+              onDrop={e => { e.stopPropagation(); handleDrop(e); }}
             >
-              {project.layers.length === 0 && (
-                <p className="text-xs text-gray-600 text-center py-4">No layers yet — import an SVG</p>
+              {dragOver && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-950/80 border-2 border-dashed border-orange-400 rounded pointer-events-none">
+                  <p className="text-sm font-bold text-orange-400">Drop SVG file(s) here</p>
+                </div>
               )}
-              {project.layers.map((layer, idx) => (
+              {project.layers.length === 0 ? (
+                <div
+                  className="flex flex-col items-center justify-center h-full border-2 border-dashed border-gray-700 rounded-xl cursor-pointer hover:border-orange-500/60 transition-colors"
+                  onClick={e => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                >
+                  <FontAwesomeIcon icon={faFileImport} className="text-3xl text-gray-600 mb-3" />
+                  <p className="text-sm font-semibold text-gray-400">Import or drop SVG here</p>
+                  <p className="text-xs text-gray-600 mt-1">Click to browse or drag &amp; drop</p>
+                </div>
+              ) : (
+                project.layers.map((layer, idx) => (
                 <div
                   key={layer.id}
                   draggable
@@ -511,14 +534,54 @@ export default function Editor() {
                     </div>
                   )}
                 </div>
-              ))}
+              ))
+              )}
+
+              {/* Bulk actions for multi-layer selection */}
+              {selectedLayerIds.size > 1 && (
+                <div className="flex items-center gap-2 mt-1 pt-1 border-t border-gray-700">
+                  <span className="text-xs text-gray-500">{selectedLayerIds.size} layers selected</span>
+                  <div className="flex-1" />
+                  <button
+                    onClick={e => { e.stopPropagation(); handleDeleteSelectedLayers(); }}
+                    className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"
+                    title="Delete selected layers"
+                  ><FontAwesomeIcon icon={faTrash} /> Delete</button>
+                  <button
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (!project) return;
+                      const ids = Array.from(selectedLayerIds);
+                      const mergeLayers = ids.map(id => project.layers.find(l => l.id === id)).filter(Boolean) as typeof project.layers;
+                      if (mergeLayers.length < 2) return;
+                      const target = mergeLayers[0];
+                      const rest = mergeLayers.slice(1);
+                      // Move all shapes to the first layer, then remove empty layers
+                      for (const l of rest) {
+                        for (const s of l.shapes) {
+                          moveShapeToLayer(s.id, l.id, target.id);
+                        }
+                      }
+                      for (const l of rest) removeLayer(l.id);
+                      setSelectedLayerIds(new Set([target.id]));
+                      addToast('info', `Merged ${mergeLayers.length} layers into "${target.name}"`);
+                    }}
+                    className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1"
+                    title="Merge selected layers into one"
+                  ><FontAwesomeIcon icon={faObjectGroup} /> Merge</button>
+                </div>
+              )}
             </div>
 
             {/* Layer transform panel — shown at bottom when layer(s) are selected */}
-            {selectedLayerIds.size === 1 && (() => {
-              const singleId = Array.from(selectedLayerIds)[0];
-              const selectedLayer = project.layers.find(l => l.id === singleId);
-              if (!selectedLayer) return null;
+            {selectedLayerIds.size >= 1 && (() => {
+              const selectedLayers = Array.from(selectedLayerIds)
+                .map(id => project.layers.find(l => l.id === id))
+                .filter(Boolean) as Layer[];
+              if (selectedLayers.length === 0) return null;
+              const titleLabel = selectedLayers.length === 1
+                ? selectedLayers[0].name
+                : `${selectedLayers.length} layers`;
               return (
                 <div className="flex-shrink-0 flex flex-col" style={{ height: transformPanelHeight, minHeight: 120, maxHeight: '70%' }}>
                   {/* Draggable resize handle */}
@@ -541,10 +604,10 @@ export default function Editor() {
                   </div>
                   <div className="flex-1 overflow-y-auto px-3 py-2">
                     <p className="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wide">
-                      Transform — {selectedLayer.name}
+                      Transform — {titleLabel}
                     </p>
                     <LayerTransformPanel
-                      layer={selectedLayer}
+                      layers={selectedLayers}
                       onUpdate={(id, partial) => updateLayerTransform(id, partial)}
                       originPosition={originPosition}
                       workH={workAreaHeight}
@@ -564,7 +627,7 @@ export default function Editor() {
             <SvgCanvas
               layers={project.layers}
               operations={project.operations}
-              selectedLayerId={selectedLayerIds.size === 1 ? Array.from(selectedLayerIds)[0] : null}
+              selectedLayerIds={selectedLayerIds}
               selectedShapeIds={selectedShapeIds}
               onSelectLayer={(id) => setSelectedLayerIds(new Set([id]))}
               onSelectShape={handleCanvasShapeClick}

@@ -6,7 +6,7 @@ import { useJobStore } from '../store/jobStore';
 import { useToastStore } from '../store/toastStore';
 import { api } from '../api/client';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCircle as faCircleSolid, faTrash, faClone, faChevronUp, faChevronDown } from '@fortawesome/free-solid-svg-icons';
+import { faCircle as faCircleSolid, faTrash, faClone, faChevronUp, faChevronDown, faGears, faEye, faPaperPlane } from '@fortawesome/free-solid-svg-icons';
 import { faCircle as faCircleRegular } from '@fortawesome/free-regular-svg-icons';
 
 const OP_TYPE_LABELS: Record<OperationType, string> = {
@@ -91,6 +91,9 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
               onDoubleClick={e => { e.stopPropagation(); setLocalLabel(op.label ?? ''); setEditingLabel(true); }}
             >{op.label ? `(${op.label})` : ''}</span>
           )}
+          {op.layerIds.length === 0 && op.enabled && (
+            <span className="text-xs text-yellow-500 ml-1 flex-shrink-0" title="No layers assigned">⚠</span>
+          )}
           <span className="text-xs text-gray-500 ml-auto flex-shrink-0">
             {op.feedRate}mm/min · {op.power}% · ×{op.passes}
           </span>
@@ -111,7 +114,7 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
             <label className="text-xs text-gray-500 uppercase">Assigned Layers</label>
             <div className="mt-1 space-y-1">
               {op.layerIds.length === 0 && (
-                <p className="text-xs text-gray-600 italic">No layers assigned</p>
+                <p className="text-xs text-yellow-500 italic">⚠ No layers assigned — operation inactive</p>
               )}
               {op.layerIds.map(lid => {
                 const layer = layers.find(l => l.id === lid);
@@ -365,18 +368,20 @@ export default function OperationsPanel({ project, layers, originPosition, selec
           ? `+ Add Operation for ${selectedLayerIds.size} layer${selectedLayerIds.size !== 1 ? 's' : ''}`
           : '+ Add Operation'}</button>
 
-        <button
-          onClick={() => {
-            if (gcodeUpToDate) {
-              void navigate('/gcode-preview');
-            } else {
-              void handleGenerate();
-            }
-          }}
-          disabled={generating || !hasEnabledOps}
-          className="w-full py-2 text-sm rounded bg-orange-600 hover:bg-orange-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
-          title={gcodeUpToDate ? 'G-code is up to date — click to preview' : 'Generate G-code from operations'}
-        >{generating ? 'Generating…' : gcodeUpToDate ? '📋 Preview G-code →' : '⚙ Generate G-code'}</button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { void handleGenerate(); }}
+            disabled={generating || !hasEnabledOps || gcodeUpToDate}
+            className="flex-1 py-2 text-sm rounded bg-orange-600 hover:bg-orange-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
+            title={gcodeUpToDate ? 'G-code is up to date' : 'Generate G-code from operations'}
+          ><FontAwesomeIcon icon={faGears} className="mr-1" />{generating ? 'Generating…' : 'Generate'}</button>
+          <button
+            onClick={() => { void navigate('/gcode-preview'); }}
+            disabled={!gcodeUpToDate}
+            className="flex-1 py-2 text-sm rounded bg-blue-700 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
+            title={gcodeUpToDate ? 'Preview generated G-code' : 'Generate G-code first'}
+          ><FontAwesomeIcon icon={faEye} className="mr-1" />Preview</button>
+        </div>
 
         {project.gcode && (
           <p className={`text-xs text-center ${gcodeUpToDate ? 'text-green-400' : 'text-yellow-500'}`}>
@@ -388,7 +393,7 @@ export default function OperationsPanel({ project, layers, originPosition, selec
           <button
             onClick={() => { void handleStart(); }}
             className="w-full py-2 text-sm rounded bg-green-700 hover:bg-green-600 text-white font-semibold transition-colors"
-          >▶ Start Job</button>
+          ><FontAwesomeIcon icon={faPaperPlane} className="mr-1.5" />Send Job to Queue</button>
         )}
       </div>
     </div>
