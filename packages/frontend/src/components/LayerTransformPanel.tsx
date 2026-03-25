@@ -226,7 +226,7 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
                   onChange={e => setDeltaX(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') commitDelta(); }}
                   className={inputClass}
-                  placeholder="+10"
+                  placeholder="±mm"
                 />
               </div>
               <div className="flex-1">
@@ -238,7 +238,7 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
                   onChange={e => setDeltaY(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') commitDelta(); }}
                   className={inputClass}
-                  placeholder="-5"
+                  placeholder="±mm"
                 />
               </div>
               <button
@@ -357,7 +357,7 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
                 onChange={e => setDeltaRot(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') commitDeltaRot(); }}
                 className={inputClass}
-                placeholder="+45"
+                placeholder="±°"
               />
             </div>
             <button
@@ -410,7 +410,7 @@ export default function LayerTransformPanel({ layer, onUpdate }: Props) {
       {bbox && (
         <p className="text-xs text-gray-600">
           {naturalW.toFixed(1)}×{naturalH.toFixed(1)} mm
-          {sizeMode === 'scale' && ` → ${absW.toFixed(1)}×${absH.toFixed(1)}`}
+          {sizeMode === 'scale' && ` → ${absW.toFixed(1)}×${absH.toFixed(1)} mm`}
           {' · pivot '}({pivotWorldX.toFixed(1)}, {pivotWorldY.toFixed(1)})
         </p>
       )}
