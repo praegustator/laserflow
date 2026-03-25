@@ -1,5 +1,7 @@
 # LaserFlow
 
+![logo_dark](https://github.com/user-attachments/assets/d9df33df-63a3-4ddc-b525-d313353abb6d)
+
 **Modern Web-Based Controller for GRBL Laser Machines**
 
 LaserFlow is an open-source, browser-based CAM (Computer-Aided Manufacturing) tool and machine controller for GRBL-compatible laser cutters and engravers. Import SVG artwork, arrange operations across layers, generate G-code, and stream it directly to your machine — all from a single web interface.
