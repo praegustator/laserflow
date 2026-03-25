@@ -223,4 +223,58 @@ describe('GcodeGenerator', () => {
 
     expect(maxDist).toBeLessThan(0.15);
   });
+
+  it('flips Y coordinates when originFlip is true and workH is provided', () => {
+    // A simple line at Y=30 in SVG space should be at Y=170 in machine space
+    // when workH=200 and originFlip=true (bottom-left origin).
+    const geometry: PathGeometry[] = [{ d: 'M 10 30 L 50 30' }];
+    const operations: Operation[] = [{
+      id: 'flip-op',
+      type: 'cut',
+      feedRate: 600,
+      power: 100,
+      passes: 1,
+    }];
+    const gcode = generateGcode(geometry, operations, defaultProfile, undefined, true, 200);
+
+    // Y should be flipped: 200 - 30 = 170
+    expect(gcode).toContain('Y170.000');
+    // X should remain unchanged
+    expect(gcode).toContain('X10.000');
+    expect(gcode).toContain('X50.000');
+  });
+
+  it('does not flip Y when originFlip is false', () => {
+    const geometry: PathGeometry[] = [{ d: 'M 10 30 L 50 30' }];
+    const operations: Operation[] = [{
+      id: 'no-flip-op',
+      type: 'cut',
+      feedRate: 600,
+      power: 100,
+      passes: 1,
+    }];
+    const gcode = generateGcode(geometry, operations, defaultProfile, undefined, false, 200);
+
+    // Y should NOT be flipped
+    expect(gcode).toContain('Y30.000');
+  });
+
+  it('flips Y with layer transforms when originFlip is true', () => {
+    const geometry: PathGeometry[] = [{ d: 'M 0 0 L 10 0', layerId: 'L1' }];
+    const operations: Operation[] = [{
+      id: 'transform-flip',
+      type: 'cut',
+      feedRate: 600,
+      power: 100,
+      passes: 1,
+      layerIds: ['L1'],
+    }];
+    const transforms = { L1: { offsetX: 5, offsetY: 10, scaleX: 1, scaleY: 1 } };
+    const gcode = generateGcode(geometry, operations, defaultProfile, transforms, true, 200);
+
+    // With transform: Y = offsetY + 0 * scaleY = 10, then flip: 200 - 10 = 190
+    expect(gcode).toContain('Y190.000');
+    // X = offsetX + 0 * scaleX = 5
+    expect(gcode).toContain('X5.000');
+  });
 });

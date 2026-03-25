@@ -109,6 +109,8 @@ export interface MachineState {
   state: 'Idle' | 'Run' | 'Hold' | 'Alarm' | 'Error' | 'Disconnected';
   position: { x: number; y: number; z: number };
   workPosition: { x: number; y: number; z: number };
+  /** Work Coordinate Offset (WCO) — WPos = MPos − WCO */
+  wco?: { x: number; y: number; z: number };
   feed: number;
   spindle: number;
 }
