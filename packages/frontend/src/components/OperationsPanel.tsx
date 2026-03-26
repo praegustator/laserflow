@@ -2,14 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Operation, OperationType, Layer, MaterialPreset, Project } from '../types';
 import { useProjectStore } from '../store/projectStore';
-import { useJobStore } from '../store/jobStore';
 import { useToastStore } from '../store/toastStore';
 import { useMachineStore } from '../store/machineStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { api } from '../api/client';
 import { computeBoundingBox } from '../utils/geometry';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCircle as faCircleSolid, faTrash, faClone, faChevronUp, faChevronDown, faGears, faEye, faPaperPlane, faBorderAll } from '@fortawesome/free-solid-svg-icons';
+import { faCircle as faCircleSolid, faTrash, faClone, faChevronUp, faChevronDown, faGears, faEye, faBorderAll } from '@fortawesome/free-solid-svg-icons';
 import { faCircle as faCircleRegular } from '@fortawesome/free-regular-svg-icons';
 
 const OP_TYPE_LABELS: Record<OperationType, string> = {
@@ -265,7 +264,6 @@ export default function OperationsPanel({ project, layers, originPosition, selec
   const unassignLayerFromOperation = useProjectStore(s => s.unassignLayerFromOperation);
   const duplicateOperation = useProjectStore(s => s.duplicateOperation);
   const compileJob = useProjectStore(s => s.compileJob);
-  const startJob = useJobStore(s => s.startJob);
   const addToast = useToastStore(s => s.addToast);
   const connectionStatus = useMachineStore(s => s.connectionStatus);
   const sendCommand = useMachineStore(s => s.sendCommand);
@@ -305,20 +303,6 @@ export default function OperationsPanel({ project, layers, originPosition, selec
       addToast('error', err instanceof Error ? err.message : 'Failed to generate G-code');
     } finally {
       setGenerating(false);
-    }
-  };
-
-  const handleStart = async () => {
-    if (!project.jobId) {
-      addToast('error', 'Generate G-code first');
-      return;
-    }
-    try {
-      await startJob(project.jobId);
-      addToast('success', 'Job sent to queue');
-      void navigate('/queue');
-    } catch (err) {
-      addToast('error', err instanceof Error ? err.message : 'Failed to start job');
     }
   };
 
@@ -464,12 +448,6 @@ export default function OperationsPanel({ project, layers, originPosition, selec
             {gcodeUpToDate ? '✓ G-code ready' : '⚠ Changes pending — regenerate'}
             {' '}({project.gcode.split('\n').length.toLocaleString()} lines)
           </p>
-        )}
-        {project.gcode && (
-          <button
-            onClick={() => { void handleStart(); }}
-            className="w-full py-2 text-sm rounded bg-green-700 hover:bg-green-600 text-white font-semibold transition-colors"
-          ><FontAwesomeIcon icon={faPaperPlane} className="mr-1.5" />Send Job to Queue</button>
         )}
       </div>
     </div>

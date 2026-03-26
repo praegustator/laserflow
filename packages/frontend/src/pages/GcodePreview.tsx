@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useJobStore } from '../store/jobStore';
 import { useProjectStore } from '../store/projectStore';
+import { useToastStore } from '../store/toastStore';
 import { useKeyboardShortcuts, type ShortcutDef } from '../hooks/useKeyboardShortcuts';
 
 interface GMove {
@@ -51,10 +53,31 @@ type PlaySpeed = (typeof PLAY_SPEEDS)[number];
 export default function GcodePreview() {
   const jobs = useJobStore(s => s.jobs);
   const activeJobId = useJobStore(s => s.activeJobId);
+  const queueJob = useJobStore(s => s.queueJob);
   const activeJob = jobs.find(j => j.id === activeJobId) ?? null;
   const projects = useProjectStore(s => s.projects);
   const activeProjectId = useProjectStore(s => s.activeProjectId);
   const activeProject = projects.find(p => p.id === activeProjectId) ?? null;
+  const addToast = useToastStore(s => s.addToast);
+  const navigate = useNavigate();
+
+  // The job ID to send to queue (from project or active job)
+  const queueableJobId = activeProject?.jobId ?? activeJob?.id ?? null;
+  const hasGcode = !!(activeProject?.gcode ?? activeJob?.gcode);
+
+  const handleSendToQueue = async () => {
+    if (!queueableJobId) {
+      addToast('error', 'Generate G-code first');
+      return;
+    }
+    try {
+      await queueJob(queueableJobId);
+      addToast('success', 'Job sent to queue');
+      void navigate('/queue');
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : 'Failed to send job to queue');
+    }
+  };
 
   // Use project gcode first, then fall back to active job
   const initialGcode = activeProject?.gcode ?? activeJob?.gcode ?? '';
@@ -229,6 +252,12 @@ export default function GcodePreview() {
         </div>
         <div className="flex-1" />
         <span className="text-xs text-gray-500">{totalMoves} moves</span>
+        <button
+          onClick={() => { void handleSendToQueue(); }}
+          disabled={!hasGcode || !queueableJobId}
+          className="px-3 py-1.5 text-xs rounded bg-green-700 hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
+          title="Send this G-code to the job queue"
+        >📤 Send to Queue</button>
         <button
           onClick={handleExport}
           disabled={!gcode}
