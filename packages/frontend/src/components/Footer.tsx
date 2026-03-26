@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getBackendUrl } from '../store/appSettingsStore';
 
 const REPO_URL = 'https://github.com/praegustator/laserflow';
 
@@ -7,7 +8,8 @@ export default function Footer() {
   const [backendVersion, setBackendVersion] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/version')
+    const backendUrl = getBackendUrl();
+    fetch(`${backendUrl}/api/version`)
       .then((res) => res.json())
       .then((data: { version: string }) => setBackendVersion(data.version))
       .catch((err) => {
