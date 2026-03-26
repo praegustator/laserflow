@@ -4,6 +4,8 @@ import MachineStatus from './MachineStatus';
 import Footer from './Footer';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faFolderOpen, faPenToSquare, faKeyboard, faCode, faListCheck, faGear } from '@fortawesome/free-solid-svg-icons';
+import { useJobStore } from '../store/jobStore';
+import { useToastStore } from '../store/toastStore';
 
 const navItems = [
   { to: '/', label: 'Projects', icon: faFolderOpen, end: true },
@@ -16,6 +18,8 @@ const navItems = [
 
 export default function Layout() {
   const navigate = useNavigate();
+  const emergencyStop = useJobStore((s) => s.emergencyStop);
+  const addToast = useToastStore((s) => s.addToast);
 
   // Alt+1–5 to navigate between tabs (issue #30)
   // Previously used Cmd+Shift+N but Cmd+Shift+3/4 conflict with macOS screenshot shortcuts
@@ -31,6 +35,15 @@ export default function Layout() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [navigate]);
+
+  const handlePanic = async () => {
+    try {
+      await emergencyStop();
+      addToast('error', '🛑 EMERGENCY STOP — All operations halted');
+    } catch {
+      addToast('error', 'Emergency stop failed — check connection');
+    }
+  };
 
   return (
     <div className="flex flex-col h-screen bg-gray-950 text-gray-100 overflow-hidden">
@@ -60,6 +73,15 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
+
+        {/* Panic / Emergency Stop button */}
+        <button
+          onClick={() => { void handlePanic(); }}
+          className="px-3 py-1.5 mr-3 rounded-lg bg-red-700 hover:bg-red-600 active:bg-red-500 text-white text-xs font-bold uppercase tracking-wider transition-colors animate-pulse hover:animate-none border border-red-500"
+          title="Emergency Stop — stops all operations and turns off laser"
+        >
+          🛑 STOP
+        </button>
 
         {/* Machine status (right side) */}
         <MachineStatus compact />

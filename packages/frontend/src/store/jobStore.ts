@@ -13,6 +13,11 @@ interface JobStore {
   resumeJob: (jobId: string) => Promise<void>;
   abortJob: (jobId: string) => Promise<void>;
   deleteJob: (jobId: string) => Promise<void>;
+  duplicateJob: (jobId: string) => Promise<Job>;
+  queueJob: (jobId: string) => Promise<void>;
+  bulkDeleteJobs: (ids: string[]) => Promise<void>;
+  reorderJobs: (orderedIds: string[]) => Promise<void>;
+  emergencyStop: () => Promise<void>;
   setActiveJobId: (id: string | null) => void;
   updateJobProgress: (jobId: string, progress: JobProgress) => void;
   updateJobStatus: (jobId: string, status: Job['status']) => void;
@@ -71,6 +76,46 @@ export const useJobStore = create<JobStore>((set, get) => ({
     set((s) => ({
       jobs: s.jobs.filter((j) => j.id !== jobId),
       activeJobId: s.activeJobId === jobId ? null : s.activeJobId,
+    }));
+  },
+
+  duplicateJob: async (jobId: string) => {
+    const copy = await api.post(`/api/jobs/${jobId}/duplicate`) as Job;
+    set((s) => ({ jobs: [...s.jobs, { ...copy, layers: copy.layers ?? [] }] }));
+    return copy;
+  },
+
+  queueJob: async (jobId: string) => {
+    await api.post(`/api/jobs/${jobId}/queue`);
+    set((s) => ({
+      jobs: s.jobs.map((j) =>
+        j.id === jobId ? { ...j, status: 'queued' } : j,
+      ),
+    }));
+  },
+
+  bulkDeleteJobs: async (ids: string[]) => {
+    await api.post('/api/jobs/bulk-delete', { ids });
+    set((s) => ({
+      jobs: s.jobs.filter((j) => !ids.includes(j.id)),
+      activeJobId: ids.includes(s.activeJobId ?? '') ? null : s.activeJobId,
+    }));
+  },
+
+  reorderJobs: async (orderedIds: string[]) => {
+    await api.post('/api/jobs/reorder', { orderedIds });
+    void get().fetchJobs();
+  },
+
+  emergencyStop: async () => {
+    await api.post('/api/emergency-stop');
+    set((s) => ({
+      activeJobId: null,
+      jobs: s.jobs.map((j) =>
+        j.status === 'running' || j.status === 'paused'
+          ? { ...j, status: 'error', errorMessage: 'Emergency stop' }
+          : j,
+      ),
     }));
   },
 
