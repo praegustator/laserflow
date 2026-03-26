@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import type { Layer, Operation, MachineProfile } from '../types';
-import { computeShapesBoundingBox } from '../utils/geometry';
+import { computeShapesBoundingBox, computeMultiLayerWorldBBox } from '../utils/geometry';
 import { useAppSettings } from '../store/appSettingsStore';
 
 /** Preview delta applied to selected layers (for relative transform preview) */
@@ -287,6 +287,29 @@ export default function SvgCanvas({ layers, operations, selectedLayerIds, select
               </g>
             );
           })}
+
+          {/* Combined bounding box for multi-layer selection */}
+          {selectedLayerIds.size > 1 && (() => {
+            const selectedLayers = layers.filter(l => selectedLayerIds.has(l.id) && l.visible);
+            if (selectedLayers.length < 2) return null;
+            const wb = computeMultiLayerWorldBBox(selectedLayers);
+            if (!wb) return null;
+            return (
+              <rect
+                x={wb.minX}
+                y={wb.minY}
+                width={wb.width}
+                height={wb.height}
+                fill="none"
+                stroke="#facc15"
+                strokeWidth={0.4}
+                strokeDasharray="4 2"
+                opacity={0.6}
+                vectorEffect="non-scaling-stroke"
+                style={{ pointerEvents: 'none' }}
+              />
+            );
+          })()}
 
           {/* Ghost preview for relative transform */}
           {transformPreview && (transformPreview.deltaX !== 0 || transformPreview.deltaY !== 0 || transformPreview.deltaRotation !== 0) && (
