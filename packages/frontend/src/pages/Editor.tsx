@@ -9,6 +9,7 @@ import { useKeyboardShortcuts, type ShortcutDef } from '../hooks/useKeyboardShor
 import SvgCanvas, { type TransformPreview } from '../components/SvgCanvas';
 import OperationsPanel from '../components/OperationsPanel';
 import LayerTransformPanel from '../components/LayerTransformPanel';
+import ShapeTransformPanel from '../components/ShapeTransformPanel';
 import { computeShapesBoundingBox } from '../utils/geometry';
 import type { Layer } from '../types';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -28,10 +29,10 @@ export default function Editor() {
   const updateLayerTransform = useProjectStore(s => s.updateLayerTransform);
   const moveShapeToNewLayer = useProjectStore(s => s.moveShapeToNewLayer);
   const moveShapesToNewLayer = useProjectStore(s => s.moveShapesToNewLayer);
-  const moveShapeToLayer = useProjectStore(s => s.moveShapeToLayer);
   const removeShapes = useProjectStore(s => s.removeShapes);
   const renameShape = useProjectStore(s => s.renameShape);
   const mergeLayers = useProjectStore(s => s.mergeLayers);
+  const updateShapePaths = useProjectStore(s => s.updateShapePaths);
   const saveVersion = useProjectStore(s => s.saveVersion);
   const restoreVersion = useProjectStore(s => s.restoreVersion);
   const deleteVersion = useProjectStore(s => s.deleteVersion);
@@ -568,15 +569,33 @@ export default function Editor() {
               )}
             </div>
 
-            {/* Layer transform panel — shown at bottom when layer(s) are selected */}
+            {/* Layer/Shape transform panel — shown at bottom when layer(s) are selected */}
             {selectedLayerIds.size >= 1 && (() => {
               const selectedLayers = Array.from(selectedLayerIds)
                 .map(id => project.layers.find(l => l.id === id))
                 .filter(Boolean) as Layer[];
               if (selectedLayers.length === 0) return null;
-              const titleLabel = selectedLayers.length === 1
-                ? selectedLayers[0].name
-                : `${selectedLayers.length} layers`;
+
+              // Determine if we're in shape mode: single layer selected + shapes selected within it
+              const singleLayer = selectedLayers.length === 1 ? selectedLayers[0] : null;
+              const selectedShapesInLayer = singleLayer
+                ? singleLayer.shapes.filter(s => selectedShapeIds.has(s.id))
+                : [];
+              const shapeMode = singleLayer && selectedShapesInLayer.length > 0;
+
+              // Build the title label
+              let titleLabel: string;
+              if (shapeMode) {
+                const shapeLabel = selectedShapesInLayer.length === 1
+                  ? selectedShapesInLayer[0].name
+                  : `${selectedShapesInLayer.length} shapes`;
+                titleLabel = `${singleLayer!.name} – ${shapeLabel}`;
+              } else {
+                titleLabel = selectedLayers.length === 1
+                  ? selectedLayers[0].name
+                  : `${selectedLayers.length} layers`;
+              }
+
               return (
                 <div className="flex-shrink-0 flex flex-col" style={{ height: transformPanelHeight, minHeight: 120, maxHeight: '70%' }}>
                   {/* Draggable resize handle */}
@@ -601,13 +620,23 @@ export default function Editor() {
                     <p className="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wide">
                       Transform — {titleLabel}
                     </p>
-                    <LayerTransformPanel
-                      layers={selectedLayers}
-                      onUpdate={(id, partial) => updateLayerTransform(id, partial)}
-                      originPosition={originPosition}
-                      workH={workAreaHeight}
-                      onPreviewChange={setTransformPreview}
-                    />
+                    {shapeMode ? (
+                      <ShapeTransformPanel
+                        shapes={selectedShapesInLayer}
+                        layerId={singleLayer!.id}
+                        onUpdatePaths={updateShapePaths}
+                        originPosition={originPosition}
+                        workH={workAreaHeight}
+                      />
+                    ) : (
+                      <LayerTransformPanel
+                        layers={selectedLayers}
+                        onUpdate={(id, partial) => updateLayerTransform(id, partial)}
+                        originPosition={originPosition}
+                        workH={workAreaHeight}
+                        onPreviewChange={setTransformPreview}
+                      />
+                    )}
                   </div>
                 </div>
               );

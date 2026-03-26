@@ -137,18 +137,15 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
     if (!Number.isFinite(v)) return;
 
     if (multi) {
-      // Multi-layer: compute delta and apply to all layers
+      // Multi-layer: compute delta from current pivot position and apply to all layers
       const svgTarget = axis === 'y' && originPosition === 'bottom-left' ? workH - v : v;
-      const currentVal = axis === 'x' ? displayPivotX : displayPivotY;
-      const delta = axis === 'y' && originPosition === 'bottom-left'
-        ? svgTarget - currentVal
-        : v - (axis === 'x' ? displayPivotX : displayY);
-      // Apply delta using the SVG coordinate directly
+      const currentSvg = axis === 'x' ? displayPivotX : displayPivotY;
+      const d = svgTarget - currentSvg;
       for (const l of layers) {
         if (axis === 'x') {
-          onUpdate(l.id, { offsetX: l.offsetX + (svgTarget - displayPivotX) });
+          onUpdate(l.id, { offsetX: l.offsetX + d });
         } else {
-          onUpdate(l.id, { offsetY: l.offsetY + (svgTarget - displayPivotY) });
+          onUpdate(l.id, { offsetY: l.offsetY + d });
         }
       }
     } else {
@@ -160,7 +157,7 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
         onUpdate(layer.id, { offsetY: svgY - layer.scaleY * pivotNatY });
       }
     }
-  }, [multi, layers, layer.id, layer.scaleX, layer.scaleY, pivotNatX, pivotNatY, displayPivotX, displayPivotY, displayY, onUpdate, originPosition, workH]);
+  }, [multi, layers, layer.id, layer.scaleX, layer.scaleY, pivotNatX, pivotNatY, displayPivotX, displayPivotY, onUpdate, originPosition, workH]);
 
   /** Apply a relative delta to the current offset and reset delta fields. */
   const commitDelta = useCallback(() => {
@@ -361,7 +358,7 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
               <button onClick={() => setSizeMode('absolute')} className={sizeMode === 'absolute' ? btnActive : btnInactive}>mm</button>
             </>
           )}
-          {(multi && effectivePosRotMode === 'absolute') && <span className="text-xs text-gray-600 italic">{multiWorldBBox ? `${multiWorldBBox.width.toFixed(1)}×${multiWorldBBox.height.toFixed(1)} mm` : 'relative ×'}</span>}
+          {(multi && effectivePosRotMode === 'absolute') && <span className="text-xs text-gray-600 italic">{multiWorldBBox ? `${multiWorldBBox.width.toFixed(1)}×${multiWorldBBox.height.toFixed(1)} mm` : '—'}</span>}
           {effectivePosRotMode === 'relative' && <span className="text-xs text-gray-600 italic">relative ×</span>}
           <button
             onClick={() => setRatioLocked(!ratioLocked)}

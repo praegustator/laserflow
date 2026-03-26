@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import type { Layer, Operation, MachineProfile } from '../types';
 import { computeShapesBoundingBox, computeMultiLayerWorldBBox } from '../utils/geometry';
 import { useAppSettings } from '../store/appSettingsStore';

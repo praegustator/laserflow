@@ -39,6 +39,8 @@ interface ProjectStore {
   moveShapesToNewLayer: (shapeIds: string[], fromLayerId: string, newLayerName: string) => void;
   removeShapes: (shapeIds: string[], layerId: string) => void;
   renameShape: (shapeId: string, layerId: string, name: string) => void;
+  /** Update the SVG path data for one or more shapes within a layer. */
+  updateShapePaths: (layerId: string, updates: Record<string, string>) => void;
 
   /** Merge multiple layers into one, baking each layer's transform into its shape paths. */
   mergeLayers: (layerIds: string[]) => string | null;
@@ -435,6 +437,22 @@ export const useProjectStore = create<ProjectStore>()(
                 ? { ...l, shapes: l.shapes.map(sh => sh.id === shapeId ? { ...sh, name } : sh) }
                 : l
             ),
+          })),
+        }));
+      },
+
+      updateShapePaths: (layerId: string, updates: Record<string, string>) => {
+        const { activeProjectId } = get();
+        if (!activeProjectId) return;
+        set(s => ({
+          projects: updateProject(s.projects, activeProjectId, p => ({
+            ...p,
+            layers: p.layers.map(l =>
+              l.id === layerId
+                ? { ...l, shapes: l.shapes.map(sh => updates[sh.id] !== undefined ? { ...sh, d: updates[sh.id] } : sh) }
+                : l
+            ),
+            gcodeUpToDate: false,
           })),
         }));
       },
