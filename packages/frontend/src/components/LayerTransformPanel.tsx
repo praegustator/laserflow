@@ -86,7 +86,7 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
 
   // Multi-layer pivot point (on the combined world bbox)
   const multiPivotWorld = useMemo(() => {
-    if (!multiWorldBBox) return { x: 0, y: 0 };
+    if (!multiWorldBBox) return { px: 0, py: 0 };
     return getPivotCoords(multiWorldBBox, multiPivot);
   }, [multiWorldBBox, multiPivot]);
 
