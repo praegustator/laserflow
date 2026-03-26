@@ -27,6 +27,15 @@ export const api = {
     fetch(`${getBackendUrl()}${path}`, { method: 'DELETE' }).then((r) => {
       if (!r.ok && r.status !== 204) throw new Error(`HTTP ${r.status}`);
     }),
+  patch: (path: string, body?: unknown) =>
+    fetch(`${getBackendUrl()}${path}`, {
+      method: 'PATCH',
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    }).then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    }),
 };
 
 export function createWebSocket(
