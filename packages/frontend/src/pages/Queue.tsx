@@ -136,7 +136,8 @@ function JobCard({
         <input
           type="checkbox"
           checked={selected}
-          onChange={(e) => onSelect(job.id, e.shiftKey)}
+          onChange={() => {/* handled by onClick */}}
+          onClick={(e) => onSelect(job.id, e.shiftKey)}
           className="accent-orange-500 flex-shrink-0"
         />
         <FontAwesomeIcon icon={st.icon} className={`${st.color} text-xs`} />
