@@ -2,7 +2,6 @@ import { useRef, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { useProjectStore } from '../store/projectStore';
-import { useMachineStore } from '../store/machineStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { useToastStore } from '../store/toastStore';
 import { useKeyboardShortcuts, type ShortcutDef } from '../hooks/useKeyboardShortcuts';
@@ -10,7 +9,6 @@ import SvgCanvas, { type TransformPreview } from '../components/SvgCanvas';
 import OperationsPanel from '../components/OperationsPanel';
 import LayerTransformPanel from '../components/LayerTransformPanel';
 import ShapeTransformPanel from '../components/ShapeTransformPanel';
-import { computeShapesBoundingBox } from '../utils/geometry';
 import type { Layer } from '../types';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faEye, faEyeSlash, faTrash, faFileImport, faObjectGroup, faLayerGroup } from '@fortawesome/free-solid-svg-icons';
@@ -20,7 +18,6 @@ const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#1
 export default function Editor() {
   const projects = useProjectStore(s => s.projects);
   const activeProjectId = useProjectStore(s => s.activeProjectId);
-  const setActiveProjectId = useProjectStore(s => s.setActiveProjectId);
   const importSvgFile = useProjectStore(s => s.importSvgFile);
   const removeLayer = useProjectStore(s => s.removeLayer);
   const renameLayer = useProjectStore(s => s.renameLayer);
@@ -36,8 +33,6 @@ export default function Editor() {
   const saveVersion = useProjectStore(s => s.saveVersion);
   const restoreVersion = useProjectStore(s => s.restoreVersion);
   const deleteVersion = useProjectStore(s => s.deleteVersion);
-  const connectionStatus = useMachineStore(s => s.connectionStatus);
-  const sendCommand = useMachineStore(s => s.sendCommand);
   const originPosition = useAppSettings(s => s.originPosition);
   const workAreaHeight = useAppSettings(s => s.workAreaHeight);
   const addToast = useToastStore(s => s.addToast);
@@ -88,39 +83,6 @@ export default function Editor() {
     e.preventDefault();
     setDragOver(false);
     if (e.dataTransfer.files.length > 0) void handleFiles(e.dataTransfer.files);
-  };
-
-  const handleFrame = async () => {
-    if (!project) return;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const layer of project.layers) {
-      if (!layer.visible) continue;
-      const bbox = computeShapesBoundingBox(layer.shapes);
-      if (!bbox) continue;
-      const x0 = layer.offsetX + bbox.minX * layer.scaleX;
-      const y0 = layer.offsetY + bbox.minY * layer.scaleY;
-      const x1 = layer.offsetX + bbox.maxX * layer.scaleX;
-      const y1 = layer.offsetY + bbox.maxY * layer.scaleY;
-      minX = Math.min(minX, x0); maxX = Math.max(maxX, x1);
-      minY = Math.min(minY, y0); maxY = Math.max(maxY, y1);
-    }
-    if (!Number.isFinite(minX)) {
-      addToast('info', 'No visible geometry to frame');
-      return;
-    }
-    const feed = 3000;
-    try {
-      await sendCommand('G90 G21');
-      await sendCommand('M5 S0');
-      await sendCommand(`G0 X${minX.toFixed(2)} Y${minY.toFixed(2)} F${feed}`);
-      await sendCommand(`G0 X${maxX.toFixed(2)} Y${minY.toFixed(2)}`);
-      await sendCommand(`G0 X${maxX.toFixed(2)} Y${maxY.toFixed(2)}`);
-      await sendCommand(`G0 X${minX.toFixed(2)} Y${maxY.toFixed(2)}`);
-      await sendCommand(`G0 X${minX.toFixed(2)} Y${minY.toFixed(2)}`);
-      addToast('success', `Framed: ${(maxX - minX).toFixed(1)} × ${(maxY - minY).toFixed(1)} mm`);
-    } catch (err) {
-      addToast('error', err instanceof Error ? err.message : 'Frame failed');
-    }
   };
 
   const toggleExpandLayer = (layerId: string) => {
@@ -255,7 +217,6 @@ export default function Editor() {
     setDragOverLayerId(null);
   };
 
-  const canFrame = connectionStatus === 'connected' && (project?.layers.length ?? 0) > 0;
 
   /** Delete all currently selected layers */
   const handleDeleteSelectedLayers = useCallback(() => {
@@ -289,46 +250,64 @@ export default function Editor() {
       className="flex flex-col h-full min-h-0"
     >
       {/* Top bar */}
-      <div className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center gap-3">
-        <label className="text-xs text-gray-500 uppercase flex-shrink-0">Project</label>
-        <select
-          value={activeProjectId ?? ''}
-          onChange={e => setActiveProjectId(e.target.value || null)}
-          className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-orange-500 max-w-xs"
-        >
-          <option value="">— Select a project —</option>
-          {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        {project && (
+      <div className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-4 py-2 flex items-center gap-3">
+        {project ? (
           <>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
-              title="Import SVG (Ctrl+I)"
-            >+ Import SVG</button>
+            <span className="text-sm font-semibold text-gray-100">{project.name}</span>
+            <span className="text-xs text-gray-500">
+              {project.files.length} file{project.files.length !== 1 ? 's' : ''} · {project.layers.length} layer{project.layers.length !== 1 ? 's' : ''} · {project.operations.length} op{project.operations.length !== 1 ? 's' : ''}
+            </span>
+            <span className="text-xs text-gray-600">· {new Date(project.updatedAt).toLocaleString()}</span>
+            <div className="flex-1" />
             <button
               onClick={() => setShowVersionDialog(true)}
               className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
               title="Save current state as a version"
             >💾 Save Version</button>
-            <button
-              onClick={() => setShowVersions(!showVersions)}
-              className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
-              title="View saved versions"
-            >📋 Versions ({project.versions.length})</button>
+            <div className="relative">
+              <button
+                onClick={() => setShowVersions(!showVersions)}
+                className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
+                title="View saved versions"
+              >📋 Versions ({project.versions.length})</button>
+              {showVersions && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowVersions(false)} />
+                  <div
+                    className="absolute right-0 top-full mt-1 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg w-80 max-h-60 overflow-y-auto"
+                    onKeyDown={e => { if (e.key === 'Escape') setShowVersions(false); }}
+                  >
+                    {project.versions.length === 0 ? (
+                      <p className="text-xs text-gray-600 px-3 py-2">No saved versions</p>
+                    ) : (
+                      project.versions.map(v => (
+                        <div key={v.id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-700/50">
+                          <span className="text-xs text-gray-300 font-medium flex-1">{v.label}</span>
+                          <span className="text-xs text-gray-500">{new Date(v.createdAt).toLocaleString()}</span>
+                          <button
+                            onClick={() => { restoreVersion(v.id); addToast('info', `Restored "${v.label}"`); setShowVersions(false); }}
+                            className="text-xs text-orange-400 hover:text-orange-300"
+                          >Restore</button>
+                          <button
+                            onClick={e => { e.stopPropagation(); deleteVersion(v.id); }}
+                            className="text-xs text-gray-500 hover:text-red-400"
+                          >✕</button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           </>
+        ) : (
+          <span className="text-xs text-gray-500">
+            No project open —{' '}
+            <button onClick={() => void navigate('/')} className="text-orange-400 hover:text-orange-300">go to Projects</button>
+            {' '}to open one
+          </span>
         )}
         <input ref={fileInputRef} type="file" accept=".svg" multiple className="hidden" onChange={handleFileChange} />
-        <div className="flex-1" />
-        <button
-          onClick={() => { void handleFrame(); }}
-          disabled={!canFrame}
-          className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 transition-colors"
-          title="Rapid-traverse the bounding box to verify placement"
-        >⬜ Frame</button>
-        {connectionStatus !== 'connected' && (
-          <span className="text-xs text-yellow-500">⚠ Connect machine first</span>
-        )}
       </div>
 
       {/* Version save dialog */}
@@ -345,30 +324,6 @@ export default function Editor() {
           />
           <button onClick={handleSaveVersion} className="px-3 py-1.5 text-xs rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold transition-colors">Save</button>
           <button onClick={() => { setShowVersionDialog(false); setVersionLabel(''); }} className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors">Cancel</button>
-        </div>
-      )}
-
-      {/* Versions list */}
-      {showVersions && project && (
-        <div className="flex-shrink-0 bg-gray-800 border-b border-gray-700 px-4 py-2 max-h-40 overflow-y-auto">
-          {project.versions.length === 0 ? (
-            <p className="text-xs text-gray-600 py-1">No saved versions</p>
-          ) : (
-            project.versions.map(v => (
-              <div key={v.id} className="flex items-center gap-2 py-1">
-                <span className="text-xs text-gray-300 font-medium flex-1">{v.label}</span>
-                <span className="text-xs text-gray-500">{new Date(v.createdAt).toLocaleString()}</span>
-                <button
-                  onClick={() => { restoreVersion(v.id); addToast('info', `Restored "${v.label}"`); }}
-                  className="text-xs text-orange-400 hover:text-orange-300"
-                >Restore</button>
-                <button
-                  onClick={() => deleteVersion(v.id)}
-                  className="text-xs text-gray-500 hover:text-red-400"
-                >✕</button>
-              </div>
-            ))
-          )}
         </div>
       )}
 
@@ -681,8 +636,8 @@ export default function Editor() {
           <div>
             <div className="text-5xl mb-4">📁</div>
             <h2 className="text-lg font-semibold text-gray-400">No project selected</h2>
-            <p className="text-sm text-gray-600 mt-2 mb-6">Select a project above or create one from the Dashboard</p>
-            <button onClick={() => { void navigate('/'); }} className="px-5 py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-sm font-semibold transition-colors">Go to Dashboard</button>
+            <p className="text-sm text-gray-600 mt-2 mb-6">Open a project from the Projects tab to get started</p>
+            <button onClick={() => { void navigate('/'); }} className="px-5 py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-sm font-semibold transition-colors">Go to Projects</button>
           </div>
         </div>
       )}
