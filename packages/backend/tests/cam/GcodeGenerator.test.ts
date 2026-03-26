@@ -106,6 +106,28 @@ describe('GcodeGenerator', () => {
     expect(x50Index).toBeGreaterThan(m4Index);
   });
 
+  it('does not duplicate geometry when two operations share a layer', () => {
+    // Both operations reference layer1.  The caller must supply geometry for
+    // layer1 only once; the generator should process it once per operation.
+    const geometry: PathGeometry[] = [
+      { d: 'M 0 0 L 10 0', layerId: 'layer1' },
+    ];
+    const operations: Operation[] = [
+      { id: 'op-a', type: 'cut', feedRate: 600, power: 80, passes: 1, layerIds: ['layer1'] },
+      { id: 'op-b', type: 'cut', feedRate: 600, power: 80, passes: 1, layerIds: ['layer1'] },
+    ];
+
+    const gcode = generateGcode(geometry, operations, defaultProfile);
+
+    // Each operation should produce exactly 1 pass comment and 1 G1 cut line
+    // for the single geometry entry.  Total: 2 passes, 2 cut segments.
+    const passMatches = gcode.match(/; Pass \d+/g);
+    expect(passMatches).toHaveLength(2); // one pass per operation
+
+    const g1Lines = gcode.split('\n').filter(l => l.trimStart().startsWith('G1'));
+    expect(g1Lines).toHaveLength(2); // one cut line per operation
+  });
+
   it('processes all geometry when operation has no layerIds (backward compat)', () => {
     const geometry: PathGeometry[] = [
       { d: 'M 0 0 L 10 0', layerId: 'layer1' },

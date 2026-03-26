@@ -54,6 +54,7 @@ export default function GcodePreview() {
   const jobs = useJobStore(s => s.jobs);
   const activeJobId = useJobStore(s => s.activeJobId);
   const queueJob = useJobStore(s => s.queueJob);
+  const fetchJobs = useJobStore(s => s.fetchJobs);
   const activeJob = jobs.find(j => j.id === activeJobId) ?? null;
   const projects = useProjectStore(s => s.projects);
   const activeProjectId = useProjectStore(s => s.activeProjectId);
@@ -72,8 +73,10 @@ export default function GcodePreview() {
     }
     try {
       await queueJob(queueableJobId);
+      // Refresh the job list so the Queue page shows the newly queued job
+      await fetchJobs();
       addToast('success', 'Job sent to queue');
-      void navigate('/queue');
+      navigate('/queue');
     } catch (err) {
       addToast('error', err instanceof Error ? err.message : 'Failed to send job to queue');
     }
@@ -180,6 +183,44 @@ export default function GcodePreview() {
   const vbH = bounds.maxY - bounds.minY;
   const viewBox = `${bounds.minX} ${bounds.minY} ${vbW} ${vbH}`;
 
+  // Build grid lines (10 mm minor, 50 mm major)
+  const GRID_MINOR = 10;
+  const GRID_MAJOR = 50;
+  const gridLines = useMemo(() => {
+    const lines: React.ReactNode[] = [];
+    const startX = Math.floor(bounds.minX / GRID_MINOR) * GRID_MINOR;
+    const startY = Math.floor(bounds.minY / GRID_MINOR) * GRID_MINOR;
+    const sw = vbW * 0.001; // minor stroke width
+    const swMajor = vbW * 0.002; // major stroke width
+    for (let x = startX; x <= bounds.maxX; x += GRID_MINOR) {
+      const isMajor = x % GRID_MAJOR === 0;
+      lines.push(
+        <line key={`gx${x}`} x1={x} y1={bounds.minY} x2={x} y2={bounds.maxY}
+          stroke="#374151" strokeWidth={isMajor ? swMajor : sw} />,
+      );
+      if (isMajor) {
+        lines.push(
+          <text key={`lx${x}`} x={x} y={bounds.minY + vbH * 0.03} fontSize={vbW * 0.022}
+            fill="#6b7280" textAnchor="middle">{x}</text>,
+        );
+      }
+    }
+    for (let y = startY; y <= bounds.maxY; y += GRID_MINOR) {
+      const isMajor = y % GRID_MAJOR === 0;
+      lines.push(
+        <line key={`gy${y}`} x1={bounds.minX} y1={y} x2={bounds.maxX} y2={y}
+          stroke="#374151" strokeWidth={isMajor ? swMajor : sw} />,
+      );
+      if (isMajor) {
+        lines.push(
+          <text key={`ly${y}`} x={bounds.minX + vbW * 0.01} y={y - vbH * 0.005} fontSize={vbW * 0.022}
+            fill="#6b7280">{y}</text>,
+        );
+      }
+    }
+    return lines;
+  }, [bounds.minX, bounds.minY, bounds.maxX, bounds.maxY, vbW, vbH]);
+
   // Build SVG path data for visible moves
   const visibleMoves = moves.slice(0, currentIdx);
   const rapidSegments: string[] = [];
@@ -282,6 +323,8 @@ export default function GcodePreview() {
                     >
                       {/* Background */}
                       <rect x={bounds.minX} y={bounds.minY} width={vbW} height={vbH} fill="#111827" />
+                      {/* Grid */}
+                      {gridLines}
                       {/* Rapid moves */}
                       {rapidSegments.map((d, i) => (
                         <path key={`r${i}`} d={d} fill="none" stroke="#4b5563" strokeWidth={vbW * 0.002} strokeDasharray={`${vbW * 0.01},${vbW * 0.005}`} />

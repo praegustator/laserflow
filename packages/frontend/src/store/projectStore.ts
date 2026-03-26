@@ -739,12 +739,18 @@ export const useProjectStore = create<ProjectStore>()(
         const enabledOps = project.operations.filter(op => op.enabled && op.type !== 'ignore');
         if (enabledOps.length === 0) throw new Error('No enabled operations');
 
-        // Collect geometry from all layers referenced by enabled operations
+        // Collect geometry from all layers referenced by enabled operations.
+        // Each layer's geometry is added only once even when multiple operations
+        // reference the same layer; the backend generator filters by layerIds per
+        // operation so duplicates here would cause extra passes.
         const geometry: PathGeometry[] = [];
         const layerTransforms: Record<string, { offsetX: number; offsetY: number; scaleX: number; scaleY: number; rotation: number; mirrorX: boolean; mirrorY: boolean }> = {};
+        const seenLayerIds = new Set<string>();
 
         for (const op of enabledOps) {
           for (const layerId of op.layerIds) {
+            if (seenLayerIds.has(layerId)) continue;
+            seenLayerIds.add(layerId);
             const layer = project.layers.find(l => l.id === layerId);
             if (!layer) continue;
             layerTransforms[layerId] = {
