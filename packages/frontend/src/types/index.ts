@@ -103,6 +103,8 @@ export interface Job {
   operations: Operation[];
   gcode?: string;
   errorMessage?: string;
+  projectId?: string;
+  projectVersion?: string;
 }
 
 export interface MachineState {

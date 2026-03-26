@@ -15,6 +15,7 @@ interface JobStore {
   deleteJob: (jobId: string) => Promise<void>;
   duplicateJob: (jobId: string) => Promise<Job>;
   queueJob: (jobId: string) => Promise<void>;
+  renameJob: (jobId: string, name: string) => Promise<void>;
   bulkDeleteJobs: (ids: string[]) => Promise<void>;
   reorderJobs: (orderedIds: string[]) => Promise<void>;
   emergencyStop: () => Promise<void>;
@@ -91,6 +92,13 @@ export const useJobStore = create<JobStore>((set, get) => ({
       jobs: s.jobs.map((j) =>
         j.id === jobId ? { ...j, status: 'queued' } : j,
       ),
+    }));
+  },
+
+  renameJob: async (jobId: string, name: string) => {
+    const updated = await api.patch(`/api/jobs/${jobId}/rename`, { name }) as Job;
+    set((s) => ({
+      jobs: s.jobs.map((j) => (j.id === jobId ? { ...j, name: updated.name } : j)),
     }));
   },
 

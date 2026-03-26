@@ -101,6 +101,7 @@ interface JobCardProps {
   onDuplicate: () => void;
   onRerun: () => void;
   onTraceFrame: () => void;
+  onRename: (newName: string) => void;
   draggable?: boolean;
   onDragStart?: () => void;
   onDragOver?: (e: React.DragEvent) => void;
@@ -110,13 +111,28 @@ interface JobCardProps {
 
 function JobCard({
   job, progress, selected, onSelect, onStart, onPause, onResume, onAbort,
-  onDelete, onDuplicate, onRerun, onTraceFrame, draggable, onDragStart, onDragOver, onDrop,
+  onDelete, onDuplicate, onRerun, onTraceFrame, onRename, draggable, onDragStart, onDragOver, onDrop,
   machineConnected,
 }: JobCardProps) {
   const st = STATUS_STYLES[job.status] ?? STATUS_STYLES.idle;
   const pct = progress && progress.totalLines > 0
     ? Math.min(100, (progress.currentLine / progress.totalLines) * 100)
     : null;
+
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState(job.name);
+
+  const handleNameDoubleClick = () => {
+    setEditedName(job.name);
+    setIsEditingName(true);
+  };
+
+  const handleNameSubmit = () => {
+    if (editedName.trim() && editedName.trim() !== job.name) {
+      onRename(editedName.trim());
+    }
+    setIsEditingName(false);
+  };
 
   return (
     <div
@@ -141,7 +157,27 @@ function JobCard({
           className="accent-orange-500 flex-shrink-0"
         />
         <FontAwesomeIcon icon={st.icon} className={`${st.color} text-xs`} />
-        <h3 className="font-medium text-gray-200 flex-1 truncate text-xs">{job.name}</h3>
+        {isEditingName ? (
+          <input
+            type="text"
+            value={editedName}
+            onChange={e => setEditedName(e.target.value)}
+            onBlur={handleNameSubmit}
+            onKeyDown={e => {
+              if (e.key === 'Enter') handleNameSubmit();
+              if (e.key === 'Escape') setIsEditingName(false);
+            }}
+            onClick={e => e.stopPropagation()}
+            autoFocus
+            className="flex-1 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0.5 text-gray-100 focus:outline-none font-medium"
+          />
+        ) : (
+          <h3
+            className="font-medium text-gray-200 flex-1 truncate text-xs cursor-text"
+            onDoubleClick={handleNameDoubleClick}
+            title="Double-click to rename"
+          >{job.name}</h3>
+        )}
         <span className={`text-[10px] font-semibold ${st.color}`}>{st.label}</span>
       </div>
 
@@ -150,6 +186,12 @@ function JobCard({
         <span>{new Date(job.createdAt).toLocaleString()}</span>
         {job.gcode && (
           <span>{job.gcode.split('\n').length.toLocaleString()} lines</span>
+        )}
+        {job.projectId && (
+          <span className="text-blue-400" title="Project ID">📁 {job.projectId.slice(0, 8)}</span>
+        )}
+        {job.projectVersion && (
+          <span className="text-purple-400" title="Project version">v{job.projectVersion}</span>
         )}
       </div>
 
@@ -254,6 +296,7 @@ export default function Queue() {
   const deleteJob = useJobStore(s => s.deleteJob);
   const duplicateJob = useJobStore(s => s.duplicateJob);
   const queueJob = useJobStore(s => s.queueJob);
+  const renameJob = useJobStore(s => s.renameJob);
   const bulkDeleteJobs = useJobStore(s => s.bulkDeleteJobs);
   const reorderJobs = useJobStore(s => s.reorderJobs);
   const connectionStatus = useMachineStore(s => s.connectionStatus);
@@ -407,8 +450,9 @@ export default function Queue() {
     onDuplicate: () => { void handleDuplicate(job.id); },
     onRerun: () => { void handleRerun(job.id); },
     onTraceFrame: () => { void handleTraceFrame(job); },
+    onRename: (newName: string) => { void wrap(() => renameJob(job.id, newName), 'Job renamed')(); },
     machineConnected,
-  }), [jobProgress, selectedIds, handleSelect, wrap, startJob, pauseJob, resumeJob, abortJob, deleteJob, handleDuplicate, handleRerun, handleTraceFrame, machineConnected]);
+  }), [jobProgress, selectedIds, handleSelect, wrap, startJob, pauseJob, resumeJob, abortJob, deleteJob, handleDuplicate, handleRerun, handleTraceFrame, renameJob, machineConnected]);
 
   const statusFilters: { key: StatusFilter; label: string }[] = [
     { key: 'all', label: 'All' },
