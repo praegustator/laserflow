@@ -76,7 +76,7 @@ export default function GcodePreview() {
       // Refresh the job list so the Queue page shows the newly queued job
       await fetchJobs();
       addToast('success', 'Job sent to queue');
-      navigate('/queue');
+      void navigate('/queue');
     } catch (err) {
       addToast('error', err instanceof Error ? err.message : 'Failed to send job to queue');
     }
