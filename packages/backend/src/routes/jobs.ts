@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { JobRepository } from '../jobs/JobRepository.js';
 import { jobEngine } from '../jobs/JobExecutionEngine.js';
 import { serialManager } from '../serial/SerialManager.js';
+import { GRBL_REALTIME } from '../serial/GrblProtocol.js';
 import { parseSvg } from '../cam/SvgParser.js';
 import { generateGcode, type PathTransform } from '../cam/GcodeGenerator.js';
 import { machineProfiles } from '../config/MachineProfiles.js';
@@ -216,7 +217,7 @@ export function registerRoutes(app: FastifyInstance): void {
     }
     // Send soft-reset to GRBL if connected
     if (serialManager.getStatus() === 'connected') {
-      const resetChar = String.fromCharCode(0x18);
+      const resetChar = String.fromCharCode(GRBL_REALTIME.SOFT_RESET);
       try { await serialManager.sendCommand(resetChar); } catch (e) { app.log.warn('Emergency stop: soft-reset failed: %s', e); }
       try { await serialManager.sendCommand('M5'); } catch (e) { app.log.warn('Emergency stop: M5 failed: %s', e); }
     }

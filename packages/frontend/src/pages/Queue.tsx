@@ -18,6 +18,7 @@ import {
   faHome,
   faCrosshairs,
   faArrowsAlt,
+  faBorderAll,
 } from '@fortawesome/free-solid-svg-icons';
 import JogControls from '../components/JogControls';
 import type { Job, JobProgress } from '../types';
@@ -34,12 +35,43 @@ const STATUS_STYLES: Record<string, { color: string; icon: typeof faCircle; labe
 
 type StatusFilter = 'all' | Job['status'];
 
+/** Feed rate (mm/min) used when tracing the job bounding box with laser off */
+const TRACE_FEED_RATE = 1000;
+
 /* ─── Helpers ─── */
 function formatDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '--:--';
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** Extract bounding box of all G0/G1 moves from compiled G-code */
+function gcodeBBox(gcode: string): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  let x = 0, y = 0;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let hasMove = false;
+  for (const raw of gcode.split('\n')) {
+    const line = raw.trim();
+    if (!line || line.startsWith(';')) continue;
+    const isG0 = line.startsWith('G0 ') || line.startsWith('G0\t') || line === 'G0';
+    const isG1 = line.startsWith('G1 ') || line.startsWith('G1\t') || line === 'G1';
+    if (!isG0 && !isG1) continue;
+    const xm = line.match(/X(-?[\d.]+)/);
+    const ym = line.match(/Y(-?[\d.]+)/);
+    if (xm) x = parseFloat(xm[1]);
+    if (ym) y = parseFloat(ym[1]);
+    if (!xm && !ym) continue;
+    // Only include cutting moves (G1) in the bounding box — G0 are rapids
+    if (isG1) {
+      hasMove = true;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+  return hasMove && Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
 }
 
 function ProgressBar({ progress }: { progress: JobProgress | undefined }) {
@@ -68,6 +100,7 @@ interface JobCardProps {
   onDelete: () => void;
   onDuplicate: () => void;
   onRerun: () => void;
+  onTraceFrame: () => void;
   draggable?: boolean;
   onDragStart?: () => void;
   onDragOver?: (e: React.DragEvent) => void;
@@ -77,7 +110,7 @@ interface JobCardProps {
 
 function JobCard({
   job, progress, selected, onSelect, onStart, onPause, onResume, onAbort,
-  onDelete, onDuplicate, onRerun, draggable, onDragStart, onDragOver, onDrop,
+  onDelete, onDuplicate, onRerun, onTraceFrame, draggable, onDragStart, onDragOver, onDrop,
   machineConnected,
 }: JobCardProps) {
   const st = STATUS_STYLES[job.status] ?? STATUS_STYLES.idle;
@@ -147,6 +180,14 @@ function JobCard({
             className="px-2 py-0.5 text-[10px] rounded bg-green-700 hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors flex items-center gap-1"
             title={machineConnected ? 'Start job' : 'Machine not connected'}
           ><FontAwesomeIcon icon={faPlay} /> Start</button>
+        )}
+        {(job.status === 'idle' || job.status === 'queued') && job.gcode && (
+          <button
+            onClick={onTraceFrame}
+            disabled={!machineConnected}
+            className="px-2 py-0.5 text-[10px] rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 transition-colors flex items-center gap-1"
+            title={machineConnected ? 'Trace bounding box with laser off' : 'Machine not connected'}
+          ><FontAwesomeIcon icon={faBorderAll} /> Trace</button>
         )}
         {job.status === 'running' && (
           <button
@@ -326,6 +367,32 @@ export default function Queue() {
     .filter(j => j.status === 'completed' || j.status === 'error')
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
+  /** Trace the bounding-box frame of a job's G-code with laser off. */
+  const handleTraceFrame = useCallback(async (job: Job) => {
+    if (!job.gcode) {
+      addToast('error', 'Job has no G-code');
+      return;
+    }
+    const bbox = gcodeBBox(job.gcode);
+    if (!bbox) {
+      addToast('error', 'No cutting moves found in G-code');
+      return;
+    }
+    const fmt = (n: number) => n.toFixed(3);
+    try {
+      await sendCommand('M5');        // laser off
+      await sendCommand('G90');       // absolute mode
+      await sendCommand(`G0 X${fmt(bbox.minX)} Y${fmt(bbox.minY)}`);
+      await sendCommand(`G1 X${fmt(bbox.maxX)} Y${fmt(bbox.minY)} F${TRACE_FEED_RATE}`);
+      await sendCommand(`G1 X${fmt(bbox.maxX)} Y${fmt(bbox.maxY)} F${TRACE_FEED_RATE}`);
+      await sendCommand(`G1 X${fmt(bbox.minX)} Y${fmt(bbox.maxY)} F${TRACE_FEED_RATE}`);
+      await sendCommand(`G1 X${fmt(bbox.minX)} Y${fmt(bbox.minY)} F${TRACE_FEED_RATE}`);
+      addToast('success', 'Tracing job frame…');
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : 'Failed to trace frame');
+    }
+  }, [sendCommand, addToast]);
+
   const cardProps = useCallback((job: Job) => ({
     job,
     progress: jobProgress[job.id],
@@ -338,8 +405,9 @@ export default function Queue() {
     onDelete: () => { void wrap(() => deleteJob(job.id), 'Job deleted')(); },
     onDuplicate: () => { void handleDuplicate(job.id); },
     onRerun: () => { void handleRerun(job.id); },
+    onTraceFrame: () => { void handleTraceFrame(job); },
     machineConnected,
-  }), [jobProgress, selectedIds, handleSelect, wrap, startJob, pauseJob, resumeJob, abortJob, deleteJob, handleDuplicate, handleRerun, machineConnected]);
+  }), [jobProgress, selectedIds, handleSelect, wrap, startJob, pauseJob, resumeJob, abortJob, deleteJob, handleDuplicate, handleRerun, handleTraceFrame, machineConnected]);
 
   const statusFilters: { key: StatusFilter; label: string }[] = [
     { key: 'all', label: 'All' },
