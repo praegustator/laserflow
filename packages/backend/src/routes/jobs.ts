@@ -88,9 +88,11 @@ export function registerRoutes(app: FastifyInstance): void {
       layerTransforms?: Record<string, PathTransform>;
       originFlip?: boolean;
       workH?: number;
+      projectId?: string;
+      projectVersion?: string;
     };
   }>('/api/jobs/compile', async (req, reply) => {
-    const { name, geometry, operations: ops, machineId, layerTransforms, originFlip, workH } = req.body;
+    const { name, geometry, operations: ops, machineId, layerTransforms, originFlip, workH, projectId, projectVersion } = req.body;
     if (!geometry || !Array.isArray(geometry) || geometry.length === 0) {
       return reply.code(400).send({ error: 'geometry is required' });
     }
@@ -107,6 +109,8 @@ export function registerRoutes(app: FastifyInstance): void {
       geometry,
       operations: ops ?? [],
       gcode,
+      projectId,
+      projectVersion,
     };
 
     jobRepo.save(job);
@@ -186,6 +190,19 @@ export function registerRoutes(app: FastifyInstance): void {
     job.errorMessage = undefined;
     jobRepo.save(job);
     return reply.send({ status: 'queued' });
+  });
+
+  // Rename a job
+  app.patch<{ Params: { id: string }; Body: { name: string } }>('/api/jobs/:id/rename', async (req, reply) => {
+    const job = jobRepo.findById(req.params.id);
+    if (!job) return reply.code(404).send({ error: 'Not found' });
+    const { name } = req.body;
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return reply.code(400).send({ error: 'name is required' });
+    }
+    job.name = name.trim();
+    jobRepo.save(job);
+    return reply.send(job);
   });
 
   // Reorder queued jobs

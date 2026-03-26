@@ -54,6 +54,7 @@ export default function GcodePreview() {
   const jobs = useJobStore(s => s.jobs);
   const activeJobId = useJobStore(s => s.activeJobId);
   const queueJob = useJobStore(s => s.queueJob);
+  const renameJob = useJobStore(s => s.renameJob);
   const fetchJobs = useJobStore(s => s.fetchJobs);
   const activeJob = jobs.find(j => j.id === activeJobId) ?? null;
   const projects = useProjectStore(s => s.projects);
@@ -66,12 +67,19 @@ export default function GcodePreview() {
   const queueableJobId = activeProject?.jobId ?? activeJob?.id ?? null;
   const hasGcode = !!(activeProject?.gcode ?? activeJob?.gcode);
 
-  const handleSendToQueue = async () => {
+  const [showNameDialog, setShowNameDialog] = useState(false);
+  const [jobName, setJobName] = useState('');
+
+  const handleSendToQueue = async (customName?: string) => {
     if (!queueableJobId) {
       addToast('error', 'Generate G-code first');
       return;
     }
     try {
+      // Rename the job if a custom name was provided
+      if (customName && customName.trim()) {
+        await renameJob(queueableJobId, customName.trim());
+      }
       await queueJob(queueableJobId);
       // Refresh the job list so the Queue page shows the newly queued job
       await fetchJobs();
@@ -80,6 +88,17 @@ export default function GcodePreview() {
     } catch (err) {
       addToast('error', err instanceof Error ? err.message : 'Failed to send job to queue');
     }
+  };
+
+  const openNameDialog = () => {
+    const job = jobs.find(j => j.id === queueableJobId);
+    setJobName(job?.name ?? '');
+    setShowNameDialog(true);
+  };
+
+  const handleDialogSubmit = () => {
+    setShowNameDialog(false);
+    void handleSendToQueue(jobName);
   };
 
   // Use project gcode first, then fall back to active job
@@ -294,7 +313,7 @@ export default function GcodePreview() {
         <div className="flex-1" />
         <span className="text-xs text-gray-500">{totalMoves} moves</span>
         <button
-          onClick={() => { void handleSendToQueue(); }}
+          onClick={openNameDialog}
           disabled={!hasGcode || !queueableJobId}
           className="px-3 py-1.5 text-xs rounded bg-green-700 hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
           title="Send this G-code to the job queue"
@@ -305,6 +324,37 @@ export default function GcodePreview() {
           className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 disabled:opacity-40 transition-colors"
         >↓ Export .gcode</button>
       </div>
+
+      {/* Name Dialog */}
+      {showNameDialog && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setShowNameDialog(false)}>
+          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 border border-gray-700" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-gray-200 mb-4">Name Your Job</h2>
+            <input
+              type="text"
+              value={jobName}
+              onChange={e => setJobName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleDialogSubmit();
+                if (e.key === 'Escape') setShowNameDialog(false);
+              }}
+              placeholder="Job name (optional)"
+              autoFocus
+              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+            />
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => setShowNameDialog(false)}
+                className="flex-1 px-4 py-2 text-sm rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
+              >Cancel</button>
+              <button
+                onClick={handleDialogSubmit}
+                className="flex-1 px-4 py-2 text-sm rounded bg-green-700 hover:bg-green-600 text-white font-semibold transition-colors"
+              >Send to Queue</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-hidden">

@@ -770,8 +770,15 @@ export const useProjectStore = create<ProjectStore>()(
 
         if (geometry.length === 0) throw new Error('No geometry in the selected layers');
 
+        // Build default job name with project name, version (if set), and operation count
+        const version = project.versions.length > 0 ? project.versions[0].label : undefined;
+        const opCount = enabledOps.length;
+        const defaultName = version
+          ? `${project.name} (${version}) - ${opCount} op${opCount !== 1 ? 's' : ''}`
+          : `${project.name} - ${opCount} op${opCount !== 1 ? 's' : ''}`;
+
         const result = await api.post('/api/jobs/compile', {
-          name: project.name,
+          name: defaultName,
           geometry,
           operations: enabledOps.map(op => ({
             id: op.id,
@@ -786,6 +793,8 @@ export const useProjectStore = create<ProjectStore>()(
           layerTransforms,
           originFlip,
           workH,
+          projectId: project.id,
+          projectVersion: version,
         }) as Job;
 
         set(s => ({

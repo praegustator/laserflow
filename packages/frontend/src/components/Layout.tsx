@@ -5,6 +5,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faFolderOpen, faPenToSquare, faKeyboard, faCode, faListCheck, faGear } from '@fortawesome/free-solid-svg-icons';
 import { useJobStore } from '../store/jobStore';
 import { useToastStore } from '../store/toastStore';
+import { useMachineStore } from '../store/machineStore';
 
 const navItems = [
   { to: '/', label: 'Projects', icon: faFolderOpen, end: true },
@@ -18,6 +19,7 @@ const navItems = [
 export default function Layout() {
   const emergencyStop = useJobStore((s) => s.emergencyStop);
   const addToast = useToastStore((s) => s.addToast);
+  const connectionStatus = useMachineStore((s) => s.connectionStatus);
 
   const handlePanic = async () => {
     try {
@@ -27,6 +29,8 @@ export default function Layout() {
       addToast('error', 'Emergency stop failed — check connection');
     }
   };
+
+  const machineConnected = connectionStatus === 'connected';
 
   return (
     <div className="flex flex-col h-screen bg-gray-950 text-gray-100 overflow-hidden">
@@ -57,17 +61,19 @@ export default function Layout() {
           ))}
         </nav>
 
-        {/* Panic / Emergency Stop button */}
-        <button
-          onClick={() => { void handlePanic(); }}
-          className="px-3 py-1.5 mr-3 rounded-lg bg-red-700 hover:bg-red-600 active:bg-red-500 text-white text-xs font-bold uppercase tracking-wider transition-colors animate-pulse hover:animate-none border border-red-500"
-          title="Emergency Stop — stops all operations and turns off laser"
-        >
-          🛑 STOP
-        </button>
-
         {/* Machine status (right side) */}
         <MachineStatus compact />
+
+        {/* Panic / Emergency Stop button - only show when connected */}
+        {machineConnected && (
+          <button
+            onClick={() => { void handlePanic(); }}
+            className="px-3 py-1.5 ml-3 rounded-lg bg-red-700 hover:bg-red-600 active:bg-red-500 text-white text-xs font-bold uppercase tracking-wider transition-colors border border-red-500"
+            title="Emergency Stop — stops all operations and turns off laser"
+          >
+            🛑 STOP
+          </button>
+        )}
       </header>
 
       {/* Page content */}

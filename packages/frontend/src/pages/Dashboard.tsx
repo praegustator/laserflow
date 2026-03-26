@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProjectStore } from '../store/projectStore';
+import { useJobStore } from '../store/jobStore';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTrash } from '@fortawesome/free-solid-svg-icons';
 
@@ -9,9 +10,27 @@ export default function Dashboard() {
   const createProject = useProjectStore(s => s.createProject);
   const deleteProject = useProjectStore(s => s.deleteProject);
   const setActiveProjectId = useProjectStore(s => s.setActiveProjectId);
+  const jobs = useJobStore(s => s.jobs);
+  const fetchJobs = useJobStore(s => s.fetchJobs);
   const navigate = useNavigate();
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
+
+  // Fetch jobs when component mounts
+  useEffect(() => {
+    void fetchJobs();
+  }, [fetchJobs]);
+
+  // Count jobs per project
+  const jobCountByProject = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const job of jobs) {
+      if (job.projectId) {
+        counts[job.projectId] = (counts[job.projectId] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [jobs]);
 
   const handleCreate = () => {
     const name = newName.trim() || 'Untitled Project';
@@ -103,6 +122,9 @@ export default function Dashboard() {
                 <span>{project.operations.length} op{project.operations.length !== 1 ? 's' : ''}</span>
                 {project.versions.length > 0 && (
                   <span>{project.versions.length} version{project.versions.length !== 1 ? 's' : ''}</span>
+                )}
+                {jobCountByProject[project.id] > 0 && (
+                  <span className="text-blue-400">{jobCountByProject[project.id]} job{jobCountByProject[project.id] !== 1 ? 's' : ''}</span>
                 )}
               </div>
 
