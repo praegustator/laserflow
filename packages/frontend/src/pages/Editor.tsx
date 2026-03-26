@@ -585,11 +585,11 @@ export default function Editor() {
 
               // Build the title label
               let titleLabel: string;
-              if (shapeMode) {
+              if (shapeMode && singleLayer) {
                 const shapeLabel = selectedShapesInLayer.length === 1
                   ? selectedShapesInLayer[0].name
                   : `${selectedShapesInLayer.length} shapes`;
-                titleLabel = `${singleLayer!.name} – ${shapeLabel}`;
+                titleLabel = `${singleLayer.name} – ${shapeLabel}`;
               } else {
                 titleLabel = selectedLayers.length === 1
                   ? selectedLayers[0].name
@@ -620,10 +620,10 @@ export default function Editor() {
                     <p className="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wide">
                       Transform — {titleLabel}
                     </p>
-                    {shapeMode ? (
+                    {shapeMode && singleLayer ? (
                       <ShapeTransformPanel
                         shapes={selectedShapesInLayer}
-                        layerId={singleLayer!.id}
+                        layerId={singleLayer.id}
                         onUpdatePaths={updateShapePaths}
                         originPosition={originPosition}
                         workH={workAreaHeight}

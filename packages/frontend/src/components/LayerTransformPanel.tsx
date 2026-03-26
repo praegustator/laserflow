@@ -77,10 +77,11 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
   const pivotWorldY = layer.offsetY + layer.scaleY * pivotNatY;
 
   // Multi-layer combined world bounding box
+  const multiLayerKey = layers.map(l => `${l.id}:${l.offsetX}:${l.offsetY}:${l.scaleX}:${l.scaleY}:${l.rotation}:${l.mirrorX}:${l.mirrorY}`).join('|');
   const multiWorldBBox = useMemo(
     () => multi ? computeMultiLayerWorldBBox(layers) : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [multi, ...layers.map(l => `${l.id}:${l.offsetX}:${l.offsetY}:${l.scaleX}:${l.scaleY}:${l.rotation}:${l.mirrorX}:${l.mirrorY}`)]
+    [multi, multiLayerKey]
   );
 
   // Multi-layer pivot point (on the combined world bbox)
