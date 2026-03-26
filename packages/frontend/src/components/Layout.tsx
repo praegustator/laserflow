@@ -1,5 +1,4 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { NavLink, Outlet } from 'react-router-dom';
 import MachineStatus from './MachineStatus';
 import Footer from './Footer';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -15,23 +14,6 @@ const navItems = [
 ];
 
 export default function Layout() {
-  const navigate = useNavigate();
-
-  // Alt+1–5 to navigate between tabs (issue #30)
-  // Previously used Cmd+Shift+N but Cmd+Shift+3/4 conflict with macOS screenshot shortcuts
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (!e.altKey) return;
-      const num = parseInt(e.key, 10);
-      if (num >= 1 && num <= navItems.length) {
-        e.preventDefault();
-        void navigate(navItems[num - 1].to);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [navigate]);
-
   return (
     <div className="flex flex-col h-screen bg-gray-950 text-gray-100 overflow-hidden">
       {/* Header with navigation tabs (Prusa Slicer style) */}
@@ -41,12 +23,12 @@ export default function Layout() {
 
         {/* Tab navigation */}
         <nav className="flex items-stretch h-full flex-1 gap-0.5">
-          {navItems.map(({ to, label, icon, end }, i) => (
+          {navItems.map(({ to, label, icon, end }) => (
             <NavLink
               key={to}
               to={to}
               end={end}
-              title={`${label} (Alt+${i + 1})`}
+              title={label}
               className={({ isActive }) =>
                 `flex items-center gap-1.5 px-3 text-sm font-medium transition-colors border-b-2 ${
                   isActive
@@ -66,7 +48,7 @@ export default function Layout() {
       </header>
 
       {/* Page content */}
-      <main className="flex-1 overflow-auto min-h-0">
+      <main className="flex-1 overflow-auto min-h-0 bg-gray-950">
         <Outlet />
       </main>
 
