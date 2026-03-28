@@ -43,11 +43,20 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
   const [expanded, setExpanded] = useState(false);
   const [editingLabel, setEditingLabel] = useState(false);
   const [localLabel, setLocalLabel] = useState(op.label ?? '');
+  const [editingPower, setEditingPower] = useState(false);
+  const [localPower, setLocalPower] = useState(String(op.power));
 
   const commitLabel = () => {
     const trimmed = localLabel.trim();
     onChange({ label: trimmed || undefined });
     setEditingLabel(false);
+  };
+
+  const commitPower = () => {
+    const val = Math.max(0, Math.min(100, Math.round(Number(localPower) || 0)));
+    onChange({ power: val });
+    setLocalPower(String(val));
+    setEditingPower(false);
   };
 
   return (
@@ -204,7 +213,25 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
               <div>
                 <div className="flex justify-between">
                   <label className="text-xs text-gray-500 uppercase">Power (%)</label>
-                  <span className="text-xs text-gray-400">{op.power}%</span>
+                  {editingPower ? (
+                    <input
+                      type="number"
+                      value={localPower}
+                      min={0}
+                      max={100}
+                      onChange={e => setLocalPower(e.target.value)}
+                      onBlur={commitPower}
+                      onKeyDown={e => { if (e.key === 'Enter') commitPower(); if (e.key === 'Escape') { setEditingPower(false); setLocalPower(String(op.power)); } }}
+                      autoFocus
+                      className="w-14 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-right focus:outline-none"
+                    />
+                  ) : (
+                    <span
+                      className="text-xs text-gray-400 cursor-pointer hover:text-gray-200"
+                      title="Double-click to enter power value"
+                      onDoubleClick={() => { setLocalPower(String(op.power)); setEditingPower(true); }}
+                    >{op.power}%</span>
+                  )}
                 </div>
                 <input
                   type="range"

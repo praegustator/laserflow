@@ -12,7 +12,7 @@ import ShapeTransformPanel from '../components/ShapeTransformPanel';
 import type { Layer } from '../types';
 import { hasMultipleSubpaths } from '../utils/geometry';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faEye, faEyeSlash, faTrash, faFileImport, faObjectGroup, faLayerGroup, faScissors } from '@fortawesome/free-solid-svg-icons';
+import { faEye, faEyeSlash, faTrash, faFileImport, faObjectGroup, faLayerGroup, faScissors, faArrowUpFromBracket } from '@fortawesome/free-solid-svg-icons';
 
 const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];
 
@@ -22,6 +22,7 @@ export default function Editor() {
   const importSvgFile = useProjectStore(s => s.importSvgFile);
   const removeLayer = useProjectStore(s => s.removeLayer);
   const renameLayer = useProjectStore(s => s.renameLayer);
+  const updateLayerColor = useProjectStore(s => s.updateLayerColor);
   const toggleLayerVisibility = useProjectStore(s => s.toggleLayerVisibility);
   const reorderLayer = useProjectStore(s => s.reorderLayer);
   const updateLayerTransform = useProjectStore(s => s.updateLayerTransform);
@@ -54,6 +55,8 @@ export default function Editor() {
   const [editingShapeId, setEditingShapeId] = useState<string | null>(null);
   const [editingShapeLayerId, setEditingShapeLayerId] = useState<string | null>(null);
   const [editingShapeName, setEditingShapeName] = useState('');
+  // Color picker state
+  const [colorPickerLayerId, setColorPickerLayerId] = useState<string | null>(null);
   // Drag-and-drop state for layer reordering
   const dragLayerId = useRef<string | null>(null);
   const [dragOverLayerId, setDragOverLayerId] = useState<string | null>(null);
@@ -405,6 +408,7 @@ export default function Editor() {
                   onDragEnd={() => { dragLayerId.current = null; setDragOverLayerId(null); }}
                   onClick={e => {
                     e.stopPropagation();
+                    setColorPickerLayerId(null);
                     if (e.shiftKey || e.metaKey || e.ctrlKey) {
                       // Multi-select: toggle this layer
                       setSelectedLayerIds(prev => {
@@ -422,10 +426,40 @@ export default function Editor() {
                 >
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-gray-600 cursor-grab active:cursor-grabbing select-none mr-0.5" title="Drag to reorder">⠿</span>
-                    <span
-                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: LAYER_COLORS[idx % LAYER_COLORS.length] }}
-                    />
+                    {/* Color dot — click to open color picker */}
+                    <div className="relative">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0 cursor-pointer ring-1 ring-transparent hover:ring-gray-400 block"
+                        style={{ backgroundColor: layer.color ?? LAYER_COLORS[idx % LAYER_COLORS.length] }}
+                        title="Click to change layer color"
+                        onClick={e => { e.stopPropagation(); setColorPickerLayerId(colorPickerLayerId === layer.id ? null : layer.id); }}
+                      />
+                      {colorPickerLayerId === layer.id && (
+                        <div
+                          className="absolute top-5 left-0 z-50 bg-gray-800 border border-gray-600 rounded-lg p-2 shadow-lg min-w-[120px]"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {LAYER_COLORS.map(c => (
+                              <button
+                                key={c}
+                                className={`w-5 h-5 rounded-full border-2 ${(layer.color ?? LAYER_COLORS[idx % LAYER_COLORS.length]) === c ? 'border-white' : 'border-transparent'} hover:border-gray-300`}
+                                style={{ backgroundColor: c }}
+                                title={c}
+                                onClick={e => { e.stopPropagation(); updateLayerColor(layer.id, c); setColorPickerLayerId(null); }}
+                              />
+                            ))}
+                          </div>
+                          <input
+                            type="color"
+                            value={layer.color ?? LAYER_COLORS[idx % LAYER_COLORS.length]}
+                            onChange={e => { updateLayerColor(layer.id, e.target.value); }}
+                            className="mt-1.5 w-full h-5 cursor-pointer bg-transparent border-0 p-0"
+                            title="Pick custom color"
+                          />
+                        </div>
+                      )}
+                    </div>
                     <button
                       onClick={e => { e.stopPropagation(); toggleLayerVisibility(layer.id); }}
                       className={`text-xs w-5 text-center ${layer.visible ? 'text-gray-200' : 'text-gray-600'}`}
@@ -453,21 +487,21 @@ export default function Editor() {
                     )}
 
                     {/* Expand/collapse shapes */}
-                    {layer.shapes.length > 1 && (
+                    {layer.shapes.length >= 1 && (
                       <button
                         onClick={e => { e.stopPropagation(); toggleExpandLayer(layer.id); }}
                         className="text-gray-500 hover:text-gray-200 text-xs"
-                        title={expandedLayerIds.has(layer.id) ? 'Collapse shapes' : `Expand ${layer.shapes.length} shapes`}
+                        title={expandedLayerIds.has(layer.id) ? 'Collapse shapes' : `Expand ${layer.shapes.length} shape${layer.shapes.length !== 1 ? 's' : ''}`}
                       >{expandedLayerIds.has(layer.id) ? '▾' : `▸ ${layer.shapes.length}`}</button>
                     )}
-                    <button onClick={e => { e.stopPropagation(); removeLayer(layer.id); if (selectedLayerIds.has(layer.id)) setSelectedLayerIds(prev => { const n = new Set(prev); n.delete(layer.id); return n; }); }} className="text-gray-500 hover:text-red-400 text-xs" title="Delete layer"><FontAwesomeIcon icon={faTrash} /></button>
                     {layer.shapes.length > 1 && (
                       <button
                         onClick={e => { e.stopPropagation(); handleSplitLayerIntoShapeLayers(layer.id); }}
                         className="text-gray-500 hover:text-blue-400 text-xs"
-                        title={`Split into ${layer.shapes.length} layers (one per shape)`}
+                        title={`Split layer into ${layer.shapes.length} layers (one per shape)`}
                       ><FontAwesomeIcon icon={faScissors} /></button>
                     )}
+                    <button onClick={e => { e.stopPropagation(); removeLayer(layer.id); if (selectedLayerIds.has(layer.id)) setSelectedLayerIds(prev => { const n = new Set(prev); n.delete(layer.id); return n; }); }} className="text-gray-500 hover:text-red-400 text-xs" title="Delete layer"><FontAwesomeIcon icon={faTrash} /></button>
                   </div>
 
                   {/* Expanded shapes */}
@@ -505,10 +539,10 @@ export default function Editor() {
                         );
                       })}
 
-                      {/* Shape selection actions */}
+                      {/* Shape selection actions — applied to selected shapes */}
                       {selectedShapeIds.size > 0 && selectedLayerIds.has(layer.id) && (
-                        <div className="flex items-center gap-1 mt-1 pt-1 border-t border-gray-700">
-                          <span className="text-xs text-gray-500">{selectedShapeIds.size} selected</span>
+                        <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-gray-700">
+                          <span className="text-xs text-gray-500">{selectedShapeIds.size} shape{selectedShapeIds.size !== 1 ? 's' : ''} selected</span>
                           <div className="flex-1" />
                           {/* Show Split only when exactly one shape is selected and it has multiple subpaths */}
                           {selectedShapeIds.size === 1 && (() => {
@@ -517,20 +551,20 @@ export default function Editor() {
                               <button
                                 onClick={e => { e.stopPropagation(); handleSplitShapeSubpaths(); }}
                                 className="text-xs text-blue-400 hover:text-blue-300"
-                                title="Split shape into separate shapes by subpath"
-                              >Split</button>
+                                title="Split selected shape into separate shapes by subpath"
+                              ><FontAwesomeIcon icon={faScissors} /> <span className="text-[10px]">Split</span></button>
                             ) : null;
                           })()}
                           <button
                             onClick={e => { e.stopPropagation(); handlePopSelectedToNewLayer(); }}
                             className="text-xs text-orange-400 hover:text-orange-300"
-                            title="Pop selected shapes to new layer"
-                          >Pop</button>
+                            title="Pop selected shapes to a new layer"
+                          ><FontAwesomeIcon icon={faArrowUpFromBracket} /> <span className="text-[10px]">Pop</span></button>
                           <button
                             onClick={e => { e.stopPropagation(); handleDeleteSelectedShapes(); }}
                             className="text-xs text-red-400 hover:text-red-300"
                             title="Delete selected shapes"
-                          >Delete</button>
+                          ><FontAwesomeIcon icon={faTrash} /> <span className="text-[10px]">Delete</span></button>
                         </div>
                       )}
                     </div>
