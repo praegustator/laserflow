@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+html, body {
+  background-color: #030712; /* gray-950 — prevents color mismatch outside the app root */
+}
+
 @keyframes slide-in {
   from {
     opacity: 0;

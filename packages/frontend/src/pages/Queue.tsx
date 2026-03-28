@@ -1,5 +1,6 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useJobStore } from '../store/jobStore';
+import { useProjectStore } from '../store/projectStore';
 import { useMachineStore } from '../store/machineStore';
 import { useToastStore } from '../store/toastStore';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -32,8 +33,6 @@ const STATUS_STYLES: Record<string, { color: string; icon: typeof faCircle; labe
   completed: { color: 'text-blue-400', icon: faCheckCircle, label: 'Completed' },
   error: { color: 'text-red-400', icon: faExclamationCircle, label: 'Error' },
 };
-
-type StatusFilter = 'all' | Job['status'];
 
 /** Feed rate (mm/min) used when tracing the job bounding box with laser off */
 const TRACE_FEED_RATE = 1000;
@@ -102,6 +101,7 @@ interface JobCardProps {
   onRerun: () => void;
   onTraceFrame: () => void;
   onRename: (newName: string) => void;
+  projectName?: string;
   draggable?: boolean;
   onDragStart?: () => void;
   onDragOver?: (e: React.DragEvent) => void;
@@ -111,7 +111,7 @@ interface JobCardProps {
 
 function JobCard({
   job, progress, selected, onSelect, onStart, onPause, onResume, onAbort,
-  onDelete, onDuplicate, onRerun, onTraceFrame, onRename, draggable, onDragStart, onDragOver, onDrop,
+  onDelete, onDuplicate, onRerun, onTraceFrame, onRename, projectName, draggable, onDragStart, onDragOver, onDrop,
   machineConnected,
 }: JobCardProps) {
   const st = STATUS_STYLES[job.status] ?? STATUS_STYLES.idle;
@@ -187,8 +187,8 @@ function JobCard({
         {job.gcode && (
           <span>{job.gcode.split('\n').length.toLocaleString()} lines</span>
         )}
-        {job.projectId && (
-          <span className="text-blue-400" title="Project ID">📁 {job.projectId.slice(0, 8)}</span>
+        {projectName && (
+          <span className="text-blue-400" title="Project">📁 {projectName}</span>
         )}
         {job.projectVersion && (
           <span className="text-purple-400" title="Project version">v{job.projectVersion}</span>
@@ -299,15 +299,22 @@ export default function Queue() {
   const renameJob = useJobStore(s => s.renameJob);
   const bulkDeleteJobs = useJobStore(s => s.bulkDeleteJobs);
   const reorderJobs = useJobStore(s => s.reorderJobs);
+  const projects = useProjectStore(s => s.projects);
   const connectionStatus = useMachineStore(s => s.connectionStatus);
   const sendCommand = useMachineStore(s => s.sendCommand);
   const addToast = useToastStore(s => s.addToast);
   const [loading, setLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const dragIdRef = useRef<string | null>(null);
 
   const machineConnected = connectionStatus === 'connected';
+
+  // Build project-name lookup map
+  const projectNameById = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const p of projects) m[p.id] = p.name;
+    return m;
+  }, [projects]);
 
   useEffect(() => {
     setLoading(true);
@@ -383,7 +390,7 @@ export default function Queue() {
   const handleDrop = useCallback((targetId: string) => {
     if (!dragIdRef.current || dragIdRef.current === targetId) return;
     const queuedJobs = jobs
-      .filter(j => j.status === 'queued' || j.status === 'idle')
+      .filter(j => j.status === 'queued')
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     const ids = queuedJobs.map(j => j.id);
     const fromIdx = ids.indexOf(dragIdRef.current);
@@ -395,19 +402,15 @@ export default function Queue() {
     dragIdRef.current = null;
   }, [jobs, reorderJobs]);
 
-  /* ─── Filter and group jobs ─── */
-  const filtered = statusFilter === 'all'
-    ? jobs
-    : jobs.filter(j => j.status === statusFilter);
-
-  const queuedJobs = filtered
-    .filter(j => j.status === 'idle' || j.status === 'queued')
+  /* ─── Group jobs by status ─── */
+  const queuedJobs = jobs
+    .filter(j => j.status === 'queued')
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
-  const runningJobs = filtered
+  const runningJobs = jobs
     .filter(j => j.status === 'running' || j.status === 'paused');
 
-  const finishedJobs = filtered
+  const finishedJobs = jobs
     .filter(j => j.status === 'completed' || j.status === 'error')
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
@@ -451,18 +454,9 @@ export default function Queue() {
     onRerun: () => { void handleRerun(job.id); },
     onTraceFrame: () => { void handleTraceFrame(job); },
     onRename: (newName: string) => { void wrap(() => renameJob(job.id, newName), 'Job renamed')(); },
+    projectName: job.projectId ? projectNameById[job.projectId] : undefined,
     machineConnected,
-  }), [jobProgress, selectedIds, handleSelect, wrap, startJob, pauseJob, resumeJob, abortJob, deleteJob, handleDuplicate, handleRerun, handleTraceFrame, renameJob, machineConnected]);
-
-  const statusFilters: { key: StatusFilter; label: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'queued', label: 'Queued' },
-    { key: 'idle', label: 'Idle' },
-    { key: 'running', label: 'Running' },
-    { key: 'paused', label: 'Paused' },
-    { key: 'completed', label: 'Completed' },
-    { key: 'error', label: 'Error' },
-  ];
+  }), [jobProgress, selectedIds, handleSelect, wrap, startJob, pauseJob, resumeJob, abortJob, deleteJob, handleDuplicate, handleRerun, handleTraceFrame, renameJob, projectNameById, machineConnected]);
 
   return (
     <div className="flex h-full min-h-0">
@@ -474,21 +468,6 @@ export default function Queue() {
           <span className="text-xs text-gray-500">
             {jobs.length} job{jobs.length !== 1 ? 's' : ''}
           </span>
-
-          {/* Status filter pills */}
-          <div className="flex gap-1 ml-2">
-            {statusFilters.map(f => (
-              <button
-                key={f.key}
-                onClick={() => setStatusFilter(f.key)}
-                className={`px-2 py-0.5 text-[10px] rounded-full font-semibold transition-colors ${
-                  statusFilter === f.key
-                    ? 'bg-orange-500 text-white'
-                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                }`}
-              >{f.label}</button>
-            ))}
-          </div>
 
           <div className="flex-1" />
 
