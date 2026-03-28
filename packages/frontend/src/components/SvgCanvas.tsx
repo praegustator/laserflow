@@ -225,7 +225,7 @@ export default function SvgCanvas({ layers, operations, selectedLayerIds, select
                 transform={parts.join(' ')}
                 onClick={(e) => { e.stopPropagation(); onSelectLayer(layer.id); }}
                 style={{ cursor: 'pointer' }}
-                opacity={isSelected ? 1 : 0.75}
+                opacity={isSelected ? 1 : 0.92}
               >
                 {layer.shapes.map((shape) => {
                   const isShapeSelected = selectedShapeIds?.has(shape.id) ?? false;

@@ -438,27 +438,45 @@ export default function Editor() {
                       />
                       {colorPickerLayerId === layer.id && (
                         <div
-                          className="absolute top-5 left-0 z-50 bg-gray-800 border border-gray-600 rounded-lg p-2 shadow-lg min-w-[120px]"
+                          className="absolute top-5 left-0 z-50 bg-gray-800 border border-gray-600 rounded-lg p-2 shadow-lg min-w-[150px]"
                           onClick={e => e.stopPropagation()}
                         >
-                          <div className="grid grid-cols-3 gap-1.5">
+                          <input
+                            type="color"
+                            value={currentColor}
+                            onChange={e => { updateLayerColor(layer.id, e.target.value); }}
+                            className="w-full h-24 cursor-pointer bg-transparent border-0 p-0 rounded"
+                            title="Pick custom color"
+                          />
+                          <div className="flex items-center gap-1 mt-1.5">
+                            <input
+                              type="text"
+                              value={currentColor}
+                              onChange={e => {
+                                const v = e.target.value;
+                                if (/^#[0-9a-fA-F]{6}$/.test(v)) updateLayerColor(layer.id, v);
+                              }}
+                              onBlur={e => {
+                                let v = e.target.value.trim();
+                                if (!v.startsWith('#')) v = '#' + v;
+                                if (/^#[0-9a-fA-F]{6}$/.test(v)) updateLayerColor(layer.id, v);
+                              }}
+                              className="flex-1 bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-xs text-gray-100 font-mono focus:outline-none focus:border-orange-500 min-w-0"
+                              title="Hex color — click to copy"
+                              onClick={e => { (e.target as HTMLInputElement).select(); }}
+                            />
+                          </div>
+                          <div className="grid grid-cols-6 gap-1 mt-1.5">
                             {LAYER_COLORS.map(c => (
                               <button
                                 key={c}
-                                className={`w-5 h-5 rounded-full border-2 ${currentColor === c ? 'border-white' : 'border-transparent'} hover:border-gray-300`}
+                                className={`w-4 h-4 rounded-full border-2 ${currentColor === c ? 'border-white' : 'border-transparent'} hover:border-gray-300`}
                                 style={{ backgroundColor: c }}
                                 title={c}
                                 onClick={e => { e.stopPropagation(); updateLayerColor(layer.id, c); setColorPickerLayerId(null); }}
                               />
                             ))}
                           </div>
-                          <input
-                            type="color"
-                            value={currentColor}
-                            onChange={e => { updateLayerColor(layer.id, e.target.value); }}
-                            className="mt-1.5 w-full h-5 cursor-pointer bg-transparent border-0 p-0"
-                            title="Pick custom color"
-                          />
                         </div>
                       )}
                     </div>

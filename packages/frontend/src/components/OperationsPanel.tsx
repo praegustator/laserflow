@@ -37,10 +37,13 @@ interface OperationRowProps {
   onDragOver: (id: string) => void;
   onDrop: () => void;
   isDragOver: boolean;
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  isSelected: boolean;
+  onSelect: (e: React.MouseEvent) => void;
 }
 
-function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, presets, layers, onAssignLayer, onUnassignLayer, onDragStart, onDragOver, onDrop, isDragOver }: OperationRowProps) {
-  const [expanded, setExpanded] = useState(false);
+function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, presets, layers, onAssignLayer, onUnassignLayer, onDragStart, onDragOver, onDrop, isDragOver, expanded, onToggleExpanded, isSelected, onSelect }: OperationRowProps) {
   const [editingLabel, setEditingLabel] = useState(false);
   const [localLabel, setLocalLabel] = useState(op.label ?? '');
   const [editingPower, setEditingPower] = useState(false);
@@ -61,7 +64,8 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
 
   return (
     <div
-      className={`border rounded-lg overflow-hidden transition-colors ${op.enabled ? 'border-gray-700' : 'border-gray-800 opacity-60'} ${isDragOver ? 'border-orange-400 border-dashed' : ''}`}
+      className={`border rounded-lg overflow-hidden transition-colors ${op.enabled ? 'border-gray-700' : 'border-gray-800 opacity-60'} ${isDragOver ? 'border-orange-400 border-dashed' : ''} ${isSelected ? 'ring-1 ring-orange-500' : ''}`}
+      onClick={onSelect}
       onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOver(op.id); }}
       onDrop={e => { e.preventDefault(); onDrop(); }}
     >
@@ -80,7 +84,7 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
         ><FontAwesomeIcon icon={op.enabled ? faCircleSolid : faCircleRegular} /></button>
 
         <button
-          onClick={() => setExpanded(e => !e)}
+          onClick={(e) => { e.stopPropagation(); onToggleExpanded(); }}
           className="flex-1 flex items-center gap-2 text-left min-w-0"
         >
           <span className={`text-sm font-semibold ${OP_COLORS[op.type]}`}>
@@ -99,10 +103,10 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
             />
           ) : (
             <span
-              className={`text-xs truncate ${op.label ? 'text-gray-500' : 'text-gray-600 italic'}`}
+              className={`text-xs truncate ${op.label ? 'text-gray-500' : 'text-gray-700 italic'}`}
               title="Double-click to rename"
               onDoubleClick={e => { e.stopPropagation(); setLocalLabel(op.label ?? ''); setEditingLabel(true); }}
-            >{op.label ? `(${op.label})` : ''}</span>
+            >{op.label ? `(${op.label})` : '(unnamed)'}</span>
           )}
           {op.layerIds.length === 0 && op.enabled && (
             <span className="text-xs text-yellow-500 ml-1 flex-shrink-0" title="No layers assigned">⚠</span>
@@ -302,6 +306,8 @@ export default function OperationsPanel({ project, layers, originPosition, selec
   const [presets, setPresets] = useState<MaterialPreset[]>([]);
   const dragOpId = useRef<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [expandedOpIds, setExpandedOpIds] = useState<Set<string>>(new Set());
+  const [selectedOpIds, setSelectedOpIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     api.get('/api/material-presets')
@@ -318,6 +324,33 @@ export default function OperationsPanel({ project, layers, originPosition, selec
     }
     dragOpId.current = null;
     setDragOverId(null);
+  };
+
+  const toggleExpanded = (id: string) => {
+    setExpandedOpIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectOp = (id: string, e: React.MouseEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      setSelectedOpIds(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+      });
+    } else if (e.shiftKey && selectedOpIds.size > 0) {
+      const opIds = project.operations.map(op => op.id);
+      const lastSelected = Array.from(selectedOpIds).pop()!;
+      const fromIdx = opIds.indexOf(lastSelected);
+      const toIdx = opIds.indexOf(id);
+      const [lo, hi] = fromIdx < toIdx ? [fromIdx, toIdx] : [toIdx, fromIdx];
+      setSelectedOpIds(new Set(opIds.slice(lo, hi + 1)));
+    } else {
+      setSelectedOpIds(prev => prev.has(id) && prev.size === 1 ? new Set() : new Set([id]));
+    }
   };
 
   const handleGenerate = async () => {
@@ -401,6 +434,27 @@ export default function OperationsPanel({ project, layers, originPosition, selec
   const hasEnabledOps = operations.some(o => o.enabled);
   const gcodeUpToDate = project.gcodeUpToDate === true && !!project.gcode;
 
+  // Multi-select parameter panel: compute shared values
+  const selectedOps = operations.filter(o => selectedOpIds.has(o.id));
+  const multiType = selectedOps.length >= 2
+    ? (selectedOps.every(o => o.type === selectedOps[0].type) ? selectedOps[0].type : null)
+    : null;
+  const multiFeedRate = selectedOps.length >= 2
+    ? (selectedOps.every(o => o.feedRate === selectedOps[0].feedRate) ? selectedOps[0].feedRate : null)
+    : null;
+  const multiPower = selectedOps.length >= 2
+    ? (selectedOps.every(o => o.power === selectedOps[0].power) ? selectedOps[0].power : null)
+    : null;
+  const multiPasses = selectedOps.length >= 2
+    ? (selectedOps.every(o => o.passes === selectedOps[0].passes) ? selectedOps[0].passes : null)
+    : null;
+
+  const applyToSelected = (partial: Partial<Operation>) => {
+    for (const id of selectedOpIds) {
+      updateOperation(id, partial);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="px-4 py-3 border-b border-gray-700">
@@ -421,7 +475,11 @@ export default function OperationsPanel({ project, layers, originPosition, selec
               onChange={partial => updateOperation(op.id, partial)}
               onRemove={() => removeOperation(op.id)}
               onToggleEnabled={() => toggleOperationEnabled(op.id)}
-              onDuplicate={() => duplicateOperation(op.id)}
+              onDuplicate={() => {
+                const layerIds = selectedLayerIds ? Array.from(selectedLayerIds) : undefined;
+                const newId = duplicateOperation(op.id, layerIds);
+                if (newId) setExpandedOpIds(prev => new Set(prev).add(newId));
+              }}
               presets={presets}
               layers={layers}
               onAssignLayer={layerId => assignLayerToOperation(op.id, layerId)}
@@ -430,20 +488,95 @@ export default function OperationsPanel({ project, layers, originPosition, selec
               onDragOver={handleDragOver}
               onDrop={handleDrop}
               isDragOver={dragOverId === op.id}
+              expanded={expandedOpIds.has(op.id)}
+              onToggleExpanded={() => toggleExpanded(op.id)}
+              isSelected={selectedOpIds.has(op.id)}
+              onSelect={(e) => handleSelectOp(op.id, e)}
             />
           ))
         )}
       </div>
 
+      {/* Multi-select parameter panel */}
+      {selectedOps.length >= 2 && (
+        <div className="px-3 py-3 border-t border-gray-700 bg-gray-900 space-y-2">
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+            Bulk Edit — {selectedOps.length} operations
+          </p>
+
+          {/* Type */}
+          <div>
+            <label className="text-xs text-gray-500 uppercase">Type</label>
+            <div className="flex gap-1 mt-1">
+              {(['cut', 'engrave', 'ignore'] as OperationType[]).map(t => (
+                <button
+                  key={t}
+                  onClick={() => applyToSelected({ type: t })}
+                  className={`flex-1 py-1 text-xs rounded font-semibold transition-colors ${
+                    multiType === t
+                      ? 'bg-orange-500 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >{t}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Feed rate */}
+          <div>
+            <label className="text-xs text-gray-500 uppercase">Feed Rate (mm/min)</label>
+            <input
+              type="number"
+              value={multiFeedRate ?? ''}
+              placeholder={multiFeedRate === null ? 'mixed' : undefined}
+              min={1}
+              max={10000}
+              onChange={e => { if (e.target.value) applyToSelected({ feedRate: Number(e.target.value) }); }}
+              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+            />
+          </div>
+
+          {/* Power */}
+          <div>
+            <label className="text-xs text-gray-500 uppercase">Power (%)</label>
+            <input
+              type="range"
+              value={multiPower ?? 0}
+              min={0}
+              max={100}
+              onChange={e => applyToSelected({ power: Number(e.target.value) })}
+              className="w-full accent-orange-500"
+            />
+            <span className="text-xs text-gray-400">{multiPower !== null ? `${multiPower}%` : 'mixed'}</span>
+          </div>
+
+          {/* Passes */}
+          <div>
+            <label className="text-xs text-gray-500 uppercase">Passes</label>
+            <input
+              type="number"
+              value={multiPasses ?? ''}
+              placeholder={multiPasses === null ? 'mixed' : undefined}
+              min={1}
+              max={20}
+              onChange={e => { if (e.target.value) applyToSelected({ passes: Number(e.target.value) }); }}
+              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+            />
+          </div>
+        </div>
+      )}
+
       <div className="px-4 py-3 border-t border-gray-700 space-y-2">
         <button
           onClick={() => {
             const ids = selectedLayerIds ? Array.from(selectedLayerIds) : [];
+            let newId: string | null;
             if (ids.length > 0) {
-              addOperationForLayers(ids);
+              newId = addOperationForLayers(ids);
             } else {
-              addOperation();
+              newId = addOperation();
             }
+            if (newId) setExpandedOpIds(prev => new Set(prev).add(newId!));
           }}
           className="w-full py-1.5 text-sm rounded border border-dashed border-gray-600 text-gray-400 hover:border-orange-500 hover:text-orange-400 transition-colors"
         >{selectedLayerIds && selectedLayerIds.size > 0
