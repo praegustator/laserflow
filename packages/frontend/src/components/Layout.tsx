@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import MachineStatus from './MachineStatus';
 import Footer from './Footer';
@@ -20,6 +21,18 @@ export default function Layout() {
   const emergencyStop = useJobStore((s) => s.emergencyStop);
   const addToast = useToastStore((s) => s.addToast);
   const connectionStatus = useMachineStore((s) => s.connectionStatus);
+  const machineState = useMachineStore((s) => s.machineState);
+
+  // Update browser tab title with IP/hostname and machine status
+  useEffect(() => {
+    const host = window.location.hostname;
+    const state = connectionStatus === 'disconnected'
+      ? 'Disconnected'
+      : connectionStatus === 'connecting'
+        ? 'Connecting…'
+        : (machineState?.state ?? 'Unknown');
+    document.title = `LaserFlow — ${host} [${state}]`;
+  }, [connectionStatus, machineState?.state]);
 
   const handlePanic = async () => {
     try {

@@ -108,7 +108,7 @@ export default function MachineStatus({ compact = false }: Props) {
       {machineState && (
         <div className="text-xs text-gray-400 flex gap-4">
           <span>Feed: {machineState.feed} mm/min</span>
-          <span>Spindle: {machineState.spindle} RPM</span>
+          <span>Laser: {machineState.spindle}%</span>
         </div>
       )}
     </div>

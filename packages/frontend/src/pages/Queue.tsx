@@ -16,9 +16,6 @@ import {
   faCheckCircle,
   faExclamationCircle,
   faGripVertical,
-  faHome,
-  faCrosshairs,
-  faArrowsAlt,
   faBorderAll,
 } from '@fortawesome/free-solid-svg-icons';
 import JogControls from '../components/JogControls';
@@ -583,41 +580,6 @@ export default function Queue() {
             ⚠ Machine not connected — go to Console to connect
           </p>
         )}
-
-        {/* Quick actions */}
-        <div>
-          <div className="text-xs text-gray-500 uppercase mb-2">Quick Actions</div>
-          <div className="grid grid-cols-2 gap-1">
-            <button
-              onClick={() => { void sendCommand('G90 G0 X0 Y0'); }}
-              disabled={!machineConnected}
-              className="py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 transition-colors flex items-center justify-center gap-1"
-            >
-              <FontAwesomeIcon icon={faHome} /> Home
-            </button>
-            <button
-              onClick={() => { void sendCommand('G10L20P0X0Y0Z0'); }}
-              disabled={!machineConnected}
-              className="py-1.5 text-xs rounded bg-green-800 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors flex items-center justify-center gap-1"
-            >
-              <FontAwesomeIcon icon={faCrosshairs} /> Set Origin
-            </button>
-            <button
-              onClick={() => { void sendCommand('$X'); }}
-              disabled={!machineConnected}
-              className="py-1.5 text-xs rounded bg-yellow-700 hover:bg-yellow-600 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors flex items-center justify-center gap-1"
-            >
-              🔓 Unlock
-            </button>
-            <button
-              onClick={() => { void sendCommand('G0 X0 Y0'); }}
-              disabled={!machineConnected}
-              className="py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 transition-colors flex items-center justify-center gap-1"
-            >
-              <FontAwesomeIcon icon={faArrowsAlt} /> Go Zero
-            </button>
-          </div>
-        </div>
 
         {/* Jog controls */}
         <div>

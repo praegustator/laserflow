@@ -18,14 +18,16 @@ export default function Footer() {
       });
   }, []);
 
+  // Show unified version if both sides match, otherwise show both
+  const versionLabel = backendVersion === null
+    ? `frontend: ${frontendVersion}`
+    : frontendVersion === backendVersion
+      ? frontendVersion
+      : `frontend: ${frontendVersion} | backend: ${backendVersion}`;
+
   return (
     <footer className="flex-shrink-0 h-7 bg-gray-900 border-t border-gray-800 flex items-center justify-between px-4 text-xs text-gray-500">
-      <span className="font-mono">
-        frontend: {frontendVersion}
-        {backendVersion !== null && (
-          <> &nbsp;|&nbsp; backend: {backendVersion}</>
-        )}
-      </span>
+      <span className="font-mono">{versionLabel}</span>
 
       <div className="flex items-center gap-4">
         <a
