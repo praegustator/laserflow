@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useMachineStore } from '../store/machineStore';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faHome, faLockOpen, faRotateLeft, faCrosshairs } from '@fortawesome/free-solid-svg-icons';
 
 const STEP_SIZES = [0.1, 1, 10, 100] as const;
 type StepSize = (typeof STEP_SIZES)[number];
@@ -105,30 +107,30 @@ export default function JogControls() {
           <button
             onClick={() => sendRaw('G90 G0 X0 Y0')}
             disabled={!connected}
-            className="py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 transition-colors"
+            className="py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 transition-colors flex items-center justify-center gap-1"
           >
-            🏠 Home
+            <FontAwesomeIcon icon={faHome} /> Home
           </button>
           <button
             onClick={() => sendRaw('$X')}
             disabled={!connected}
-            className="py-1.5 text-xs rounded bg-yellow-700 hover:bg-yellow-600 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+            className="py-1.5 text-xs rounded bg-yellow-700 hover:bg-yellow-600 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors flex items-center justify-center gap-1"
           >
-            🔓 Unlock
+            <FontAwesomeIcon icon={faLockOpen} /> Unlock
           </button>
           <button
             onClick={() => sendRaw('\x18')}
             disabled={!connected}
-            className="py-1.5 text-xs rounded bg-red-800 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+            className="py-1.5 text-xs rounded bg-red-800 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors flex items-center justify-center gap-1"
           >
-            ⚠ Reset
+            <FontAwesomeIcon icon={faRotateLeft} /> Reset
           </button>
           <button
             onClick={() => sendRaw('G10L20P0X0Y0Z0')}
             disabled={!connected}
-            className="py-1.5 text-xs rounded bg-green-800 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+            className="py-1.5 text-xs rounded bg-green-800 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors flex items-center justify-center gap-1"
           >
-            ⊙ Set Origin
+            <FontAwesomeIcon icon={faCrosshairs} /> Set Origin
           </button>
         </div>
       </div>
