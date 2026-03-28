@@ -34,7 +34,8 @@ function multiplyMatrices(m1: Matrix, m2: Matrix): Matrix {
 
 /* ── SVG unit / viewBox helpers ──────────────────────────────────────── */
 
-/** Tags whose children should NOT be extracted as visible geometry. */
+/** Tags whose children should NOT be extracted as visible geometry.
+ *  All entries are lowercase — tag names are lowercased before lookup. */
 const NON_VISUAL_TAGS = new Set([
   'defs', 'clippath', 'mask', 'symbol', 'pattern', 'marker',
   'metadata', 'title', 'desc', 'style', 'script',
@@ -44,7 +45,8 @@ const NON_VISUAL_TAGS = new Set([
 /**
  * Parse an SVG length value with a physical unit into millimetres.
  * Returns `null` for unitless / px / em / % values so that we only scale
- * when we have a reliable physical dimension.
+ * when we have a reliable physical dimension.  Negative and zero values
+ * are rejected because physical dimensions cannot be non-positive.
  */
 export function parseSvgLength(raw: string | undefined): number | null {
   if (!raw) return null;
@@ -162,16 +164,16 @@ export function parseTransformAttr(raw: string): Matrix {
 
 /* ── Path transformation helper ──────────────────────────────────────── */
 
-function applyMatrixToPath(d: string, matrix: Matrix): string {
-  if (isIdentity(matrix)) return d;
+function applyMatrixToPath(pathD: string, matrix: Matrix): string {
+  if (isIdentity(matrix)) return pathD;
   try {
-    const [a, b, c, dd, e, f] = matrix;
-    return new SVGPathData(d)
+    const [a, b, c, d, e, f] = matrix;
+    return new SVGPathData(pathD)
       .toAbs()
-      .transform(SVGPathDataTransformer.MATRIX(a, b, c, dd, e, f))
+      .transform(SVGPathDataTransformer.MATRIX(a, b, c, d, e, f))
       .encode();
   } catch {
-    return d;
+    return pathD;
   }
 }
 

@@ -267,6 +267,7 @@ describe('parseViewBox', () => {
     expect(parseViewBox('abc')).toBeNull();
     expect(parseViewBox(undefined)).toBeNull();
     expect(parseViewBox('0 0 0 0')).toBeNull(); // zero dimensions
+    expect(parseViewBox('0 0 -10 -10')).toBeNull(); // negative dimensions
   });
 });
 
@@ -296,7 +297,8 @@ describe('parseTransformAttr', () => {
   });
   it('parses combined transforms', () => {
     const m = parseTransformAttr('translate(10, 0) scale(2)');
-    // translate(10,0) then scale(2): x' = 2*x + 10, y' = 2*y
+    // SVG applies right-to-left: scale(2) first, then translate(10,0).
+    // x' = 2*x + 10, y' = 2*y
     expect(m[0]).toBeCloseTo(2);
     expect(m[4]).toBeCloseTo(10);
   });
