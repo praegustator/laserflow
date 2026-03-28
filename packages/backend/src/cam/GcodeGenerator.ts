@@ -176,7 +176,7 @@ export function generateGcode(
   lines.push('; LaserFlow G-code');
   lines.push('G21');
   lines.push('G90');
-  lines.push('G0 X0 Y0');
+  lines.push('G0 X0 Y0 S0');
   lines.push('');
 
   for (const op of operations) {
@@ -186,7 +186,7 @@ export function generateGcode(
     const laserMode = op.type === 'cut' ? 'M3' : 'M4';
 
     lines.push(`; Operation: ${op.id} type=${op.type} power=${op.power}% feed=${op.feedRate}`);
-    lines.push(laserMode);
+    lines.push(`${laserMode} S0`);
     lines.push('');
 
     // When layerIds are specified on the operation, only process geometry
@@ -220,7 +220,7 @@ export function generateGcode(
   }
 
   lines.push('M5');
-  lines.push('G0 X0 Y0');
+  lines.push('G0 X0 Y0 S0');
   lines.push('; End');
 
   return lines.join('\n');
