@@ -10,8 +10,9 @@ import OperationsPanel from '../components/OperationsPanel';
 import LayerTransformPanel from '../components/LayerTransformPanel';
 import ShapeTransformPanel from '../components/ShapeTransformPanel';
 import type { Layer } from '../types';
+import { hasMultipleSubpaths } from '../utils/geometry';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faEye, faEyeSlash, faTrash, faFileImport, faObjectGroup, faLayerGroup } from '@fortawesome/free-solid-svg-icons';
+import { faEye, faEyeSlash, faTrash, faFileImport, faObjectGroup, faLayerGroup, faScissors } from '@fortawesome/free-solid-svg-icons';
 
 const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];
 
@@ -29,6 +30,8 @@ export default function Editor() {
   const removeShapes = useProjectStore(s => s.removeShapes);
   const renameShape = useProjectStore(s => s.renameShape);
   const mergeLayers = useProjectStore(s => s.mergeLayers);
+  const splitShapeSubpaths = useProjectStore(s => s.splitShapeSubpaths);
+  const splitLayerIntoShapeLayers = useProjectStore(s => s.splitLayerIntoShapeLayers);
   const updateShapePaths = useProjectStore(s => s.updateShapePaths);
   const saveVersion = useProjectStore(s => s.saveVersion);
   const restoreVersion = useProjectStore(s => s.restoreVersion);
@@ -203,6 +206,28 @@ export default function Editor() {
     }
     addToast('info', `Popped ${shapes.length} shape(s) to new layer`);
     setSelectedShapeIds(new Set());
+  };
+
+  /** Split selected shape (which must have multiple subpaths) into separate shapes */
+  const handleSplitShapeSubpaths = () => {
+    const singleLayerId = selectedLayerIds.size === 1 ? Array.from(selectedLayerIds)[0] : null;
+    if (!singleLayerId || selectedShapeIds.size !== 1) return;
+    const shapeId = Array.from(selectedShapeIds)[0];
+    const ok = splitShapeSubpaths(shapeId, singleLayerId);
+    if (ok) {
+      addToast('info', 'Shape split into subpaths');
+      setSelectedShapeIds(new Set());
+    }
+  };
+
+  /** Split a layer into separate layers, one per shape */
+  const handleSplitLayerIntoShapeLayers = (layerId: string) => {
+    const newIds = splitLayerIntoShapeLayers(layerId);
+    if (newIds.length > 0) {
+      setSelectedLayerIds(new Set(newIds));
+      setSelectedShapeIds(new Set());
+      addToast('info', `Split into ${newIds.length} layers`);
+    }
   };
 
   /** Layer drag-and-drop handlers */
@@ -436,6 +461,13 @@ export default function Editor() {
                       >{expandedLayerIds.has(layer.id) ? '▾' : `▸ ${layer.shapes.length}`}</button>
                     )}
                     <button onClick={e => { e.stopPropagation(); removeLayer(layer.id); if (selectedLayerIds.has(layer.id)) setSelectedLayerIds(prev => { const n = new Set(prev); n.delete(layer.id); return n; }); }} className="text-gray-500 hover:text-red-400 text-xs" title="Delete layer"><FontAwesomeIcon icon={faTrash} /></button>
+                    {layer.shapes.length > 1 && (
+                      <button
+                        onClick={e => { e.stopPropagation(); handleSplitLayerIntoShapeLayers(layer.id); }}
+                        className="text-gray-500 hover:text-blue-400 text-xs"
+                        title={`Split into ${layer.shapes.length} layers (one per shape)`}
+                      ><FontAwesomeIcon icon={faScissors} /></button>
+                    )}
                   </div>
 
                   {/* Expanded shapes */}
@@ -478,6 +510,17 @@ export default function Editor() {
                         <div className="flex items-center gap-1 mt-1 pt-1 border-t border-gray-700">
                           <span className="text-xs text-gray-500">{selectedShapeIds.size} selected</span>
                           <div className="flex-1" />
+                          {/* Show Split only when exactly one shape is selected and it has multiple subpaths */}
+                          {selectedShapeIds.size === 1 && (() => {
+                            const shape = layer.shapes.find(s => selectedShapeIds.has(s.id));
+                            return shape && hasMultipleSubpaths(shape.d) ? (
+                              <button
+                                onClick={e => { e.stopPropagation(); handleSplitShapeSubpaths(); }}
+                                className="text-xs text-blue-400 hover:text-blue-300"
+                                title="Split shape into separate shapes by subpath"
+                              >Split</button>
+                            ) : null;
+                          })()}
                           <button
                             onClick={e => { e.stopPropagation(); handlePopSelectedToNewLayer(); }}
                             className="text-xs text-orange-400 hover:text-orange-300"
