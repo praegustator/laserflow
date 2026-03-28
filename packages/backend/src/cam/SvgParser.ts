@@ -1,6 +1,181 @@
 import { parseSync } from 'svgson';
 import type { INode } from 'svgson';
+import { SVGPathData, SVGPathDataTransformer } from 'svg-pathdata';
 import type { PathGeometry } from '../types/index.js';
+
+/* ── 2×3 affine matrix [a, b, c, d, e, f]: x'=ax+cy+e, y'=bx+dy+f ── */
+
+type Matrix = [number, number, number, number, number, number];
+
+function identityMatrix(): Matrix {
+  return [1, 0, 0, 1, 0, 0];
+}
+
+function isIdentity(m: Matrix): boolean {
+  return (
+    Math.abs(m[0] - 1) < 1e-12 && Math.abs(m[1]) < 1e-12 &&
+    Math.abs(m[2]) < 1e-12 && Math.abs(m[3] - 1) < 1e-12 &&
+    Math.abs(m[4]) < 1e-12 && Math.abs(m[5]) < 1e-12
+  );
+}
+
+function multiplyMatrices(m1: Matrix, m2: Matrix): Matrix {
+  const [a1, b1, c1, d1, e1, f1] = m1;
+  const [a2, b2, c2, d2, e2, f2] = m2;
+  return [
+    a1 * a2 + c1 * b2,
+    b1 * a2 + d1 * b2,
+    a1 * c2 + c1 * d2,
+    b1 * c2 + d1 * d2,
+    a1 * e2 + c1 * f2 + e1,
+    b1 * e2 + d1 * f2 + f1,
+  ];
+}
+
+/* ── SVG unit / viewBox helpers ──────────────────────────────────────── */
+
+/** Tags whose children should NOT be extracted as visible geometry. */
+const NON_VISUAL_TAGS = new Set([
+  'defs', 'clippath', 'mask', 'symbol', 'pattern', 'marker',
+  'metadata', 'title', 'desc', 'style', 'script',
+  'lineargradient', 'radialgradient', 'filter',
+]);
+
+/**
+ * Parse an SVG length value with a physical unit into millimetres.
+ * Returns `null` for unitless / px / em / % values so that we only scale
+ * when we have a reliable physical dimension.
+ */
+export function parseSvgLength(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const m = raw.trim().match(/^([+-]?[\d.]+(?:e[+-]?\d+)?)\s*(mm|cm|in|pt|pc)$/i);
+  if (!m) return null;
+  const num = parseFloat(m[1]);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  switch (m[2].toLowerCase()) {
+    case 'mm': return num;
+    case 'cm': return num * 10;
+    case 'in': return num * 25.4;
+    case 'pt': return num * 25.4 / 72;
+    case 'pc': return num * 25.4 / 6;
+    default: return null;
+  }
+}
+
+/** Parse an SVG `viewBox` attribute into its four components. */
+export function parseViewBox(raw: string | undefined): { minX: number; minY: number; width: number; height: number } | null {
+  if (!raw) return null;
+  const parts = raw.trim().split(/[\s,]+/).map(Number);
+  if (parts.length !== 4 || parts.some(n => !Number.isFinite(n))) return null;
+  const [minX, minY, width, height] = parts;
+  if (width <= 0 || height <= 0) return null;
+  return { minX, minY, width, height };
+}
+
+/**
+ * Compute the root transformation matrix that maps SVG user-space
+ * coordinates into millimetres.
+ *
+ * Strategy:
+ *   1. If viewBox AND width/height with physical units exist, compute exact
+ *      mm-per-viewBox-unit scaling.  This handles the typical Illustrator
+ *      export: `width="10mm" viewBox="0 0 28.35 28.35"`.
+ *   2. Otherwise return the identity – existing laser-cutter SVGs that
+ *      already use mm as their coordinate unit continue to work unchanged.
+ */
+export function computeRootMatrix(attrs: Record<string, string>): Matrix {
+  const vb = parseViewBox(attrs['viewBox'] ?? attrs['viewbox']);
+  const wMm = parseSvgLength(attrs['width']);
+  const hMm = parseSvgLength(attrs['height']);
+
+  if (vb && wMm !== null && hMm !== null) {
+    const sx = wMm / vb.width;
+    const sy = hMm / vb.height;
+    return [sx, 0, 0, sy, -vb.minX * sx, -vb.minY * sy];
+  }
+
+  // viewBox with non-zero origin but no physical dimensions: shift only
+  if (vb && (vb.minX !== 0 || vb.minY !== 0)) {
+    return [1, 0, 0, 1, -vb.minX, -vb.minY];
+  }
+
+  return identityMatrix();
+}
+
+/* ── SVG transform attribute parser ──────────────────────────────────── */
+
+/**
+ * Parse an SVG `transform` attribute into a combined affine matrix.
+ * Supports: matrix, translate, scale, rotate, skewX, skewY.
+ */
+export function parseTransformAttr(raw: string): Matrix {
+  let matrix: Matrix = identityMatrix();
+  const regex = /(\w+)\s*\(([^)]*)\)/g;
+  let match;
+  while ((match = regex.exec(raw)) !== null) {
+    const fn = match[1].toLowerCase();
+    const args = match[2].split(/[\s,]+/).filter(Boolean).map(Number);
+    let m: Matrix;
+    switch (fn) {
+      case 'matrix':
+        if (args.length < 6) continue;
+        m = [args[0], args[1], args[2], args[3], args[4], args[5]];
+        break;
+      case 'translate':
+        m = [1, 0, 0, 1, args[0] || 0, args[1] || 0];
+        break;
+      case 'scale': {
+        const sx = args[0] ?? 1;
+        const sy = args[1] ?? sx;
+        m = [sx, 0, 0, sy, 0, 0];
+        break;
+      }
+      case 'rotate': {
+        const angle = (args[0] ?? 0) * Math.PI / 180;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        if (args.length >= 3) {
+          const cx = args[1], cy = args[2];
+          m = [cos, sin, -sin, cos, cx - cos * cx + sin * cy, cy - sin * cx - cos * cy];
+        } else {
+          m = [cos, sin, -sin, cos, 0, 0];
+        }
+        break;
+      }
+      case 'skewx': {
+        const a = Math.tan((args[0] ?? 0) * Math.PI / 180);
+        m = [1, 0, a, 1, 0, 0];
+        break;
+      }
+      case 'skewy': {
+        const a = Math.tan((args[0] ?? 0) * Math.PI / 180);
+        m = [1, a, 0, 1, 0, 0];
+        break;
+      }
+      default:
+        continue;
+    }
+    matrix = multiplyMatrices(matrix, m);
+  }
+  return matrix;
+}
+
+/* ── Path transformation helper ──────────────────────────────────────── */
+
+function applyMatrixToPath(d: string, matrix: Matrix): string {
+  if (isIdentity(matrix)) return d;
+  try {
+    const [a, b, c, dd, e, f] = matrix;
+    return new SVGPathData(d)
+      .toAbs()
+      .transform(SVGPathDataTransformer.MATRIX(a, b, c, dd, e, f))
+      .encode();
+  } catch {
+    return d;
+  }
+}
+
+/* ── Shape-to-path converters ────────────────────────────────────────── */
 
 function rectToPath(attrs: Record<string, string>): string {
   const x = parseFloat(attrs['x'] ?? '0');
@@ -50,8 +225,20 @@ function polylineToPath(attrs: Record<string, string>, close: boolean): string {
   return d;
 }
 
-function walkTree(node: INode, paths: PathGeometry[]): void {
+/* ── Tree walker ─────────────────────────────────────────────────────── */
+
+function walkTree(node: INode, paths: PathGeometry[], transform: Matrix): void {
   const tag = node.name.toLowerCase();
+
+  // Skip non-visual containers — their children must not be extracted
+  if (NON_VISUAL_TAGS.has(tag)) return;
+
+  // Accumulate element-level transform
+  let currentTransform = transform;
+  const transformAttr = node.attributes['transform'];
+  if (transformAttr) {
+    currentTransform = multiplyMatrices(transform, parseTransformAttr(transformAttr));
+  }
 
   let d: string | null = null;
 
@@ -80,18 +267,20 @@ function walkTree(node: INode, paths: PathGeometry[]): void {
   }
 
   if (d && d.trim()) {
+    const transformed = applyMatrixToPath(d.trim(), currentTransform);
     const layerId = node.attributes['data-layer'] ?? node.attributes['id'] ?? undefined;
-    paths.push({ d: d.trim(), layerId });
+    paths.push({ d: transformed, layerId });
   }
 
   for (const child of node.children ?? []) {
-    walkTree(child, paths);
+    walkTree(child, paths, currentTransform);
   }
 }
 
 export async function parseSvg(svgContent: string): Promise<PathGeometry[]> {
   const node = parseSync(svgContent);
+  const rootMatrix = computeRootMatrix(node.attributes);
   const paths: PathGeometry[] = [];
-  walkTree(node, paths);
+  walkTree(node, paths, rootMatrix);
   return paths;
 }
