@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMachineStore } from '../store/machineStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import type { ConsoleEntry } from '../types';
+import { grblErrorDescription } from '../utils/grblCodes';
 
 function EntryRow({ entry }: { entry: ConsoleEntry }) {
   const time = new Date(entry.timestamp).toLocaleTimeString('en-US', {
@@ -23,11 +24,18 @@ function EntryRow({ entry }: { entry: ConsoleEntry }) {
 
   const arrow = entry.direction === 'out' ? '→' : '←';
 
+  const description = isError ? grblErrorDescription(entry.line) : undefined;
+
   return (
     <div className="flex items-start gap-2 px-3 py-0.5 hover:bg-gray-800/40 group font-mono text-xs leading-5">
       <span className="text-gray-600 flex-shrink-0 w-[68px]">{time}</span>
       <span className={`flex-shrink-0 ${lineColor}`}>{arrow}</span>
-      <span className={lineColor}>{entry.line}</span>
+      <span className={lineColor}>
+        {entry.line}
+        {description && (
+          <span className="text-red-300/70 ml-2 not-italic font-sans">— {description}</span>
+        )}
+      </span>
     </div>
   );
 }

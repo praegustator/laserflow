@@ -46,6 +46,10 @@ export interface Job {
   operations: Operation[];
   gcode?: string;
   errorMessage?: string;
+  /** 1-based line number in the G-code that caused the error */
+  failedGcodeLineNumber?: number;
+  /** Exact G-code text of the line that caused the error */
+  failedGcodeLineContent?: string;
   projectId?: string;
   projectVersion?: string;
 }

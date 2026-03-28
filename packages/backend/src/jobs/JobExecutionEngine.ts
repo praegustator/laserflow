@@ -7,6 +7,13 @@ import type { Job, JobProgress, JobStatus } from '../types/index.js';
 // Streaming must not exceed this limit or commands will be dropped/corrupted.
 const GRBL_BUFFER_SIZE = 127;
 
+interface SentLineRecord {
+  /** 1-based line number within the G-code file */
+  lineNumber: number;
+  /** Exact G-code text that was sent */
+  content: string;
+}
+
 export class JobExecutionEngine extends EventEmitter {
   private static _instance: JobExecutionEngine;
   private currentJob: Job | null = null;
@@ -17,6 +24,8 @@ export class JobExecutionEngine extends EventEmitter {
   private paused = false;
   private aborted = false;
   private sentLines: number[] = [];
+  /** Parallel queue to sentLines that tracks content and line number of each sent command. */
+  private sentLineContents: SentLineRecord[] = [];
 
   private constructor() {
     super();
@@ -34,12 +43,18 @@ export class JobExecutionEngine extends EventEmitter {
     const resp = parseResponse(line);
     if (resp.type === 'ok' || resp.type === 'error') {
       const sentLen = this.sentLines.shift();
+      const sentRecord = this.sentLineContents.shift();
       if (sentLen !== undefined) {
         this.bytesSent -= sentLen;
       }
 
       if (resp.type === 'error' && this.currentJob) {
-        this.emit('jobError', { jobId: this.currentJob.id, error: line });
+        this.emit('jobError', {
+          jobId: this.currentJob.id,
+          error: line,
+          failedGcodeLineNumber: sentRecord?.lineNumber,
+          failedGcodeLineContent: sentRecord?.content,
+        });
         this.aborted = true;
         return;
       }
@@ -66,6 +81,7 @@ export class JobExecutionEngine extends EventEmitter {
       });
 
       this.sentLines.push(lineBytes);
+      this.sentLineContents.push({ lineNumber: this.currentLine + 1, content: line });
       this.bytesSent += lineBytes;
       this.currentLine++;
 
@@ -105,6 +121,7 @@ export class JobExecutionEngine extends EventEmitter {
     this.currentLine = 0;
     this.bytesSent = 0;
     this.sentLines = [];
+    this.sentLineContents = [];
     this.paused = false;
     this.aborted = false;
     this.startTime = Date.now();
@@ -133,6 +150,7 @@ export class JobExecutionEngine extends EventEmitter {
     this.currentLine = 0;
     this.bytesSent = 0;
     this.sentLines = [];
+    this.sentLineContents = [];
   }
 }
 

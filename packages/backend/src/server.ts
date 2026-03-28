@@ -39,14 +39,16 @@ export async function buildServer() {
     wsBroadcaster.broadcast('jobStatus', { jobId, status: 'completed' });
   });
 
-  jobEngine.on('jobError', ({ jobId, error }: { jobId: string; error: string }) => {
+  jobEngine.on('jobError', ({ jobId, error, failedGcodeLineNumber, failedGcodeLineContent }: { jobId: string; error: string; failedGcodeLineNumber?: number; failedGcodeLineContent?: string }) => {
     const job = jobRepo.findById(jobId);
     if (job) {
       job.status = 'error';
       job.errorMessage = String(error);
+      job.failedGcodeLineNumber = failedGcodeLineNumber;
+      job.failedGcodeLineContent = failedGcodeLineContent;
       jobRepo.save(job);
     }
-    wsBroadcaster.broadcast('jobStatus', { jobId, status: 'error', error });
+    wsBroadcaster.broadcast('jobStatus', { jobId, status: 'error', error, failedGcodeLineNumber, failedGcodeLineContent });
   });
 
   registerPortRoutes(app);
