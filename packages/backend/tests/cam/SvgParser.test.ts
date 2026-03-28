@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSvg, parseSvgLength, parseViewBox, computeRootMatrix, parseTransformAttr } from '../../src/cam/SvgParser.js';
+import { parseSvg, parseSvgLength, parseViewBox, computeRootMatrix, parseTransformAttr, removeClosedPathSpurs } from '../../src/cam/SvgParser.js';
 
 /** Helper: extract all absolute X/Y coordinate pairs from a path d string. */
 function extractCoords(d: string): Array<[number, number]> {
@@ -301,5 +301,69 @@ describe('parseTransformAttr', () => {
     // x' = 2*x + 10, y' = 2*y
     expect(m[0]).toBeCloseTo(2);
     expect(m[4]).toBeCloseTo(10);
+  });
+});
+
+describe('removeClosedPathSpurs', () => {
+  it('removes spur from Illustrator-style closed path', () => {
+    // Illustrator rectangle: starts at (27.35,1) instead of corner (28.35,0)
+    const input = 'M27.35 1L28.35 0L0 0L0 28.35L28.35 28.35L28.35 0L28.35 0Z';
+    const cleaned = removeClosedPathSpurs(input);
+    const coords = extractCoords(cleaned);
+    // Start should be relocated to (28.35, 0) — no spur diagonal
+    expect(coords[0][0]).toBeCloseTo(28.35);
+    expect(coords[0][1]).toBeCloseTo(0);
+    // Should NOT contain the original spur start point (27.35, 1)
+    const hasSpur = coords.some(([x, y]) => Math.abs(x - 27.35) < 0.01 && Math.abs(y - 1) < 0.01);
+    expect(hasSpur).toBe(false);
+  });
+
+  it('does not modify paths without spurs', () => {
+    // Clean rectangle — no spur
+    const input = 'M0 0L10 0L10 10L0 10Z';
+    const cleaned = removeClosedPathSpurs(input);
+    const coords = extractCoords(cleaned);
+    expect(coords[0][0]).toBeCloseTo(0);
+    expect(coords[0][1]).toBeCloseTo(0);
+  });
+
+  it('does not modify open paths', () => {
+    const input = 'M0 0L10 0L10 10';
+    const cleaned = removeClosedPathSpurs(input);
+    // Should be unchanged
+    expect(cleaned).toBe(input);
+  });
+
+  it('does not modify closed paths where first and last vertices differ', () => {
+    // Star-like path: first L destination differs from last L destination
+    const input = 'M5 0L10 10L0 4L10 4L0 10Z';
+    const cleaned = removeClosedPathSpurs(input);
+    const coords = extractCoords(cleaned);
+    // Start should remain at (5, 0)
+    expect(coords[0][0]).toBeCloseTo(5);
+    expect(coords[0][1]).toBeCloseTo(0);
+  });
+});
+
+describe('parseSvg – Illustrator rectangle', () => {
+  it('produces a clean rectangle without diagonal spur', async () => {
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" width="10mm" height="10mm" viewBox="0 0 28.35 28.35">
+  <path d="M27.35,1,28.35,0H0v28.35h28.35V0h0Z" fill="none" stroke="#000" stroke-miterlimit="10"/>
+</svg>`;
+    const paths = await parseSvg(svg);
+    expect(paths).toHaveLength(1);
+
+    const coords = extractCoords(paths[0].d);
+    // All coordinates should be near the rectangle corners (0,0), (10,0), (0,10), (10,10)
+    // No coordinate should be at the spur point (~9.65, ~0.35)
+    for (const [x, y] of coords) {
+      const nearCorner =
+        (Math.abs(x) < 0.1 && Math.abs(y) < 0.1) ||       // (0,0)
+        (Math.abs(x - 10) < 0.1 && Math.abs(y) < 0.1) ||  // (10,0)
+        (Math.abs(x) < 0.1 && Math.abs(y - 10) < 0.1) ||  // (0,10)
+        (Math.abs(x - 10) < 0.1 && Math.abs(y - 10) < 0.1); // (10,10)
+      expect(nearCorner).toBe(true);
+    }
   });
 });
