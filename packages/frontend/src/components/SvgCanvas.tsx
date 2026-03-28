@@ -134,10 +134,12 @@ export default function SvgCanvas({ layers, operations, selectedLayerIds, select
     interactMode.current = 'pan';
   }, []);
 
-  // Get color for a layer based on operations
+  // Get color for a layer based on operations or custom color
   const getLayerColor = (layerId: string, layerIdx: number) => {
     const op = operations.find(o => o.layerIds?.includes(layerId) || o.layerId === layerId);
     if (op) return OP_COLORS[op.type] ?? OP_COLORS.cut;
+    const layer = layers[layerIdx];
+    if (layer?.color) return layer.color;
     return LAYER_COLORS[layerIdx % LAYER_COLORS.length];
   };
 

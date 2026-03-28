@@ -54,6 +54,8 @@ export interface Layer {
   mirrorY: boolean;
   /** Pivot point anchor for transforms */
   pivot: PivotAnchor;
+  /** Custom color for the layer (hex string). Falls back to index-based color when undefined. */
+  color?: string;
 }
 
 /** An SVG file imported into a project */

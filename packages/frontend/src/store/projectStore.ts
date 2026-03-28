@@ -26,6 +26,7 @@ interface ProjectStore {
   addLayer: (name: string) => void;
   removeLayer: (layerId: string) => void;
   renameLayer: (layerId: string, name: string) => void;
+  updateLayerColor: (layerId: string, color: string) => void;
   updateLayerTransform: (layerId: string, partial: Partial<Pick<Layer, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation' | 'mirrorX' | 'mirrorY' | 'pivot'>>) => void;
   toggleLayerVisibility: (layerId: string) => void;
   moveLayerUp: (layerId: string) => void;
@@ -236,6 +237,17 @@ export const useProjectStore = create<ProjectStore>()(
           projects: updateProject(s.projects, activeProjectId, p => ({
             ...p,
             layers: p.layers.map(l => l.id === layerId ? { ...l, name } : l),
+          })),
+        }));
+      },
+
+      updateLayerColor: (layerId: string, color: string) => {
+        const { activeProjectId } = get();
+        if (!activeProjectId) return;
+        set(s => ({
+          projects: updateProject(s.projects, activeProjectId, p => ({
+            ...p,
+            layers: p.layers.map(l => l.id === layerId ? { ...l, color } : l),
           })),
         }));
       },
