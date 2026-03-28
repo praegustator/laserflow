@@ -231,7 +231,7 @@ export function registerRoutes(app: FastifyInstance): void {
       id: uuidv4(),
       name: `${job.name} (copy)`,
       createdAt: new Date().toISOString(),
-      status: 'idle',
+      status: job.gcode ? 'queued' : 'idle',
       errorMessage: undefined,
     };
 
