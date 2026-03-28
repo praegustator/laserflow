@@ -86,6 +86,14 @@ export default function JobCard({ job, onView }: Props) {
           {errorDescription && (
             <p className="text-red-300/80">{errorDescription}</p>
           )}
+          {job.failedGcodeLineContent && (
+            <p className="font-mono text-red-300/60 pt-0.5 border-t border-red-900/40">
+              {job.failedGcodeLineNumber !== undefined && (
+                <span className="text-red-400/60 mr-1">line {job.failedGcodeLineNumber}:</span>
+              )}
+              {job.failedGcodeLineContent}
+            </p>
+          )}
         </div>
       )}
 

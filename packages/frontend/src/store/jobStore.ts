@@ -21,7 +21,7 @@ interface JobStore {
   emergencyStop: () => Promise<void>;
   setActiveJobId: (id: string | null) => void;
   updateJobProgress: (jobId: string, progress: JobProgress) => void;
-  updateJobStatus: (jobId: string, status: Job['status']) => void;
+  updateJobStatus: (jobId: string, status: Job['status'], errorFields?: { errorMessage?: string; failedGcodeLineNumber?: number; failedGcodeLineContent?: string }) => void;
 }
 
 export const useJobStore = create<JobStore>((set, get) => ({
@@ -138,9 +138,9 @@ export const useJobStore = create<JobStore>((set, get) => ({
     set((s) => ({ jobProgress: { ...s.jobProgress, [jobId]: progress } }));
   },
 
-  updateJobStatus: (jobId, status) => {
+  updateJobStatus: (jobId, status, errorFields) => {
     set((s) => ({
-      jobs: s.jobs.map((j) => (j.id === jobId ? { ...j, status } : j)),
+      jobs: s.jobs.map((j) => (j.id === jobId ? { ...j, status, ...errorFields } : j)),
     }));
   },
 }));

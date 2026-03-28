@@ -55,8 +55,12 @@ function AppInner() {
                 updateJobStatus(p.jobId, 'completed');
               }
             } else if (msg.type === 'jobStatus') {
-              const s = msg.data as { jobId: string; status: import('./types').JobStatus };
-              updateJobStatus(s.jobId, s.status);
+              const s = msg.data as { jobId: string; status: import('./types').JobStatus; error?: string; failedGcodeLineNumber?: number; failedGcodeLineContent?: string };
+              updateJobStatus(s.jobId, s.status, s.status === 'error' ? {
+                errorMessage: s.error,
+                failedGcodeLineNumber: s.failedGcodeLineNumber,
+                failedGcodeLineContent: s.failedGcodeLineContent,
+              } : undefined);
             }
           } catch {
             // ignore malformed messages
