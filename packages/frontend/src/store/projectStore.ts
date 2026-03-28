@@ -53,8 +53,8 @@ interface ProjectStore {
   splitLayerIntoShapeLayers: (layerId: string) => string[];
 
   // Operations
-  addOperation: () => void;
-  addOperationForLayers: (layerIds: string[]) => void;
+  addOperation: () => string | null;
+  addOperationForLayers: (layerIds: string[]) => string | null;
   updateOperation: (opId: string, partial: Partial<Operation>) => void;
   removeOperation: (opId: string) => void;
   moveOperationUp: (opId: string) => void;
@@ -63,7 +63,7 @@ interface ProjectStore {
   toggleOperationEnabled: (opId: string) => void;
   assignLayerToOperation: (opId: string, layerId: string) => void;
   unassignLayerFromOperation: (opId: string, layerId: string) => void;
-  duplicateOperation: (opId: string) => void;
+  duplicateOperation: (opId: string, selectedLayerIds?: string[]) => string | null;
 
   // Versioning
   saveVersion: (label: string) => void;
@@ -562,7 +562,7 @@ export const useProjectStore = create<ProjectStore>()(
         if (!layer || layer.shapes.length < 2) return [];
         const newLayers: Layer[] = layer.shapes.map((shape, i) => ({
           id: uid(),
-          name: `${layer.name} ${i + 1}`,
+          name: shape.name || `${layer.name} ${i + 1}`,
           shapes: [shape],
           visible: layer.visible,
           offsetX: layer.offsetX,
@@ -598,7 +598,7 @@ export const useProjectStore = create<ProjectStore>()(
 
       addOperation: () => {
         const { activeProjectId } = get();
-        if (!activeProjectId) return;
+        if (!activeProjectId) return null;
         const op: Operation = {
           id: uid(),
           type: 'cut',
@@ -615,11 +615,12 @@ export const useProjectStore = create<ProjectStore>()(
             gcodeUpToDate: false,
           })),
         }));
+        return op.id;
       },
 
       addOperationForLayers: (layerIds: string[]) => {
         const { activeProjectId } = get();
-        if (!activeProjectId) return;
+        if (!activeProjectId) return null;
         const op: Operation = {
           id: uid(),
           type: 'cut',
@@ -636,6 +637,7 @@ export const useProjectStore = create<ProjectStore>()(
             gcodeUpToDate: false,
           })),
         }));
+        return op.id;
       },
 
       updateOperation: (opId: string, partial: Partial<Operation>) => {
@@ -751,16 +753,17 @@ export const useProjectStore = create<ProjectStore>()(
         }));
       },
 
-      duplicateOperation: (opId: string) => {
+      duplicateOperation: (opId: string, selectedLayerIds?: string[]) => {
         const { activeProjectId, projects } = get();
         const project = getActiveProject(projects, activeProjectId);
-        if (!project) return;
+        if (!project) return null;
         const original = project.operations.find(op => op.id === opId);
-        if (!original) return;
+        if (!original) return null;
         const dup: Operation = {
           ...structuredClone(original),
           id: uid(),
           label: `${original.label ?? original.type} (copy)`,
+          layerIds: selectedLayerIds && selectedLayerIds.length > 0 ? selectedLayerIds : structuredClone(original.layerIds),
         };
         const idx = project.operations.findIndex(op => op.id === opId);
         set(s => ({
@@ -770,6 +773,7 @@ export const useProjectStore = create<ProjectStore>()(
             return { ...p, operations: ops, gcodeUpToDate: false };
           }),
         }));
+        return dup.id;
       },
 
       saveVersion: (label: string) => {
