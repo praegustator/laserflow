@@ -29,7 +29,7 @@ describe('GcodeGenerator', () => {
       passes: 1,
     }];
     const gcode = generateGcode(geometry, operations, defaultProfile);
-    expect(gcode).toContain('M3');
+    expect(gcode).toContain('M3 S0');
     expect(gcode).toContain('G1');
     expect(gcode).toContain('F600');
     expect(gcode).toContain('S800'); // 80% of 1000
@@ -45,8 +45,33 @@ describe('GcodeGenerator', () => {
       passes: 1,
     }];
     const gcode = generateGcode(geometry, operations, defaultProfile);
-    expect(gcode).toContain('M4');
+    expect(gcode).toContain('M4 S0');
     expect(gcode).toContain('S500'); // 50% of 1000
+  });
+
+  it('includes S parameter on all G0 and M3/M4 lines for GRBL compatibility', () => {
+    const geometry: PathGeometry[] = [{ d: 'M 0 0 L 100 0' }];
+    const operations: Operation[] = [{
+      id: 'grbl-compat',
+      type: 'cut',
+      feedRate: 600,
+      power: 80,
+      passes: 1,
+    }];
+    const gcode = generateGcode(geometry, operations, defaultProfile);
+    const lines = gcode.split('\n');
+
+    // Every G0 line must include S parameter
+    const g0Lines = lines.filter(l => l.startsWith('G0'));
+    for (const line of g0Lines) {
+      expect(line).toMatch(/S\d+/);
+    }
+
+    // Every M3/M4 line must include S parameter
+    const mLines = lines.filter(l => /^M[34]/.test(l));
+    for (const line of mLines) {
+      expect(line).toMatch(/S\d+/);
+    }
   });
 
   it('ignores operations with type ignore', () => {
@@ -90,14 +115,14 @@ describe('GcodeGenerator', () => {
 
     const gcode = generateGcode(geometry, operations, defaultProfile);
 
-    expect(gcode).toContain('M3');
-    expect(gcode).toContain('M4');
+    expect(gcode).toContain('M3 S0');
+    expect(gcode).toContain('M4 S0');
 
     // Verify each operation only processes its own layer's path.
     // cut-op targets layer1 (L 10 0 → X10.000) and must appear before M4.
     // engrave-op targets layer2 (L 50 0 → X50.000) and must appear after M4.
-    const m3Index = gcode.indexOf('M3');
-    const m4Index = gcode.indexOf('M4');
+    const m3Index = gcode.indexOf('M3 S0');
+    const m4Index = gcode.indexOf('M4 S0');
     const x10Index = gcode.indexOf('X10.000');
     const x50Index = gcode.indexOf('X50.000');
 
