@@ -177,6 +177,84 @@ function applyMatrixToPath(pathD: string, matrix: Matrix): string {
   }
 }
 
+/* ── Closed-path spur removal ────────────────────────────────────────── */
+
+/**
+ * Some SVG exporters (e.g. Adobe Illustrator) emit closed paths whose
+ * starting M point is slightly offset from the path's first real vertex,
+ * creating a short diagonal "spur" at the start and end of the sub-path.
+ *
+ * Pattern:  M(a) L(b) … L(b) Z   where (a) ≠ (b)
+ *
+ * The spur consists of:  M(a)→L(b) at the beginning  and  Z→(a) at the end.
+ * Fix: relocate M to (b) and drop the first L; Z then closes to (b),
+ * producing a zero-length close instead of the diagonal.
+ */
+export function removeClosedPathSpurs(pathD: string): string {
+  try {
+    const data = new SVGPathData(pathD).toAbs();
+    const cmds = data.commands;
+
+    let modified = false;
+    let i = 0;
+
+    while (i < cmds.length) {
+      if (cmds[i].type !== SVGPathData.MOVE_TO) { i++; continue; }
+
+      const mIdx = i;
+      // Find the end of this sub-path (next M or end of commands)
+      let endIdx = mIdx + 1;
+      while (endIdx < cmds.length && cmds[endIdx].type !== SVGPathData.MOVE_TO) {
+        endIdx++;
+      }
+      const subLen = endIdx - mIdx;
+      // Need at least M, L, …, L, Z  (4 commands minimum)
+      if (subLen < 4) { i = endIdx; continue; }
+
+      const lastCmd = cmds[endIdx - 1];
+      if (lastCmd.type !== SVGPathData.CLOSE_PATH) { i = endIdx; continue; }
+
+      const firstDraw = cmds[mIdx + 1];
+      if (firstDraw.type !== SVGPathData.LINE_TO) { i = endIdx; continue; }
+
+      // Find the last drawing command that has x,y before the Z
+      let lastDrawIdx = -1;
+      for (let j = endIdx - 2; j > mIdx; j--) {
+        const c = cmds[j];
+        if ('x' in c && 'y' in c) { lastDrawIdx = j; break; }
+      }
+      if (lastDrawIdx < 0) { i = endIdx; continue; }
+
+      const lastDraw = cmds[lastDrawIdx] as { x: number; y: number };
+      const firstLine = firstDraw as unknown as { x: number; y: number };
+      const mCmd = cmds[mIdx] as { x: number; y: number };
+
+      // Check: first L destination ≈ last drawing destination (same vertex)
+      if (Math.hypot(lastDraw.x - firstLine.x, lastDraw.y - firstLine.y) > 0.01) {
+        i = endIdx; continue;
+      }
+      // Check: M is actually offset from that vertex (there IS a spur)
+      if (Math.hypot(mCmd.x - firstLine.x, mCmd.y - firstLine.y) < 0.001) {
+        i = endIdx; continue;
+      }
+
+      // Relocate M to the first L destination and drop the first L
+      mCmd.x = firstLine.x;
+      mCmd.y = firstLine.y;
+      cmds.splice(mIdx + 1, 1);
+      endIdx--;
+      modified = true;
+
+      i = endIdx;
+    }
+
+    if (!modified) return pathD;
+    return new SVGPathData(cmds).encode();
+  } catch {
+    return pathD;
+  }
+}
+
 /* ── Shape-to-path converters ────────────────────────────────────────── */
 
 function rectToPath(attrs: Record<string, string>): string {
@@ -270,8 +348,9 @@ function walkTree(node: INode, paths: PathGeometry[], transform: Matrix): void {
 
   if (d && d.trim()) {
     const transformed = applyMatrixToPath(d.trim(), currentTransform);
+    const cleaned = removeClosedPathSpurs(transformed);
     const layerId = node.attributes['data-layer'] ?? node.attributes['id'] ?? undefined;
-    paths.push({ d: transformed, layerId });
+    paths.push({ d: cleaned, layerId });
   }
 
   for (const child of node.children ?? []) {
