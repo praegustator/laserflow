@@ -98,29 +98,12 @@ export default function JogControls() {
         </div>
       </div>
 
-      {/* Z axis */}
-      <div>
-        <div className="text-xs text-gray-500 uppercase mb-2">Z Axis</div>
-        <div className="flex gap-1">
-          <JogBtn
-            label="Z ▲"
-            onClick={() => jog('Z', 1)}
-            className="flex-1 py-2 text-xs"
-          />
-          <JogBtn
-            label="Z ▼"
-            onClick={() => jog('Z', -1)}
-            className="flex-1 py-2 text-xs"
-          />
-        </div>
-      </div>
-
       {/* Actions */}
       <div>
         <div className="text-xs text-gray-500 uppercase mb-2">Actions</div>
         <div className="grid grid-cols-2 gap-1">
           <button
-            onClick={() => sendRaw('$H')}
+            onClick={() => sendRaw('G90 G0 X0 Y0')}
             disabled={!connected}
             className="py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 transition-colors"
           >
