@@ -155,6 +155,6 @@ export interface JobProgress {
 }
 
 export interface WsMessage {
-  type: 'console' | 'machineStatus' | 'jobProgress';
+  type: 'console' | 'machineStatus' | 'jobProgress' | 'jobStatus';
   data: unknown;
 }

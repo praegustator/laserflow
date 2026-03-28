@@ -8,7 +8,7 @@ interface JobStore {
   jobProgress: Record<string, JobProgress>;
 
   fetchJobs: () => Promise<void>;
-  startJob: (jobId: string) => Promise<void>;
+  startJob: (jobId: string, frame?: boolean) => Promise<void>;
   pauseJob: (jobId: string) => Promise<void>;
   resumeJob: (jobId: string) => Promise<void>;
   abortJob: (jobId: string) => Promise<void>;
@@ -34,8 +34,8 @@ export const useJobStore = create<JobStore>((set, get) => ({
     set({ jobs: jobs.map(j => ({ ...j, layers: j.layers ?? [] })) });
   },
 
-  startJob: async (jobId: string) => {
-    await api.post(`/api/jobs/${jobId}/start`);
+  startJob: async (jobId: string, frame?: boolean) => {
+    await api.post(`/api/jobs/${jobId}/start`, { frame: frame !== false });
     set((s) => ({
       activeJobId: jobId,
       jobs: s.jobs.map((j) =>

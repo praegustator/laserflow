@@ -92,7 +92,7 @@ interface JobCardProps {
   progress: JobProgress | undefined;
   selected: boolean;
   onSelect: (id: string, toggle: boolean) => void;
-  onStart: () => void;
+  onStart: (frame: boolean) => void;
   onPause: () => void;
   onResume: () => void;
   onAbort: () => void;
@@ -121,6 +121,7 @@ function JobCard({
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState(job.name);
+  const [frameBeforeRun, setFrameBeforeRun] = useState(true);
 
   const handleNameDoubleClick = () => {
     setEditedName(job.name);
@@ -217,12 +218,26 @@ function JobCard({
       {/* Actions */}
       <div className="flex flex-wrap gap-1 pt-0.5">
         {(job.status === 'idle' || job.status === 'queued') && (
-          <button
-            onClick={onStart}
-            disabled={!machineConnected}
-            className="px-2 py-0.5 text-[10px] rounded bg-green-700 hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors flex items-center gap-1"
-            title={machineConnected ? 'Start job' : 'Machine not connected'}
-          ><FontAwesomeIcon icon={faPlay} /> Start</button>
+          <>
+            <button
+              onClick={() => onStart(frameBeforeRun)}
+              disabled={!machineConnected}
+              className="px-2 py-0.5 text-[10px] rounded bg-green-700 hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors flex items-center gap-1"
+              title={machineConnected ? 'Start job' : 'Machine not connected'}
+            ><FontAwesomeIcon icon={faPlay} /> Run</button>
+            <label
+              className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer select-none"
+              title="Trace bounding rectangle with laser off before running"
+            >
+              <input
+                type="checkbox"
+                checked={frameBeforeRun}
+                onChange={e => setFrameBeforeRun(e.target.checked)}
+                className="accent-orange-500 w-3 h-3"
+              />
+              Frame first
+            </label>
+          </>
         )}
         {(job.status === 'idle' || job.status === 'queued') && job.gcode && (
           <button
@@ -445,7 +460,7 @@ export default function Queue() {
     progress: jobProgress[job.id],
     selected: selectedIds.has(job.id),
     onSelect: handleSelect,
-    onStart: () => { void wrap(() => startJob(job.id), 'Job running — sending to machine')(); },
+    onStart: (frame: boolean) => { void wrap(() => startJob(job.id, frame), 'Job running — sending to machine')(); },
     onPause: () => { void wrap(() => pauseJob(job.id), 'Job paused')(); },
     onResume: () => { void wrap(() => resumeJob(job.id), 'Job resumed')(); },
     onAbort: () => { void wrap(() => abortJob(job.id), 'Job cancelled')(); },

@@ -12,6 +12,8 @@ import { registerRoutes as registerCommandRoutes } from './routes/commands.js';
 import { registerRoutes as registerJobRoutes } from './routes/jobs.js';
 import { registerRoutes as registerMaterialPresetRoutes } from './routes/materialPresets.js';
 import { registerRoutes as registerVersionRoutes } from './routes/version.js';
+import { jobEngine } from './jobs/JobExecutionEngine.js';
+import { jobRepo } from './jobs/JobRepository.js';
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -21,6 +23,31 @@ export async function buildServer() {
   await app.register(websocketPlugin);
 
   wsBroadcaster.setup(app);
+
+  // Wire job engine events to the WebSocket broadcaster so the frontend
+  // receives live progress updates, completion, and error notifications.
+  jobEngine.on('jobProgress', (progress: unknown) => {
+    wsBroadcaster.broadcast('jobProgress', progress);
+  });
+
+  jobEngine.on('jobCompleted', ({ jobId }: { jobId: string }) => {
+    const job = jobRepo.findById(jobId);
+    if (job) {
+      job.status = 'completed';
+      jobRepo.save(job);
+    }
+    wsBroadcaster.broadcast('jobStatus', { jobId, status: 'completed' });
+  });
+
+  jobEngine.on('jobError', ({ jobId, error }: { jobId: string; error: string }) => {
+    const job = jobRepo.findById(jobId);
+    if (job) {
+      job.status = 'error';
+      job.errorMessage = String(error);
+      jobRepo.save(job);
+    }
+    wsBroadcaster.broadcast('jobStatus', { jobId, status: 'error', error });
+  });
 
   registerPortRoutes(app);
   registerMachineRoutes(app);

@@ -54,6 +54,9 @@ function AppInner() {
               if (p.currentLine >= p.totalLines && p.totalLines > 0) {
                 updateJobStatus(p.jobId, 'completed');
               }
+            } else if (msg.type === 'jobStatus') {
+              const s = msg.data as { jobId: string; status: import('./types').JobStatus };
+              updateJobStatus(s.jobId, s.status);
             }
           } catch {
             // ignore malformed messages

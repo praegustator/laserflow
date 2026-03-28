@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { v4 as uuidv4 } from 'uuid';
-import { JobRepository } from '../jobs/JobRepository.js';
+import { jobRepo } from '../jobs/JobRepository.js';
 import { jobEngine } from '../jobs/JobExecutionEngine.js';
 import { serialManager } from '../serial/SerialManager.js';
 import { GRBL_REALTIME } from '../serial/GrblProtocol.js';
@@ -8,7 +8,56 @@ import { parseSvg } from '../cam/SvgParser.js';
 import { generateGcode, type PathTransform } from '../cam/GcodeGenerator.js';
 import { machineProfiles } from '../config/MachineProfiles.js';
 import type { Job, Operation } from '../types/index.js';
-const jobRepo = new JobRepository();
+
+/** Extract bounding box of G1 (cutting) moves from G-code. */
+function gcodeBBox(gcode: string): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  // Track current X/Y position, starting at origin (our generator always emits G0 X0 Y0 first).
+  let x = 0, y = 0;
+  // Use separate flags to know whether each axis has been explicitly set
+  let xSet = false, ySet = false;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let hasMove = false;
+  for (const raw of gcode.split('\n')) {
+    const line = raw.trim();
+    if (!line || line.startsWith(';')) continue;
+    // Match G0 / G1 regardless of whether there is whitespace before parameters
+    const isG0 = /^G0(?:\s|[A-Z]|$)/i.test(line);
+    const isG1 = /^G1(?:\s|[A-Z]|$)/i.test(line);
+    if (!isG0 && !isG1) continue;
+    const xm = line.match(/X(-?[\d.]+)/i);
+    const ym = line.match(/Y(-?[\d.]+)/i);
+    if (xm) { x = parseFloat(xm[1]); xSet = true; }
+    if (ym) { y = parseFloat(ym[1]); ySet = true; }
+    // Only update bbox for G1 (cutting) moves where at least one axis was specified
+    if (isG1 && (xm || ym) && xSet && ySet) {
+      hasMove = true;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+  return hasMove && Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
+}
+
+/** Generate G-code that traces the bounding rectangle with laser off at 1000 mm/min. */
+function frameGcode(bbox: { minX: number; minY: number; maxX: number; maxY: number }): string {
+  const f = (n: number) => n.toFixed(3);
+  const { minX, minY, maxX, maxY } = bbox;
+  return [
+    '; Frame trace',
+    'M5',
+    'G90',
+    `G0 X${f(minX)} Y${f(minY)} S0`,
+    `G1 X${f(maxX)} Y${f(minY)} F1000 S0`,
+    `G1 X${f(maxX)} Y${f(maxY)} F1000 S0`,
+    `G1 X${f(minX)} Y${f(maxY)} F1000 S0`,
+    `G1 X${f(minX)} Y${f(minY)} F1000 S0`,
+    `G0 X${f(minX)} Y${f(minY)} S0`,
+    '; End frame trace',
+    '',
+  ].join('\n');
+}
 
 export function registerRoutes(app: FastifyInstance): void {
   app.get('/api/jobs', async (_req, reply) => {
@@ -117,7 +166,7 @@ export function registerRoutes(app: FastifyInstance): void {
     return reply.code(201).send(job);
   });
 
-  app.post<{ Params: { id: string } }>('/api/jobs/:id/start', async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { frame?: boolean } }>('/api/jobs/:id/start', async (req, reply) => {
     const job = jobRepo.findById(req.params.id);
     if (!job) return reply.code(404).send({ error: 'Not found' });
     if (!job.gcode) return reply.code(400).send({ error: 'Job has no G-code' });
@@ -125,10 +174,20 @@ export function registerRoutes(app: FastifyInstance): void {
       return reply.code(400).send({ error: 'Machine is not connected' });
     }
 
+    // Prepend bounding-box frame trace (laser off) when requested (default: true).
+    const frame = req.body?.frame !== false;
+    let gcodeToRun = job.gcode;
+    if (frame) {
+      const bbox = gcodeBBox(job.gcode);
+      if (bbox) {
+        gcodeToRun = frameGcode(bbox) + job.gcode;
+      }
+    }
+
     job.status = 'running';
     job.errorMessage = undefined;
     jobRepo.save(job);
-    await jobEngine.start(job);
+    await jobEngine.start({ ...job, gcode: gcodeToRun });
     return reply.send({ status: 'running' });
   });
 

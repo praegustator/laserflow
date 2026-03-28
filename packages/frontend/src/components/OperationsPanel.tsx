@@ -53,14 +53,16 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
   return (
     <div
       className={`border rounded-lg overflow-hidden transition-colors ${op.enabled ? 'border-gray-700' : 'border-gray-800 opacity-60'} ${isDragOver ? 'border-orange-400 border-dashed' : ''}`}
-      draggable
-      onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; onDragStart(op.id); }}
       onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOver(op.id); }}
       onDrop={e => { e.preventDefault(); onDrop(); }}
-      onDragEnd={() => onDrop()}
     >
-      {/* Header */}
-      <div className="flex items-center gap-1 px-2 py-2 bg-gray-800 cursor-grab active:cursor-grabbing">
+      {/* Header — drag handle is restricted to this element only */}
+      <div
+        className="flex items-center gap-1 px-2 py-2 bg-gray-800 cursor-grab active:cursor-grabbing"
+        draggable
+        onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; onDragStart(op.id); }}
+        onDragEnd={() => onDrop()}
+      >
         <span className="text-xs text-gray-600 select-none mr-0.5">⠿</span>
         <button
           onClick={onToggleEnabled}
