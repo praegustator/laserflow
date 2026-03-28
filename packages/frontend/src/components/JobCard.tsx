@@ -1,5 +1,6 @@
 import type { Job, JobProgress } from '../types';
 import { useJobStore } from '../store/jobStore';
+import { grblErrorDescription } from '../utils/grblCodes';
 
 const STATUS_COLORS: Record<string, string> = {
   idle: 'bg-gray-600 text-gray-200',
@@ -49,6 +50,7 @@ export default function JobCard({ job, onView }: Props) {
 
   const createdAt = new Date(job.createdAt).toLocaleString();
   const colorClass = STATUS_COLORS[job.status] ?? STATUS_COLORS.idle;
+  const errorDescription = job.errorMessage ? grblErrorDescription(job.errorMessage) : undefined;
 
   return (
     <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 space-y-3 hover:border-gray-600 transition-colors">
@@ -79,9 +81,12 @@ export default function JobCard({ job, onView }: Props) {
 
       {/* Error */}
       {job.status === 'error' && job.errorMessage && (
-        <p className="text-xs text-red-400 bg-red-900/20 rounded p-2">
-          {job.errorMessage}
-        </p>
+        <div className="text-xs text-red-400 bg-red-900/20 rounded p-2 space-y-0.5">
+          <p className="font-mono">{job.errorMessage}</p>
+          {errorDescription && (
+            <p className="text-red-300/80">{errorDescription}</p>
+          )}
+        </div>
       )}
 
       {/* Actions */}
