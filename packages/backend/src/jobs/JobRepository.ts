@@ -54,3 +54,6 @@ export class JobRepository {
     this.persist();
   }
 }
+
+/** Shared singleton instance used by all route handlers and the server. */
+export const jobRepo = new JobRepository();
