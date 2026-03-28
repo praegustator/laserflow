@@ -319,3 +319,47 @@ export function computeMultiLayerWorldBBox(layers: Layer[]): BBox | null {
   if (!found) return null;
   return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
 }
+
+/**
+ * Split a multi-subpath SVG path `d` string into individual subpath strings.
+ * Each subpath starts with a MOVE_TO (M) command.
+ * Returns an array with one entry per subpath; single-subpath paths return a one-element array.
+ */
+export function splitPathIntoSubpaths(d: string): string[] {
+  try {
+    const commands = new SVGPathData(d).toAbs().commands;
+    const groups: (typeof commands)[] = [];
+    let current: typeof commands = [];
+    for (const cmd of commands) {
+      if (cmd.type === SVGPathData.MOVE_TO && current.length > 0) {
+        groups.push(current);
+        current = [];
+      }
+      current.push(cmd);
+    }
+    if (current.length > 0) groups.push(current);
+    return groups.map(cmds => SVGPathData.encode(cmds));
+  } catch {
+    return [d];
+  }
+}
+
+/**
+ * Returns true if the SVG path `d` string contains more than one subpath
+ * (i.e. more than one absolute MOVE_TO command).
+ */
+export function hasMultipleSubpaths(d: string): boolean {
+  try {
+    const commands = new SVGPathData(d).toAbs().commands;
+    let moveCount = 0;
+    for (const cmd of commands) {
+      if (cmd.type === SVGPathData.MOVE_TO) {
+        moveCount++;
+        if (moveCount > 1) return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}

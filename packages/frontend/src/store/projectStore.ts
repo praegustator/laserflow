@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '../api/client';
 import type { Project, ProjectFile, ProjectVersion, Layer, Shape, Operation, PathGeometry, Job } from '../types';
-import { computeShapesBoundingBox, bakeLayerTransform } from '../utils/geometry';
+import { computeShapesBoundingBox, bakeLayerTransform, splitPathIntoSubpaths } from '../utils/geometry';
 import { useAppSettings } from './appSettingsStore';
 
 function uid(): string {
@@ -44,6 +44,12 @@ interface ProjectStore {
 
   /** Merge multiple layers into one, baking each layer's transform into its shape paths. */
   mergeLayers: (layerIds: string[]) => string | null;
+
+  /** Split a shape whose `d` contains multiple subpaths into separate shapes (one per subpath). */
+  splitShapeSubpaths: (shapeId: string, layerId: string) => boolean;
+
+  /** Split a layer into separate layers, one per shape (original layer is removed). */
+  splitLayerIntoShapeLayers: (layerId: string) => string[];
 
   // Operations
   addOperation: () => void;
@@ -502,6 +508,80 @@ export const useProjectStore = create<ProjectStore>()(
           })),
         }));
         return target.id;
+      },
+
+      splitShapeSubpaths: (shapeId: string, layerId: string) => {
+        const { activeProjectId } = get();
+        if (!activeProjectId) return false;
+        const project = getActiveProject(get().projects, activeProjectId);
+        if (!project) return false;
+        const layer = project.layers.find(l => l.id === layerId);
+        if (!layer) return false;
+        const shape = layer.shapes.find(s => s.id === shapeId);
+        if (!shape) return false;
+        const subpaths = splitPathIntoSubpaths(shape.d);
+        if (subpaths.length < 2) return false;
+        const newShapes: Shape[] = subpaths.map((d, i) => ({
+          id: uid(),
+          name: `${shape.name} ${i + 1}`,
+          d,
+          sourceFileId: shape.sourceFileId,
+        }));
+        set(s => ({
+          projects: updateProject(s.projects, activeProjectId, p => ({
+            ...p,
+            layers: p.layers.map(l =>
+              l.id === layerId
+                ? { ...l, shapes: l.shapes.flatMap(sh => sh.id === shapeId ? newShapes : [sh]) }
+                : l
+            ),
+            gcodeUpToDate: false,
+          })),
+        }));
+        return true;
+      },
+
+      splitLayerIntoShapeLayers: (layerId: string) => {
+        const { activeProjectId } = get();
+        if (!activeProjectId) return [];
+        const project = getActiveProject(get().projects, activeProjectId);
+        if (!project) return [];
+        const layer = project.layers.find(l => l.id === layerId);
+        if (!layer || layer.shapes.length < 2) return [];
+        const newLayers: Layer[] = layer.shapes.map((shape, i) => ({
+          id: uid(),
+          name: `${layer.name} ${i + 1}`,
+          shapes: [shape],
+          visible: layer.visible,
+          offsetX: layer.offsetX,
+          offsetY: layer.offsetY,
+          scaleX: layer.scaleX,
+          scaleY: layer.scaleY,
+          rotation: layer.rotation,
+          mirrorX: layer.mirrorX,
+          mirrorY: layer.mirrorY,
+          pivot: layer.pivot,
+        }));
+        const newIds = newLayers.map(l => l.id);
+        set(s => ({
+          projects: updateProject(s.projects, activeProjectId, p => {
+            const idx = p.layers.findIndex(l => l.id === layerId);
+            const layersBefore = p.layers.slice(0, idx);
+            const layersAfter = p.layers.slice(idx + 1);
+            return {
+              ...p,
+              layers: [...layersBefore, ...newLayers, ...layersAfter],
+              operations: p.operations.map(op => {
+                if (!op.layerIds.includes(layerId)) return op;
+                const filtered = op.layerIds.filter(lid => lid !== layerId);
+                const merged = [...filtered, ...newIds];
+                return { ...op, layerIds: merged.filter((lid, i, arr) => arr.indexOf(lid) === i) };
+              }),
+              gcodeUpToDate: false,
+            };
+          }),
+        }));
+        return newIds;
       },
 
       addOperation: () => {
