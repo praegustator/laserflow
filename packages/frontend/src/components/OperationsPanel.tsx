@@ -541,13 +541,13 @@ export default function OperationsPanel({ project, layers, originPosition, selec
             <label className="text-xs text-gray-500 uppercase">Power (%)</label>
             <input
               type="range"
-              value={multiPower ?? 0}
+              value={multiPower ?? 50}
               min={0}
               max={100}
               onChange={e => applyToSelected({ power: Number(e.target.value) })}
-              className="w-full accent-orange-500"
+              className={`w-full accent-orange-500 ${multiPower === null ? 'opacity-40' : ''}`}
             />
-            <span className="text-xs text-gray-400">{multiPower !== null ? `${multiPower}%` : 'mixed'}</span>
+            <span className="text-xs text-gray-400">{multiPower !== null ? `${multiPower}%` : 'mixed — drag to set all'}</span>
           </div>
 
           {/* Passes */}
@@ -576,7 +576,7 @@ export default function OperationsPanel({ project, layers, originPosition, selec
             } else {
               newId = addOperation();
             }
-            if (newId) setExpandedOpIds(prev => new Set(prev).add(newId!));
+            if (newId) setExpandedOpIds(prev => new Set(prev).add(newId));
           }}
           className="w-full py-1.5 text-sm rounded border border-dashed border-gray-600 text-gray-400 hover:border-orange-500 hover:text-orange-400 transition-colors"
         >{selectedLayerIds && selectedLayerIds.size > 0
