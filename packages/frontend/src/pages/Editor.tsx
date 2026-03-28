@@ -398,7 +398,9 @@ export default function Editor() {
                   <p className="text-xs text-gray-600 mt-1">Click to browse or drag &amp; drop</p>
                 </div>
               ) : (
-                project.layers.map((layer, idx) => (
+                project.layers.map((layer, idx) => {
+                const currentColor = layer.color ?? LAYER_COLORS[idx % LAYER_COLORS.length];
+                return (
                 <div
                   key={layer.id}
                   draggable
@@ -430,7 +432,7 @@ export default function Editor() {
                     <div className="relative">
                       <span
                         className="w-2.5 h-2.5 rounded-full flex-shrink-0 cursor-pointer ring-1 ring-transparent hover:ring-gray-400 block"
-                        style={{ backgroundColor: layer.color ?? LAYER_COLORS[idx % LAYER_COLORS.length] }}
+                        style={{ backgroundColor: currentColor }}
                         title="Click to change layer color"
                         onClick={e => { e.stopPropagation(); setColorPickerLayerId(colorPickerLayerId === layer.id ? null : layer.id); }}
                       />
@@ -443,7 +445,7 @@ export default function Editor() {
                             {LAYER_COLORS.map(c => (
                               <button
                                 key={c}
-                                className={`w-5 h-5 rounded-full border-2 ${(layer.color ?? LAYER_COLORS[idx % LAYER_COLORS.length]) === c ? 'border-white' : 'border-transparent'} hover:border-gray-300`}
+                                className={`w-5 h-5 rounded-full border-2 ${currentColor === c ? 'border-white' : 'border-transparent'} hover:border-gray-300`}
                                 style={{ backgroundColor: c }}
                                 title={c}
                                 onClick={e => { e.stopPropagation(); updateLayerColor(layer.id, c); setColorPickerLayerId(null); }}
@@ -452,7 +454,7 @@ export default function Editor() {
                           </div>
                           <input
                             type="color"
-                            value={layer.color ?? LAYER_COLORS[idx % LAYER_COLORS.length]}
+                            value={currentColor}
                             onChange={e => { updateLayerColor(layer.id, e.target.value); }}
                             className="mt-1.5 w-full h-5 cursor-pointer bg-transparent border-0 p-0"
                             title="Pick custom color"
@@ -570,7 +572,7 @@ export default function Editor() {
                     </div>
                   )}
                 </div>
-              ))
+              )})
               )}
 
               {/* Bulk actions for multi-layer selection */}
