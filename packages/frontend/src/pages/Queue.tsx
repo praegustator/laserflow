@@ -115,12 +115,13 @@ interface JobCardProps {
   onDragStart?: () => void;
   onDragOver?: (e: React.DragEvent) => void;
   onDrop?: () => void;
+  onDragEnd?: () => void;
   machineConnected: boolean;
 }
 
 function JobCard({
   job, progress, selected, onSelect, onStart, onPause, onResume, onAbort,
-  onDelete, onDuplicate, onRerun, onTraceFrame, onPreviewGcode, onRename, projectName, draggable, onDragStart, onDragOver, onDrop,
+  onDelete, onDuplicate, onRerun, onTraceFrame, onPreviewGcode, onRename, projectName, draggable, onDragStart, onDragOver, onDrop, onDragEnd,
   machineConnected,
 }: JobCardProps) {
   const st = STATUS_STYLES[job.status] ?? STATUS_STYLES.idle;
@@ -150,6 +151,7 @@ function JobCard({
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDrop={onDrop}
+      onDragEnd={onDragEnd}
       className={`bg-gray-800 rounded-lg border p-3 space-y-1.5 transition-colors text-sm ${
         selected ? 'border-orange-500 ring-1 ring-orange-500/30' : 'border-gray-700 hover:border-gray-600'
       } ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
@@ -586,7 +588,7 @@ export default function Queue() {
                       const showBefore = isDropTarget && dragFromIdx > idx;
                       const showAfter = isDropTarget && dragFromIdx < idx;
                       return (
-                        <div key={job.id} onDragEnd={handleDragEnd}>
+                        <div key={job.id}>
                           {showBefore && (
                             <div className="h-10 border-2 border-dashed border-orange-400/50 rounded-lg mb-2" />
                           )}
@@ -597,6 +599,7 @@ export default function Queue() {
                               onDragStart={() => handleDragStart(job.id)}
                               onDragOver={e => handleDragOver(e, job.id)}
                               onDrop={() => handleDrop(job.id)}
+                              onDragEnd={handleDragEnd}
                             />
                           </div>
                           {showAfter && (

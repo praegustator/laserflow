@@ -545,7 +545,7 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
                 onDragStart={handleDragStart}
                 onDragOver={handleDragOver}
                 onDrop={handleDrop}
-                isDragOver={false}
+                isDragOver={isDropTarget}
                 isSelected={isOpSelected}
                 onSelect={(e) => handleSelectOp(op.id, e)}
                 isLayerHighlighted={isLayerHighlighted}
