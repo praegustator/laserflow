@@ -1,5 +1,6 @@
 import { SVGPathData, SVGPathDataTransformer } from 'svg-pathdata';
 import type { PathGeometry, Operation, MachineProfile } from '../types/index.js';
+import type { RasterImage } from './ImageParser.js';
 
 export interface PathTransform {
   offsetX: number;
@@ -341,14 +342,126 @@ function hatchFillToGcode(
   return lines.join('\n');
 }
 
-export function generateGcode(
+/* ── Raster image engraving ──────────────────────────────────────────── */
+
+/**
+ * Parse the bounding rectangle from an SVG path string.
+ * Expects a rectangle path like `M x y L x+w y L x+w y+h L x y+h Z`.
+ */
+function parsePathBBox(d: string): { x: number; y: number; w: number; h: number } | null {
+  try {
+    const pathData = new SVGPathData(d).toAbs();
+    const cmds = pathData.commands;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const cmd of cmds) {
+      if ('x' in cmd && 'y' in cmd) {
+        const x = cmd.x as number;
+        const y = cmd.y as number;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+    if (!Number.isFinite(minX)) return null;
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Generate G-code to raster-engrave an image.
+ *
+ * Each pixel row produces one scan line.  The S value for each pixel is
+ * proportional to `(1 - brightness/255) * sValue`, so black pixels get
+ * full power and white pixels get zero.
+ *
+ * Scan lines alternate direction (serpentine) for efficient toolpath.
+ *
+ * @param image     Decoded grayscale image
+ * @param d         SVG path data defining the bounding rectangle of the image in layer space
+ * @param feedRate  Feed rate for engraving moves (mm/min)
+ * @param sValue    Maximum S value for this operation (already scaled by op power)
+ * @param transform Layer transform to apply
+ */
+export function rasterImageToGcode(
+  image: RasterImage,
+  d: string,
+  feedRate: number,
+  sValue: number,
+  transform: PathTransform = IDENTITY_TRANSFORM,
+): string {
+  const bbox = parsePathBBox(d);
+  if (!bbox || image.width === 0 || image.height === 0) return '';
+
+  const lines: string[] = [];
+  const pixelW = bbox.w / image.width;
+  const pixelH = bbox.h / image.height;
+
+  for (let row = 0; row < image.height; row++) {
+    const leftToRight = row % 2 === 0;
+    const y = bbox.y + (row + 0.5) * pixelH;
+
+    // Determine the effective pixel range for this scan line
+    const startCol = leftToRight ? 0 : image.width - 1;
+    const endCol = leftToRight ? image.width : -1;
+    const step = leftToRight ? 1 : -1;
+
+    // Skip fully white rows (no power needed)
+    let rowHasContent = false;
+    const rowOffset = row * image.width;
+    for (let col = 0; col < image.width; col++) {
+      if (image.pixels[rowOffset + col] < 255) {
+        rowHasContent = true;
+        break;
+      }
+    }
+    if (!rowHasContent) continue;
+
+    // Move to start of row
+    const startX = bbox.x + (leftToRight ? 0 : bbox.w);
+    const [tsx, tsy] = applyTransform(startX, y, transform);
+    lines.push(`G0 X${fmt(tsx)} Y${fmt(tsy)} S0`);
+
+    // Engrave pixel by pixel — group consecutive pixels with the same
+    // brightness into single G1 moves for efficiency.
+    let col = startCol;
+    while (col !== endCol) {
+      const brightness = image.pixels[rowOffset + col];
+      const pixelSValue = Math.round(sValue * (1 - brightness / 255));
+
+      // Find run of consecutive pixels with same brightness
+      let runEnd = col + step;
+      while (runEnd !== endCol && image.pixels[rowOffset + runEnd] === brightness) {
+        runEnd += step;
+      }
+
+      // Emit G1 move to end of run
+      const endX = bbox.x + ((leftToRight ? runEnd : runEnd + 1) * pixelW);
+      const [tex, tey] = applyTransform(endX, y, transform);
+      if (pixelSValue > 0) {
+        lines.push(`G1 X${fmt(tex)} Y${fmt(tey)} F${feedRate} S${pixelSValue}`);
+      } else {
+        // White pixels — rapid move with laser off
+        lines.push(`G0 X${fmt(tex)} Y${fmt(tey)} S0`);
+      }
+      col = runEnd;
+    }
+  }
+
+  return lines.join('\n');
+}
+
+export async function generateGcode(
   geometry: PathGeometry[],
   operations: Operation[],
   profile: MachineProfile,
   layerTransforms?: Record<string, PathTransform>,
   originFlip?: boolean,
   workH?: number
-): string {
+): Promise<string> {
+  const { decodeImageDataUrl } = await import('./ImageParser.js');
   const lines: string[] = [];
 
   lines.push('; LaserFlow G-code');
@@ -386,6 +499,20 @@ export function generateGcode(
           };
         } else if (originFlip && workH !== undefined) {
           transform = { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, flipY: true, workH };
+        }
+
+        // Raster image handling: images use pixel-based engraving for engrave
+        // operations and only outline tracing for cut operations.
+        if (geo.imageDataUrl) {
+          if (op.type === 'engrave') {
+            const image = await decodeImageDataUrl(geo.imageDataUrl);
+            const rasterGcode = rasterImageToGcode(image, geo.d, op.feedRate, sValue, transform);
+            if (rasterGcode) lines.push(rasterGcode);
+          }
+          // Always trace the bounding rectangle outline
+          const pathGcode = pathToGcode(geo.d, op.feedRate, sValue, transform);
+          lines.push(pathGcode);
+          continue;
         }
 
         // For engrave operations, filled shapes get hatch-fill scan lines.

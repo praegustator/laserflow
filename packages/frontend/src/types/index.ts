@@ -25,16 +25,23 @@ export interface PathGeometry {
   shapeId?: string;
   /** Fill colour from the source SVG (e.g. '#999'). `undefined` means no fill / outline only. */
   fill?: string;
+  /** Base64 data-URL of a raster image (PNG/JPEG). When present, engrave operations
+   *  raster the image pixel-by-pixel instead of using the vector hatch-fill. */
+  imageDataUrl?: string;
 }
 
 /** A single shape extracted from an SVG file */
 export interface Shape {
   id: string;
   name: string;
+  /** SVG path data. For raster images this is the bounding rectangle. */
   d: string;
   sourceFileId: string;
   /** Fill colour from the source SVG (e.g. '#999'). `undefined` means no fill / outline only. */
   fill?: string;
+  /** Base64 data-URL of a raster image (PNG/JPEG). When present the shape represents
+   *  an imported bitmap rather than vector geometry. */
+  imageDataUrl?: string;
 }
 
 /**

@@ -120,7 +120,7 @@ export function registerRoutes(app: FastifyInstance): void {
       if (!profile) return reply.code(400).send({ error: 'No machine profile found' });
 
       job.operations = operations;
-      job.gcode = generateGcode(job.geometry, operations, profile, layerTransforms, originFlip, workH);
+      job.gcode = await generateGcode(job.geometry, operations, profile, layerTransforms, originFlip, workH);
       jobRepo.save(job);
 
       return reply.send({ gcode: job.gcode });
@@ -148,7 +148,7 @@ export function registerRoutes(app: FastifyInstance): void {
     const profile = machineId ? machineProfiles.getById(machineId) : machineProfiles.getAll()[0];
     if (!profile) return reply.code(400).send({ error: 'No machine profile found' });
 
-    const gcode = generateGcode(geometry, ops ?? [], profile, layerTransforms, originFlip, workH);
+    const gcode = await generateGcode(geometry, ops ?? [], profile, layerTransforms, originFlip, workH);
 
     const job: Job = {
       id: uuidv4(),

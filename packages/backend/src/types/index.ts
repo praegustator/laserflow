@@ -40,6 +40,9 @@ export interface PathGeometry {
   layerId?: string;
   /** Fill colour from the source SVG (e.g. '#999'). `undefined` means no fill / outline only. */
   fill?: string;
+  /** Base64 data-URL of a raster image (PNG/JPEG). When present, engrave operations
+   *  raster the image pixel-by-pixel instead of using the vector hatch-fill. */
+  imageDataUrl?: string;
 }
 
 export interface Job {
