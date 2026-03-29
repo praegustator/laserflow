@@ -61,6 +61,8 @@ export interface Job {
   failedGcodeLineContent?: string;
   projectId?: string;
   projectVersion?: string;
+  /** ISO timestamp when the job was soft-deleted (moved to trash). Undefined = active. */
+  deletedAt?: string;
 }
 
 export interface MachineState {
