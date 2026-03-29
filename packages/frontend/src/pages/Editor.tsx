@@ -9,6 +9,7 @@ import SvgCanvas, { type TransformPreview, type SvgCanvasHandle } from '../compo
 import OperationsPanel from '../components/OperationsPanel';
 import LayerTransformPanel from '../components/LayerTransformPanel';
 import ShapeTransformPanel from '../components/ShapeTransformPanel';
+import ImageImportDialog from '../components/ImageImportDialog';
 import type { Layer } from '../types';
 import { hasMultipleSubpaths, computeLayerWorldBBox, computeMultiLayerWorldBBox } from '../utils/geometry';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -74,6 +75,8 @@ export default function Editor() {
   const [transformPreview, setTransformPreview] = useState<TransformPreview>({ deltaX: 0, deltaY: 0, deltaRotation: 0 });
   // Current canvas zoom level (scale factor, e.g. 1.5 = 150%)
   const [currentZoom, setCurrentZoom] = useState(1.5);
+  // Image import dialog state: queue of image files waiting for DPI confirmation
+  const [imageImportQueue, setImageImportQueue] = useState<File[]>([]);
 
   const project = projects.find(p => p.id === activeProjectId) ?? null;
 
@@ -99,27 +102,48 @@ export default function Editor() {
   }, [selectedLayerIds, autoZoomOnLayerSelect, autoPanOnLayerSelect]);
 
   const handleFiles = useCallback(async (files: FileList | File[]) => {
+    const imageFiles: File[] = [];
     for (const file of Array.from(files)) {
       try {
         if (file.name.endsWith('.svg')) {
           await importSvgFile(file);
+          addToast('success', `Imported ${file.name}`);
         } else if (IMAGE_EXTENSIONS.test(file.name)) {
-          await importImageFile(file);
+          // Queue image files for the import dialog (DPI confirmation)
+          imageFiles.push(file);
         } else {
           addToast('error', `Unsupported file type: ${file.name}`);
-          continue;
         }
-        addToast('success', `Imported ${file.name}`);
       } catch (err) {
         addToast('error', err instanceof Error ? err.message : 'Upload failed');
       }
     }
-  }, [importSvgFile, importImageFile, addToast]);
+    if (imageFiles.length > 0) {
+      setImageImportQueue(prev => [...prev, ...imageFiles]);
+    }
+  }, [importSvgFile, addToast]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) void handleFiles(e.target.files);
     e.target.value = '';
   };
+
+  // Image import dialog: confirm with chosen DPI
+  const handleImageImportConfirm = useCallback(async (file: File, dpi: number) => {
+    try {
+      await importImageFile(file, dpi);
+      addToast('success', `Imported ${file.name}`);
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : 'Import failed');
+    }
+    // Advance to next file in queue (or close dialog)
+    setImageImportQueue(prev => prev.slice(1));
+  }, [importImageFile, addToast]);
+
+  const handleImageImportCancel = useCallback(() => {
+    // Skip the current file and advance to next (or close dialog)
+    setImageImportQueue(prev => prev.slice(1));
+  }, []);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -809,6 +833,15 @@ export default function Editor() {
             <button onClick={() => { void navigate('/'); }} className="px-5 py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-sm font-semibold transition-colors">Go to Projects</button>
           </div>
         </div>
+      )}
+
+      {/* Image import dialog (DPI confirmation) */}
+      {imageImportQueue.length > 0 && (
+        <ImageImportDialog
+          file={imageImportQueue[0]}
+          onConfirm={handleImageImportConfirm}
+          onCancel={handleImageImportCancel}
+        />
       )}
     </div>
   );
