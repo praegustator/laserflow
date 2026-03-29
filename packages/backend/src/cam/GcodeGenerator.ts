@@ -302,11 +302,23 @@ function hatchFillToGcode(
     }
   }
 
+  // The lineInterval is specified in world-space mm, but the polygon
+  // coordinates are in layer space (before the transform).  Convert to
+  // layer-space by dividing by the effective scale factor perpendicular to
+  // the scan direction so the *physical* line spacing matches regardless of
+  // how much the layer has been scaled.
+  const sinAngle = Math.sin(radians);
+  const cosAngle = Math.cos(radians);
+  const effectiveScale = Math.sqrt(
+    (transform.scaleX * sinAngle) ** 2 + (transform.scaleY * cosAngle) ** 2
+  ) || 1;
+  const layerInterval = lineInterval / effectiveScale;
+
   const lines: string[] = [];
   let leftToRight = true;
 
   // Scan from minY to maxY, offset by half-interval to stay inside the shape
-  for (let scanY = minY + lineInterval / 2; scanY <= maxY - lineInterval / 2 + 1e-9; scanY += lineInterval) {
+  for (let scanY = minY + layerInterval / 2; scanY <= maxY - layerInterval / 2 + 1e-9; scanY += layerInterval) {
     // Find all X-intersections with polygon edges at this scanY
     const intersections: number[] = [];
     for (const edge of edges) {
@@ -411,9 +423,14 @@ export function rasterImageToGcode(
 
   // When a lineInterval is provided, use it for scan line spacing so that
   // raster images are engraved with the same density as SVG hatch fills.
-  // Otherwise fall back to the natural pixel height.
+  // The interval is specified in world-space mm, but scan lines are computed
+  // in layer space (before the transform is applied).  Divide by the Y scale
+  // factor so that the *physical* line spacing matches the requested value
+  // regardless of how much the layer has been scaled.
   // Note: if the interval is larger than the image height, numLines clamps to 1.
-  const effectiveInterval = lineInterval && lineInterval > 0 ? lineInterval : pixelH;
+  const absScaleY = Math.abs(transform.scaleY) || 1;
+  const layerInterval = lineInterval && lineInterval > 0 ? lineInterval / absScaleY : undefined;
+  const effectiveInterval = layerInterval ?? pixelH;
   const numLines = Math.max(1, Math.round(bbox.h / effectiveInterval));
   const actualInterval = bbox.h / numLines;
 

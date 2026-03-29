@@ -758,4 +758,102 @@ describe('raster image engraving', () => {
     const g0Interval = gcodeInterval.split('\n').filter(l => l.startsWith('G0') && l.includes('S0') && /Y\d+\.\d+/.test(l));
     expect(g0Interval.length).toBe(8);
   });
+
+  it('produces same physical line spacing regardless of layer scale', async () => {
+    // 2×4 black image, bounding rect 2mm × 4mm in layer space.
+    // At scale 1: 4mm physical height, lineInterval=0.5mm → 8 scan lines.
+    // At scale 2: 8mm physical height, lineInterval=0.5mm → 16 scan lines.
+    // The line spacing in world coordinates should be ~0.5mm in both cases.
+    const dataUrl = await makeGrayscalePng([
+      0, 0,
+      0, 0,
+      0, 0,
+      0, 0,
+    ], 2, 4);
+    const layerId = 'L1';
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 2 0 L 2 4 L 0 4 Z',
+      imageDataUrl: dataUrl,
+      layerId,
+    }];
+    const ops: Operation[] = [{
+      id: 'img-scale-test',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 100,
+      passes: 1,
+      engraveLineInterval: 0.5,
+      layerIds: [layerId],
+    }];
+
+    // Scale 1
+    const gcode1 = await generateGcode(
+      geometry, ops, defaultProfile,
+      { [layerId]: { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 } }
+    );
+    const g0Scale1 = gcode1.split('\n').filter(l => l.startsWith('G0') && l.includes('S0') && /Y\d+\.\d+/.test(l));
+
+    // Scale 2 — physical height doubles, so line count should double too
+    const gcode2 = await generateGcode(
+      geometry, ops, defaultProfile,
+      { [layerId]: { offsetX: 0, offsetY: 0, scaleX: 2, scaleY: 2 } }
+    );
+    const g0Scale2 = gcode2.split('\n').filter(l => l.startsWith('G0') && l.includes('S0') && /Y\d+\.\d+/.test(l));
+
+    // At scale=1: round(4mm / 0.5mm) = 8 lines
+    expect(g0Scale1.length).toBe(8);
+    // At scale=2: round(8mm physical / 0.5mm) = 16 lines (not 8)
+    expect(g0Scale2.length).toBe(16);
+
+    // Verify actual Y coordinates show ~0.5mm spacing in world coordinates
+    const yCoords2 = g0Scale2.map(l => {
+      const m = l.match(/Y(-?[\d.]+)/);
+      return m ? parseFloat(m[1]) : NaN;
+    }).filter(v => !isNaN(v));
+    // Adjacent scan line spacing should be approximately 0.5mm
+    for (let i = 1; i < yCoords2.length; i++) {
+      const spacing = Math.abs(yCoords2[i] - yCoords2[i - 1]);
+      expect(spacing).toBeCloseTo(0.5, 1);
+    }
+  });
+
+  it('produces same physical line spacing for hatch fill regardless of layer scale', async () => {
+    // 10×10 filled rect in layer space.
+    // At scale=1: 10mm height, lineInterval=1mm → 10 scan lines
+    // At scale=3: 30mm height, lineInterval=1mm → 30 scan lines
+    const layerId = 'L1';
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z',
+      fill: '#000000',
+      layerId,
+    }];
+    const ops: Operation[] = [{
+      id: 'hatch-scale-test',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 100,
+      passes: 1,
+      engraveLineInterval: 1,
+      layerIds: [layerId],
+    }];
+
+    // Scale 1
+    const gcode1 = await generateGcode(
+      geometry, ops, defaultProfile,
+      { [layerId]: { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 } }
+    );
+    const g1Lines1 = gcode1.split('\n').filter(l => l.startsWith('G1'));
+
+    // Scale 3
+    const gcode3 = await generateGcode(
+      geometry, ops, defaultProfile,
+      { [layerId]: { offsetX: 0, offsetY: 0, scaleX: 3, scaleY: 3 } }
+    );
+    const g1Lines3 = gcode3.split('\n').filter(l => l.startsWith('G1'));
+
+    // Hatch fill produces one G1 per scan line.
+    // At scale=1: floor((10-1)/1) + 1 ≈ 10 lines
+    // At scale=3: ~30 lines (3x more due to 3x physical size)
+    expect(g1Lines3.length).toBeGreaterThan(g1Lines1.length * 2);
+  });
 });
