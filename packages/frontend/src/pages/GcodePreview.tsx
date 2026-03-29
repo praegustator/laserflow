@@ -38,6 +38,9 @@ function parseGcode(gcode: string, maxS: number = 1000): GMove[] {
     if (isNaN(newX) && isNaN(newY)) return;
     const move: GMove = { type: isG0 ? 'rapid' : 'cut', x, y, lineNum };
     if (!isG0) {
+      // Always set power for engraving moves — even S0 means zero power
+      // (white pixels in raster images) which must render at full brightness
+      // in the preview, not at the default `m.power ?? 1` fallback.
       move.power = Math.min(1, Math.max(0, currentS / maxS));
     }
     moves.push(move);

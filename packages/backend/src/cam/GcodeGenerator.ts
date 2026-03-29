@@ -35,9 +35,9 @@ export function fillBrightness(fill: string | undefined): number | null {
     const rgbMatch = s.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i)
       ?? s.match(/^rgb\(\s*(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})\s*\)$/i);
     if (rgbMatch) {
-      r = parseInt(rgbMatch[1], 10);
-      g = parseInt(rgbMatch[2], 10);
-      b = parseInt(rgbMatch[3], 10);
+      r = Math.min(255, parseInt(rgbMatch[1], 10));
+      g = Math.min(255, parseInt(rgbMatch[2], 10));
+      b = Math.min(255, parseInt(rgbMatch[3], 10));
     } else {
       return null;
     }
@@ -429,8 +429,11 @@ export function rasterImageToGcode(
   // factor so that the *physical* line spacing matches the requested value
   // regardless of how much the layer has been scaled.
   // Note: if the interval is larger than the image height, numLines clamps to 1.
-  const absScaleY = Math.abs(transform.scaleY) || 1;
-  const layerInterval = lineInterval && lineInterval > 0 ? lineInterval / absScaleY : undefined;
+  // Guard against degenerate zero-scale transforms to avoid division by zero.
+  const absScaleY = Math.abs(transform.scaleY);
+  const layerInterval = lineInterval && lineInterval > 0
+    ? (absScaleY > 0 ? lineInterval / absScaleY : lineInterval)
+    : undefined;
   const effectiveInterval = layerInterval ?? pixelH;
   const numLines = Math.max(1, Math.round(bbox.h / effectiveInterval));
   const actualInterval = bbox.h / numLines;
