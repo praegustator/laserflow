@@ -271,6 +271,40 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
                   className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
                 />
               </div>
+
+              {/* Engrave fill settings — only shown for engrave operations */}
+              {op.type === 'engrave' && (
+                <>
+                  <div className="pt-1 border-t border-gray-800">
+                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Fill Engrave Settings</p>
+                    <p className="text-xs text-gray-600 mb-2">Controls hatch-fill for shapes with a fill colour.</p>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 uppercase">Line Interval (mm)</label>
+                    <input
+                      type="number"
+                      value={op.engraveLineInterval ?? 0.1}
+                      min={0.01}
+                      max={10}
+                      step={0.01}
+                      onChange={e => onChange({ engraveLineInterval: Number(e.target.value) })}
+                      className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 uppercase">Line Angle (°)</label>
+                    <input
+                      type="number"
+                      value={op.engraveLineAngle ?? 0}
+                      min={0}
+                      max={359}
+                      step={1}
+                      onChange={e => onChange({ engraveLineAngle: Number(e.target.value) })}
+                      className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+                    />
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>

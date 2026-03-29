@@ -137,6 +137,7 @@ export const useProjectStore = create<ProjectStore>()(
           name: `Shape ${idx + 1}`,
           d: g.d,
           sourceFileId: fileId,
+          fill: g.fill,
         }));
 
         const projectFile: ProjectFile = {
@@ -859,7 +860,7 @@ export const useProjectStore = create<ProjectStore>()(
               mirrorY: layer.mirrorY ?? false,
             };
             for (const shape of layer.shapes) {
-              geometry.push({ d: shape.d, layerId });
+              geometry.push({ d: shape.d, layerId, fill: shape.fill });
             }
           }
         }
@@ -884,6 +885,8 @@ export const useProjectStore = create<ProjectStore>()(
             passes: op.passes,
             zOffset: op.zOffset,
             layerIds: op.layerIds,
+            engraveLineInterval: op.engraveLineInterval,
+            engraveLineAngle: op.engraveLineAngle,
           })),
           machineId,
           layerTransforms,

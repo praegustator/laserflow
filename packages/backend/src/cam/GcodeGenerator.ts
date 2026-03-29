@@ -163,6 +163,160 @@ function pathToGcode(d: string, feedRate: number, sValue: number, transform: Pat
   return lines.join('\n');
 }
 
+/* ── Hatch-fill helpers (scan-line algorithm) ──────────────────────── */
+
+/**
+ * Linearize an SVG path into an array of polygon segments.
+ * Each subpath produces a separate ring (array of [x, y] vertices).
+ */
+function linearizePathToPolygons(d: string): Array<Array<[number, number]>> {
+  const pathData = new SVGPathData(d)
+    .toAbs()
+    .normalizeHVZ()
+    .transform(SVGPathDataTransformer.NORMALIZE_ST())
+    .transform(SVGPathDataTransformer.A_TO_C());
+  const commands = pathData.commands;
+
+  const polygons: Array<Array<[number, number]>> = [];
+  let current: Array<[number, number]> = [];
+  let curX = 0, curY = 0;
+  let startX = 0, startY = 0;
+
+  for (const cmd of commands) {
+    switch (cmd.type) {
+      case SVGPathData.MOVE_TO:
+        if (current.length > 0) polygons.push(current);
+        current = [[cmd.x, cmd.y]];
+        startX = cmd.x; startY = cmd.y;
+        curX = cmd.x; curY = cmd.y;
+        break;
+      case SVGPathData.LINE_TO:
+        current.push([cmd.x, cmd.y]);
+        curX = cmd.x; curY = cmd.y;
+        break;
+      case SVGPathData.CURVE_TO: {
+        const polyLen =
+          Math.hypot(cmd.x1 - curX, cmd.y1 - curY) +
+          Math.hypot(cmd.x2 - cmd.x1, cmd.y2 - cmd.y1) +
+          Math.hypot(cmd.x - cmd.x2, cmd.y - cmd.y2);
+        const segs = adaptiveSegments(polyLen);
+        const pts = cubicBezierPoints(curX, curY, cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.x, cmd.y, segs);
+        for (const pt of pts) current.push(pt);
+        curX = cmd.x; curY = cmd.y;
+        break;
+      }
+      case SVGPathData.QUAD_TO: {
+        const polyLen =
+          Math.hypot(cmd.x1 - curX, cmd.y1 - curY) +
+          Math.hypot(cmd.x - cmd.x1, cmd.y - cmd.y1);
+        const segs = adaptiveSegments(polyLen);
+        const pts = quadraticBezierPoints(curX, curY, cmd.x1, cmd.y1, cmd.x, cmd.y, segs);
+        for (const pt of pts) current.push(pt);
+        curX = cmd.x; curY = cmd.y;
+        break;
+      }
+      case SVGPathData.CLOSE_PATH:
+        current.push([startX, startY]);
+        curX = startX; curY = startY;
+        break;
+    }
+  }
+  if (current.length > 0) polygons.push(current);
+  return polygons;
+}
+
+/**
+ * Generate hatch-fill G-code for a filled shape using a scan-line algorithm.
+ * Returns G-code lines that raster-fill the interior of the shape.
+ */
+function hatchFillToGcode(
+  d: string,
+  feedRate: number,
+  sValue: number,
+  lineInterval: number,
+  lineAngle: number,
+  transform: PathTransform = IDENTITY_TRANSFORM,
+): string {
+  const polygons = linearizePathToPolygons(d);
+  if (polygons.length === 0) return '';
+
+  const radians = (lineAngle % 360) * Math.PI / 180;
+  const cosA = Math.cos(-radians);
+  const sinA = Math.sin(-radians);
+  const cosR = Math.cos(radians);
+  const sinR = Math.sin(radians);
+
+  // Rotate all polygon points by -angle so we can do horizontal scan lines
+  const rotated: Array<Array<[number, number]>> = polygons.map(poly =>
+    poly.map(([x, y]) => [x * cosA - y * sinA, x * sinA + y * cosA])
+  );
+
+  // Compute bounding box of rotated polygons
+  let minY = Infinity, maxY = -Infinity;
+  for (const poly of rotated) {
+    for (const [, y] of poly) {
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+
+  // Collect all edges from all polygons
+  const edges: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
+  for (const poly of rotated) {
+    for (let i = 0; i < poly.length - 1; i++) {
+      edges.push({ x1: poly[i][0], y1: poly[i][1], x2: poly[i + 1][0], y2: poly[i + 1][1] });
+    }
+  }
+
+  const lines: string[] = [];
+  let leftToRight = true;
+
+  // Scan from minY to maxY, offset by half-interval to stay inside the shape
+  for (let scanY = minY + lineInterval / 2; scanY <= maxY - lineInterval / 2 + 1e-9; scanY += lineInterval) {
+    // Find all X-intersections with polygon edges at this scanY
+    const intersections: number[] = [];
+    for (const edge of edges) {
+      const { x1, y1, x2, y2 } = edge;
+      if ((y1 <= scanY && y2 > scanY) || (y2 <= scanY && y1 > scanY)) {
+        const t = (scanY - y1) / (y2 - y1);
+        intersections.push(x1 + t * (x2 - x1));
+      }
+    }
+
+    intersections.sort((a, b) => a - b);
+
+    // Apply even-odd fill rule: fill between pairs of intersections
+    const pairs: Array<[number, number]> = [];
+    for (let i = 0; i + 1 < intersections.length; i += 2) {
+      pairs.push([intersections[i], intersections[i + 1]]);
+    }
+
+    // Alternate direction for efficient toolpath (serpentine)
+    if (!leftToRight) pairs.reverse();
+
+    for (const [xStart, xEnd] of pairs) {
+      // Rotate back to original coordinate space
+      const [sx, sy] = leftToRight
+        ? [xStart * cosR - scanY * sinR, xStart * sinR + scanY * cosR]
+        : [xEnd * cosR - scanY * sinR, xEnd * sinR + scanY * cosR];
+      const [ex, ey] = leftToRight
+        ? [xEnd * cosR - scanY * sinR, xEnd * sinR + scanY * cosR]
+        : [xStart * cosR - scanY * sinR, xStart * sinR + scanY * cosR];
+
+      // Apply layer transform
+      const [tsx, tsy] = applyTransform(sx, sy, transform);
+      const [tex, tey] = applyTransform(ex, ey, transform);
+
+      lines.push(`G0 X${fmt(tsx)} Y${fmt(tsy)} S0`);
+      lines.push(`G1 X${fmt(tex)} Y${fmt(tey)} F${feedRate} S${sValue}`);
+    }
+
+    leftToRight = !leftToRight;
+  }
+
+  return lines.join('\n');
+}
+
 export function generateGcode(
   geometry: PathGeometry[],
   operations: Operation[],
@@ -209,6 +363,16 @@ export function generateGcode(
         } else if (originFlip && workH !== undefined) {
           transform = { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, flipY: true, workH };
         }
+
+        // For engrave operations, filled shapes get hatch-fill scan lines
+        if (op.type === 'engrave' && geo.fill) {
+          const interval = op.engraveLineInterval ?? 0.1;
+          const angle = op.engraveLineAngle ?? 0;
+          const hatchGcode = hatchFillToGcode(geo.d, op.feedRate, sValue, interval, angle, transform);
+          if (hatchGcode) lines.push(hatchGcode);
+        }
+
+        // Always trace the outline (cut or engrave)
         const pathGcode = pathToGcode(geo.d, op.feedRate, sValue, transform);
         lines.push(pathGcode);
       }

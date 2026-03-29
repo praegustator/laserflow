@@ -324,4 +324,95 @@ describe('GcodeGenerator', () => {
     // X = offsetX + 0 * scaleX = 5
     expect(gcode).toContain('X5.000');
   });
+
+  it('generates hatch-fill scan lines for filled shapes in engrave operations', () => {
+    // A simple filled square: 0,0 → 10,0 → 10,10 → 0,10 → Z
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z',
+      fill: '#999',
+    }];
+    const operations: Operation[] = [{
+      id: 'engrave-fill',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 50,
+      passes: 1,
+      engraveLineInterval: 1, // 1mm spacing — should produce ~10 scan lines
+    }];
+    const gcode = generateGcode(geometry, operations, defaultProfile);
+
+    // Should contain M4 (engrave mode)
+    expect(gcode).toContain('M4 S0');
+
+    // Hatch lines appear as G1 moves.  With 1mm interval on a 10mm square
+    // we expect roughly 9-10 scan lines, each producing one G1 segment.
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+    // At minimum we need the hatch lines plus the outline segments (4 sides)
+    expect(g1Lines.length).toBeGreaterThan(10);
+  });
+
+  it('does NOT hatch-fill shapes without fill in engrave operations', () => {
+    // An unfilled square
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z',
+      // no fill property
+    }];
+    const operations: Operation[] = [{
+      id: 'engrave-no-fill',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 50,
+      passes: 1,
+      engraveLineInterval: 1,
+    }];
+    const gcode = generateGcode(geometry, operations, defaultProfile);
+
+    // Should only have the outline trace (4 line segments + close = 5 G1 lines)
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+    expect(g1Lines.length).toBeLessThanOrEqual(5);
+  });
+
+  it('does NOT hatch-fill shapes in cut operations even when filled', () => {
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z',
+      fill: '#ff0000',
+    }];
+    const operations: Operation[] = [{
+      id: 'cut-filled',
+      type: 'cut',
+      feedRate: 600,
+      power: 80,
+      passes: 1,
+    }];
+    const gcode = generateGcode(geometry, operations, defaultProfile);
+
+    // Cut mode: should use M3, not M4
+    expect(gcode).toContain('M3 S0');
+
+    // Should only have the outline trace (no hatch fill)
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+    expect(g1Lines.length).toBeLessThanOrEqual(5);
+  });
+
+  it('respects engraveLineAngle for angled hatch lines', () => {
+    // Filled square with 90° angle (vertical scan lines)
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z',
+      fill: '#999',
+    }];
+    const operations: Operation[] = [{
+      id: 'engrave-angle',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 50,
+      passes: 1,
+      engraveLineInterval: 1,
+      engraveLineAngle: 90,
+    }];
+    const gcode = generateGcode(geometry, operations, defaultProfile);
+
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+    // Should still produce hatch lines
+    expect(g1Lines.length).toBeGreaterThan(10);
+  });
 });
