@@ -57,6 +57,8 @@ export default function Editor() {
   const [editingShapeName, setEditingShapeName] = useState('');
   // Color picker state
   const [colorPickerLayerId, setColorPickerLayerId] = useState<string | null>(null);
+  // Layer IDs highlighted because they belong to the currently selected operation(s)
+  const [opHighlightedLayerIds, setOpHighlightedLayerIds] = useState<Set<string>>(new Set());
   // Drag-and-drop state for layer reordering
   const dragLayerId = useRef<string | null>(null);
   const [dragOverLayerId, setDragOverLayerId] = useState<string | null>(null);
@@ -424,7 +426,7 @@ export default function Editor() {
                     }
                     setSelectedShapeIds(new Set());
                   }}
-                  className={`rounded-lg border p-2 cursor-pointer transition-colors ${selectedLayerIds.has(layer.id) ? 'border-orange-500 bg-gray-800' : 'border-gray-700 hover:border-gray-600'} ${dragOverLayerId === layer.id ? 'border-blue-400 border-dashed' : ''}`}
+                  className={`rounded-lg border p-2 cursor-pointer transition-colors ${selectedLayerIds.has(layer.id) ? 'border-orange-500 bg-gray-800' : opHighlightedLayerIds.has(layer.id) ? 'border-blue-500/60 bg-gray-800/50' : 'border-gray-700 hover:border-gray-600'} ${dragOverLayerId === layer.id ? 'border-blue-400 border-dashed' : ''}`}
                 >
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-gray-600 cursor-grab active:cursor-grabbing select-none mr-0.5" title="Drag to reorder">⠿</span>
@@ -725,6 +727,7 @@ export default function Editor() {
               layers={project.layers}
               originPosition={originPosition}
               selectedLayerIds={selectedLayerIds}
+              onSelectedOpIdsChange={setOpHighlightedLayerIds}
             />
           </Panel>
         </PanelGroup>
