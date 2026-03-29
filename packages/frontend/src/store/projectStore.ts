@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '../api/client';
 import type { Project, ProjectFile, ProjectVersion, Layer, Shape, Operation, PathGeometry, Job, PivotAnchor } from '../types';
-import { computeShapesBoundingBox, bakeLayerTransform, splitPathIntoSubpaths, computeLayerWorldBBox, computeMultiLayerWorldBBox, worldAnchorPoint } from '../utils/geometry';
+import { computeShapesBoundingBox, bakeLayerTransform, splitPathIntoSubpaths, computeMultiLayerWorldBBox, worldAnchorPoint } from '../utils/geometry';
 import { useAppSettings, type OriginPosition } from './appSettingsStore';
 
 function uid(): string {

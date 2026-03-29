@@ -6,9 +6,11 @@ import ConsoleLog from '../components/ConsoleLog';
 import JogControls from '../components/JogControls';
 
 export default function Console() {
+  const connectionStatus = useMachineStore((s) => s.connectionStatus);
   const sendCommand = useMachineStore((s) => s.sendCommand);
   const [cmdInput, setCmdInput] = useState('');
-  const [error, setError] = useState<string | null>(null);
+
+  const isConnected = connectionStatus === 'connected';
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,8 +19,8 @@ export default function Console() {
     setCmdInput('');
     try {
       await sendCommand(cmd);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send command');
+    } catch {
+      // errors surfaced by ConnectionPanel / toast
     }
   };
 

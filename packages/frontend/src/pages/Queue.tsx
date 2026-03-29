@@ -484,7 +484,6 @@ export default function Queue() {
   const [terminalHeight, setTerminalHeight] = useState(220);
   const terminalDragRef = useRef<{ startY: number; startH: number } | null>(null);
   const [cmdInput, setCmdInput] = useState('');
-  const addConsoleEntry = useMachineStore(s => s.addConsoleEntry);
 
   const handleSendCmd = async (e: React.FormEvent) => {
     e.preventDefault();

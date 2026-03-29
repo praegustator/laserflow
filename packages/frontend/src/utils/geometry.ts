@@ -344,6 +344,8 @@ export function splitPathIntoSubpaths(d: string): string[] {
   }
 }
 
+import type { PivotAnchor } from '../types';
+
 /**
  * Get the world-space anchor point from a world bounding box and a PivotAnchor.
  */
