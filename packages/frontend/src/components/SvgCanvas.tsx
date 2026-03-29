@@ -236,6 +236,8 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
     return LAYER_COLORS[layerIdx % LAYER_COLORS.length];
   };
 
+  const { tx, ty, scale } = transform;
+
   // Adaptive grid lines — granularity changes with zoom, thickness stays constant
   const gridStep = computeGridStep(scale);
   const majorMultiple = 5; // major line every 5 minor steps
@@ -265,8 +267,6 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
     );
     yi++;
   }
-
-  const { tx, ty, scale } = transform;
 
   // Origin position only affects where the origin marker is drawn.
   // Shapes always render in native SVG coordinates (Y down) so they are never upside-down.
