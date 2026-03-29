@@ -15,11 +15,13 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faEye, faEyeSlash, faTrash, faFileImport, faObjectGroup, faLayerGroup, faScissors, faArrowUpFromBracket, faMagnifyingGlassPlus, faMagnifyingGlassMinus, faExpand, faCompress } from '@fortawesome/free-solid-svg-icons';
 
 const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];
+const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|bmp|webp)$/i;
 
 export default function Editor() {
   const projects = useProjectStore(s => s.projects);
   const activeProjectId = useProjectStore(s => s.activeProjectId);
   const importSvgFile = useProjectStore(s => s.importSvgFile);
+  const importImageFile = useProjectStore(s => s.importImageFile);
   const removeLayer = useProjectStore(s => s.removeLayer);
   const renameLayer = useProjectStore(s => s.renameLayer);
   const updateLayerColor = useProjectStore(s => s.updateLayerColor);
@@ -91,16 +93,22 @@ export default function Editor() {
   }, [selectedLayerIds, autoZoomOnLayerSelect]);
 
   const handleFiles = useCallback(async (files: FileList | File[]) => {
-    const svgFiles = Array.from(files).filter(f => f.name.endsWith('.svg'));
-    for (const file of svgFiles) {
+    for (const file of Array.from(files)) {
       try {
-        await importSvgFile(file);
+        if (file.name.endsWith('.svg')) {
+          await importSvgFile(file);
+        } else if (IMAGE_EXTENSIONS.test(file.name)) {
+          await importImageFile(file);
+        } else {
+          addToast('error', `Unsupported file type: ${file.name}`);
+          continue;
+        }
         addToast('success', `Imported ${file.name}`);
       } catch (err) {
         addToast('error', err instanceof Error ? err.message : 'Upload failed');
       }
     }
-  }, [importSvgFile, addToast]);
+  }, [importSvgFile, importImageFile, addToast]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) void handleFiles(e.target.files);
@@ -280,7 +288,7 @@ export default function Editor() {
   const shortcuts = useMemo<ShortcutDef[]>(() => {
     const singleLayerId = selectedLayerIds.size === 1 ? Array.from(selectedLayerIds)[0] : null;
     return [
-      { key: 'i', ctrl: true, label: 'Import SVG', handler: () => fileInputRef.current?.click() },
+      { key: 'i', ctrl: true, label: 'Import file', handler: () => fileInputRef.current?.click() },
       { key: 'Delete', label: 'Remove layer', handler: () => {
         if (selectedShapeIds.size > 0 && singleLayerId) {
           removeShapes(Array.from(selectedShapeIds), singleLayerId);
@@ -357,7 +365,7 @@ export default function Editor() {
             {' '}to open one
           </span>
         )}
-        <input ref={fileInputRef} type="file" accept=".svg" multiple className="hidden" onChange={handleFileChange} />
+        <input ref={fileInputRef} type="file" accept=".svg,.png,.jpg,.jpeg,.gif,.bmp,.webp" multiple className="hidden" onChange={handleFileChange} />
       </div>
 
       {/* Version save dialog */}
@@ -393,7 +401,7 @@ export default function Editor() {
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1"
-                ><FontAwesomeIcon icon={faFileImport} /> Import SVG</button>
+                ><FontAwesomeIcon icon={faFileImport} /> Import</button>
               )}
             </div>
 
@@ -407,7 +415,7 @@ export default function Editor() {
             >
               {dragOver && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-950/80 border-2 border-dashed border-orange-400 rounded pointer-events-none">
-                  <p className="text-sm font-bold text-orange-400">Drop SVG file(s) here</p>
+                  <p className="text-sm font-bold text-orange-400">Drop SVG/image file(s) here</p>
                 </div>
               )}
               {project.layers.length === 0 ? (
@@ -416,8 +424,8 @@ export default function Editor() {
                   onClick={e => { e.stopPropagation(); fileInputRef.current?.click(); }}
                 >
                   <FontAwesomeIcon icon={faFileImport} className="text-3xl text-gray-600 mb-3" />
-                  <p className="text-sm font-semibold text-gray-400">Import or drop SVG here</p>
-                  <p className="text-xs text-gray-600 mt-1">Click to browse or drag &amp; drop</p>
+                  <p className="text-sm font-semibold text-gray-400">Import SVG or image here</p>
+                  <p className="text-xs text-gray-600 mt-1">Click to browse or drag &amp; drop (SVG, PNG, JPEG)</p>
                 </div>
               ) : (
                 project.layers.map((layer, idx) => {

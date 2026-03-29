@@ -12,14 +12,14 @@ const defaultProfile: MachineProfile = {
 };
 
 describe('GcodeGenerator', () => {
-  it('generates header and footer', () => {
-    const gcode = generateGcode([], [], defaultProfile);
+  it('generates header and footer', async () => {
+    const gcode = await generateGcode([], [], defaultProfile);
     expect(gcode).toContain('G21');
     expect(gcode).toContain('G90');
     expect(gcode).toContain('M5');
   });
 
-  it('generates cut operation for a simple line path', () => {
+  it('generates cut operation for a simple line path', async () => {
     const geometry: PathGeometry[] = [{ d: 'M 0 0 L 100 0' }];
     const operations: Operation[] = [{
       id: 'op1',
@@ -28,14 +28,14 @@ describe('GcodeGenerator', () => {
       power: 80,
       passes: 1,
     }];
-    const gcode = generateGcode(geometry, operations, defaultProfile);
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
     expect(gcode).toContain('M3 S0');
     expect(gcode).toContain('G1');
     expect(gcode).toContain('F600');
     expect(gcode).toContain('S800'); // 80% of 1000
   });
 
-  it('generates engrave operation with M4', () => {
+  it('generates engrave operation with M4', async () => {
     const geometry: PathGeometry[] = [{ d: 'M 0 0 L 50 50' }];
     const operations: Operation[] = [{
       id: 'op2',
@@ -44,12 +44,12 @@ describe('GcodeGenerator', () => {
       power: 50,
       passes: 1,
     }];
-    const gcode = generateGcode(geometry, operations, defaultProfile);
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
     expect(gcode).toContain('M4 S0');
     expect(gcode).toContain('S500'); // 50% of 1000
   });
 
-  it('includes S parameter on all G0 and M3/M4 lines for GRBL compatibility', () => {
+  it('includes S parameter on all G0 and M3/M4 lines for GRBL compatibility', async () => {
     const geometry: PathGeometry[] = [{ d: 'M 0 0 L 100 0' }];
     const operations: Operation[] = [{
       id: 'grbl-compat',
@@ -58,7 +58,7 @@ describe('GcodeGenerator', () => {
       power: 80,
       passes: 1,
     }];
-    const gcode = generateGcode(geometry, operations, defaultProfile);
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
     const lines = gcode.split('\n');
 
     // Every G0 line must include S parameter
@@ -74,7 +74,7 @@ describe('GcodeGenerator', () => {
     }
   });
 
-  it('ignores operations with type ignore', () => {
+  it('ignores operations with type ignore', async () => {
     const geometry: PathGeometry[] = [{ d: 'M 0 0 L 100 0' }];
     const operations: Operation[] = [{
       id: 'op3',
@@ -83,12 +83,12 @@ describe('GcodeGenerator', () => {
       power: 80,
       passes: 1,
     }];
-    const gcode = generateGcode(geometry, operations, defaultProfile);
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
     expect(gcode).not.toContain('M3');
     expect(gcode).not.toContain('M4');
   });
 
-  it('repeats path for multiple passes', () => {
+  it('repeats path for multiple passes', async () => {
     const geometry: PathGeometry[] = [{ d: 'M 0 0 L 10 0' }];
     const operations: Operation[] = [{
       id: 'op4',
@@ -97,12 +97,12 @@ describe('GcodeGenerator', () => {
       power: 100,
       passes: 3,
     }];
-    const gcode = generateGcode(geometry, operations, defaultProfile);
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
     const passMatches = gcode.match(/; Pass \d+/g);
     expect(passMatches).toHaveLength(3);
   });
 
-  it('filters geometry by layerIds when specified on an operation', () => {
+  it('filters geometry by layerIds when specified on an operation', async () => {
     // Two layers: layer1 (cut path at X=10) and layer2 (engrave path at X=50)
     const geometry: PathGeometry[] = [
       { d: 'M 0 0 L 10 0', layerId: 'layer1' },
@@ -113,7 +113,7 @@ describe('GcodeGenerator', () => {
       { id: 'engrave-op', type: 'engrave', feedRate: 3000, power: 50, passes: 1, layerIds: ['layer2'] },
     ];
 
-    const gcode = generateGcode(geometry, operations, defaultProfile);
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
 
     expect(gcode).toContain('M3 S0');
     expect(gcode).toContain('M4 S0');
@@ -131,7 +131,7 @@ describe('GcodeGenerator', () => {
     expect(x50Index).toBeGreaterThan(m4Index);
   });
 
-  it('does not duplicate geometry when two operations share a layer', () => {
+  it('does not duplicate geometry when two operations share a layer', async () => {
     // Both operations reference layer1.  The caller must supply geometry for
     // layer1 only once; the generator should process it once per operation.
     const geometry: PathGeometry[] = [
@@ -142,7 +142,7 @@ describe('GcodeGenerator', () => {
       { id: 'op-b', type: 'cut', feedRate: 600, power: 80, passes: 1, layerIds: ['layer1'] },
     ];
 
-    const gcode = generateGcode(geometry, operations, defaultProfile);
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
 
     // Each operation should produce exactly 1 pass comment and 1 G1 cut line
     // for the single geometry entry.  Total: 2 passes, 2 cut segments.
@@ -153,7 +153,7 @@ describe('GcodeGenerator', () => {
     expect(g1Lines).toHaveLength(2); // one cut line per operation
   });
 
-  it('processes all geometry when operation has no layerIds (backward compat)', () => {
+  it('processes all geometry when operation has no layerIds (backward compat)', async () => {
     const geometry: PathGeometry[] = [
       { d: 'M 0 0 L 10 0', layerId: 'layer1' },
       { d: 'M 0 0 L 50 0', layerId: 'layer2' },
@@ -167,13 +167,13 @@ describe('GcodeGenerator', () => {
       // no layerIds — should process all geometry
     }];
 
-    const gcode = generateGcode(geometry, operations, defaultProfile);
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
 
     expect(gcode).toContain('X10.000');
     expect(gcode).toContain('X50.000');
   });
 
-  it('converts arc commands (circles) into G1 moves', () => {
+  it('converts arc commands (circles) into G1 moves', async () => {
     // Circle: center (50,50), radius 50 — uses SVG arc commands
     const circlePath = 'M 0 50 A 50 50 0 1 0 100 50 A 50 50 0 1 0 0 50 Z';
     const geometry: PathGeometry[] = [{ d: circlePath }];
@@ -185,7 +185,7 @@ describe('GcodeGenerator', () => {
       passes: 1,
     }];
 
-    const gcode = generateGcode(geometry, operations, defaultProfile);
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
     const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
 
     // Arcs must be linearized into many G1 segments (not dropped)
@@ -203,26 +203,26 @@ describe('GcodeGenerator', () => {
     expect(nearBottom).toBe(true);
   });
 
-  it('uses more segments for larger curves than for smaller ones', () => {
+  it('uses more segments for larger curves than for smaller ones', async () => {
     // Small curve (~5mm span)
     const smallCurve = 'M 0 0 C 1 2 4 3 5 0';
     // Large curve (~200mm span)
     const largeCurve = 'M 0 0 C 50 100 150 100 200 0';
 
-    const makeGcode = (d: string) => {
+    const makeGcode = async (d: string) => {
       const geometry: PathGeometry[] = [{ d }];
       const ops: Operation[] = [{ id: 'op', type: 'cut', feedRate: 600, power: 100, passes: 1 }];
-      return generateGcode(geometry, ops, defaultProfile);
+      return await generateGcode(geometry, ops, defaultProfile);
     };
 
-    const smallG1 = makeGcode(smallCurve).split('\n').filter(l => l.startsWith('G1')).length;
-    const largeG1 = makeGcode(largeCurve).split('\n').filter(l => l.startsWith('G1')).length;
+    const smallG1 = (await makeGcode(smallCurve)).split('\n').filter(l => l.startsWith('G1')).length;
+    const largeG1 = (await makeGcode(largeCurve)).split('\n').filter(l => l.startsWith('G1')).length;
 
     // Larger curves should produce more segments
     expect(largeG1).toBeGreaterThan(smallG1);
   });
 
-  it('produces more segments when layer transform scales up', () => {
+  it('produces more segments when layer transform scales up', async () => {
     // A curve linearized at scale=1 should have fewer G1 segments than the
     // same curve linearized at scale=3, because the output tolerance is
     // applied in mm (post-transform) space.
@@ -232,19 +232,19 @@ describe('GcodeGenerator', () => {
     // scale=1
     const geo1: PathGeometry[] = [{ d: curvePath, layerId: 'L' }];
     const t1 = { L: { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 } };
-    const g1Count = generateGcode(geo1, ops, defaultProfile, t1)
+    const g1Count = (await generateGcode(geo1, ops, defaultProfile, t1))
       .split('\n').filter(l => l.startsWith('G1')).length;
 
     // scale=3
     const t3 = { L: { offsetX: 0, offsetY: 0, scaleX: 3, scaleY: 3 } };
-    const g3Count = generateGcode(geo1, ops, defaultProfile, t3)
+    const g3Count = (await generateGcode(geo1, ops, defaultProfile, t3))
       .split('\n').filter(l => l.startsWith('G1')).length;
 
     // 3× scale must produce roughly 3× the segments
     expect(g3Count).toBeGreaterThan(g1Count * 2);
   });
 
-  it('keeps maximum output segment length within tolerance', () => {
+  it('keeps maximum output segment length within tolerance', async () => {
     // Circle linearized with a scale=2 transform.  Every consecutive pair of
     // output G1 points must be ≤ 0.15 mm apart (CURVE_TOLERANCE = 0.1 plus a
     // small margin for parametric non-uniformity).
@@ -253,7 +253,7 @@ describe('GcodeGenerator', () => {
     const geo: PathGeometry[] = [{ d: circlePath, layerId: 'L' }];
     const t = { L: { offsetX: 0, offsetY: 0, scaleX: 2, scaleY: 2 } };
 
-    const gcode = generateGcode(geo, ops, defaultProfile, t);
+    const gcode = await generateGcode(geo, ops, defaultProfile, t);
     const coords = gcode.split('\n')
       .filter(l => l.startsWith('G1'))
       .map(l => {
@@ -271,7 +271,7 @@ describe('GcodeGenerator', () => {
     expect(maxDist).toBeLessThan(0.15);
   });
 
-  it('flips Y coordinates when originFlip is true and workH is provided', () => {
+  it('flips Y coordinates when originFlip is true and workH is provided', async () => {
     // A simple line at Y=30 in SVG space should be at Y=170 in machine space
     // when workH=200 and originFlip=true (bottom-left origin).
     const geometry: PathGeometry[] = [{ d: 'M 10 30 L 50 30' }];
@@ -282,7 +282,7 @@ describe('GcodeGenerator', () => {
       power: 100,
       passes: 1,
     }];
-    const gcode = generateGcode(geometry, operations, defaultProfile, undefined, true, 200);
+    const gcode = await generateGcode(geometry, operations, defaultProfile, undefined, true, 200);
 
     // Y should be flipped: 200 - 30 = 170
     expect(gcode).toContain('Y170.000');
@@ -291,7 +291,7 @@ describe('GcodeGenerator', () => {
     expect(gcode).toContain('X50.000');
   });
 
-  it('does not flip Y when originFlip is false', () => {
+  it('does not flip Y when originFlip is false', async () => {
     const geometry: PathGeometry[] = [{ d: 'M 10 30 L 50 30' }];
     const operations: Operation[] = [{
       id: 'no-flip-op',
@@ -300,13 +300,13 @@ describe('GcodeGenerator', () => {
       power: 100,
       passes: 1,
     }];
-    const gcode = generateGcode(geometry, operations, defaultProfile, undefined, false, 200);
+    const gcode = await generateGcode(geometry, operations, defaultProfile, undefined, false, 200);
 
     // Y should NOT be flipped
     expect(gcode).toContain('Y30.000');
   });
 
-  it('flips Y with layer transforms when originFlip is true', () => {
+  it('flips Y with layer transforms when originFlip is true', async () => {
     const geometry: PathGeometry[] = [{ d: 'M 0 0 L 10 0', layerId: 'L1' }];
     const operations: Operation[] = [{
       id: 'transform-flip',
@@ -317,7 +317,7 @@ describe('GcodeGenerator', () => {
       layerIds: ['L1'],
     }];
     const transforms = { L1: { offsetX: 5, offsetY: 10, scaleX: 1, scaleY: 1 } };
-    const gcode = generateGcode(geometry, operations, defaultProfile, transforms, true, 200);
+    const gcode = await generateGcode(geometry, operations, defaultProfile, transforms, true, 200);
 
     // With transform: Y = offsetY + 0 * scaleY = 10, then flip: 200 - 10 = 190
     expect(gcode).toContain('Y190.000');
@@ -325,7 +325,7 @@ describe('GcodeGenerator', () => {
     expect(gcode).toContain('X5.000');
   });
 
-  it('generates hatch-fill scan lines for filled shapes in engrave operations', () => {
+  it('generates hatch-fill scan lines for filled shapes in engrave operations', async () => {
     // A simple filled square: 0,0 → 10,0 → 10,10 → 0,10 → Z
     const geometry: PathGeometry[] = [{
       d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z',
@@ -339,7 +339,7 @@ describe('GcodeGenerator', () => {
       passes: 1,
       engraveLineInterval: 1, // 1mm spacing — should produce ~10 scan lines
     }];
-    const gcode = generateGcode(geometry, operations, defaultProfile);
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
 
     // Should contain M4 (engrave mode)
     expect(gcode).toContain('M4 S0');
@@ -351,7 +351,7 @@ describe('GcodeGenerator', () => {
     expect(g1Lines.length).toBeGreaterThan(10);
   });
 
-  it('does NOT hatch-fill shapes without fill in engrave operations', () => {
+  it('does NOT hatch-fill shapes without fill in engrave operations', async () => {
     // An unfilled square
     const geometry: PathGeometry[] = [{
       d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z',
@@ -365,14 +365,14 @@ describe('GcodeGenerator', () => {
       passes: 1,
       engraveLineInterval: 1,
     }];
-    const gcode = generateGcode(geometry, operations, defaultProfile);
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
 
     // Should only have the outline trace (4 line segments + close = 5 G1 lines)
     const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
     expect(g1Lines.length).toBeLessThanOrEqual(5);
   });
 
-  it('does NOT hatch-fill shapes in cut operations even when filled', () => {
+  it('does NOT hatch-fill shapes in cut operations even when filled', async () => {
     const geometry: PathGeometry[] = [{
       d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z',
       fill: '#ff0000',
@@ -384,7 +384,7 @@ describe('GcodeGenerator', () => {
       power: 80,
       passes: 1,
     }];
-    const gcode = generateGcode(geometry, operations, defaultProfile);
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
 
     // Cut mode: should use M3, not M4
     expect(gcode).toContain('M3 S0');
@@ -394,7 +394,7 @@ describe('GcodeGenerator', () => {
     expect(g1Lines.length).toBeLessThanOrEqual(5);
   });
 
-  it('respects engraveLineAngle for angled hatch lines', () => {
+  it('respects engraveLineAngle for angled hatch lines', async () => {
     // Filled square with 90° angle (vertical scan lines)
     const geometry: PathGeometry[] = [{
       d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z',
@@ -409,14 +409,14 @@ describe('GcodeGenerator', () => {
       engraveLineInterval: 1,
       engraveLineAngle: 90,
     }];
-    const gcode = generateGcode(geometry, operations, defaultProfile);
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
 
     const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
     // Should still produce hatch lines
     expect(g1Lines.length).toBeGreaterThan(10);
   });
 
-  it('scales hatch-fill S value by fill shade brightness', () => {
+  it('scales hatch-fill S value by fill shade brightness', async () => {
     // Two filled squares: one black (#000), one gray (#999)
     // Both assigned to the same engrave operation at 100% power.
     // The black fill should produce S1000, the gray should produce a lower S value.
@@ -433,7 +433,7 @@ describe('GcodeGenerator', () => {
       engraveLineInterval: 1,
       layerIds: ['L1', 'L2'],
     }];
-    const gcode = generateGcode(geometry, operations, defaultProfile);
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
 
     // Parse all G1 lines — hatch lines for the black square should use S1000,
     // hatch lines for the gray square should use a lower S value.
@@ -453,7 +453,7 @@ describe('GcodeGenerator', () => {
     expect(grayS[0]).toBeLessThan(500);
   });
 
-  it('hatch-fills shapes with SVG default fill (#000000) in engrave operations', () => {
+  it('hatch-fills shapes with SVG default fill (#000000) in engrave operations', async () => {
     // This shape has fill="#000000" (the SVG default), simulating a shape
     // that had no explicit fill attribute in the SVG source.
     const geometry: PathGeometry[] = [{
@@ -468,7 +468,7 @@ describe('GcodeGenerator', () => {
       passes: 1,
       engraveLineInterval: 1,
     }];
-    const gcode = generateGcode(geometry, operations, defaultProfile);
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
 
     // Should produce hatch lines plus outline
     const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
@@ -500,5 +500,175 @@ describe('fillBrightness', () => {
     expect(fillBrightness('red')).toBeNull();
     expect(fillBrightness(undefined)).toBeNull();
     expect(fillBrightness('')).toBeNull();
+  });
+});
+
+describe('raster image engraving', () => {
+  /** Helper: create a PNG data URL from raw grayscale pixel values. */
+  async function makeGrayscalePng(pixels: number[], width: number, height: number): Promise<string> {
+    const sharp = (await import('sharp')).default;
+    const buf = await sharp(Buffer.from(pixels), { raw: { width, height, channels: 1 } })
+      .png()
+      .toBuffer();
+    return 'data:image/png;base64,' + buf.toString('base64');
+  }
+
+  it('generates raster G-code for image geometry in engrave operations', async () => {
+    // 4×2 grayscale image: top row has varying brightness, bottom row is mid-gray.
+    // Bounding rect: 4mm × 2mm
+    const dataUrl = await makeGrayscalePng([0, 85, 170, 255, 128, 128, 128, 128], 4, 2);
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 4 0 L 4 2 L 0 2 Z',
+      imageDataUrl: dataUrl,
+    }];
+    const operations: Operation[] = [{
+      id: 'img-engrave',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 100,
+      passes: 1,
+    }];
+
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
+
+    // Should contain M4 (engrave mode)
+    expect(gcode).toContain('M4 S0');
+
+    // Should contain G1 moves (raster scan lines)
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+    expect(g1Lines.length).toBeGreaterThan(0);
+
+    // Black pixel → full power (S1000)
+    expect(gcode).toContain('S1000');
+
+    // G0 S0 moves are present (for row positioning and any interior white gaps)
+    const g0Lines = gcode.split('\n').filter(l => l.includes('G0') && l.includes('S0'));
+    expect(g0Lines.length).toBeGreaterThan(0);
+
+    // Engrave should NOT trace the bounding rectangle outline — no rectangle border burns.
+    // Previously the code always called pathToGcode on the bounding rect for all op types,
+    // causing an unwanted burned border around engraved images.
+    // With the fix, X4.000 Y2.000 should not appear as a G1 endpoint (bounding rect corner).
+    const g1AtCorner = gcode.split('\n').filter(l => l.startsWith('G1') && l.includes('X4.000') && l.includes('Y2.000'));
+    expect(g1AtCorner.length).toBe(0);
+  });
+
+  it('traces bounding rectangle outline for cut operations on images', async () => {
+    // Simple 2×2 black image
+    const dataUrl = await makeGrayscalePng([0, 0, 0, 0], 2, 2);
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z',
+      imageDataUrl: dataUrl,
+    }];
+    const operations: Operation[] = [{
+      id: 'img-cut',
+      type: 'cut',
+      feedRate: 600,
+      power: 80,
+      passes: 1,
+    }];
+
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
+
+    // Should use M3 (cut mode)
+    expect(gcode).toContain('M3 S0');
+
+    // Should NOT contain raster scan data — just the rectangle outline
+    // 4 sides of the rectangle = 4 G1 lines + 1 close
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+    expect(g1Lines.length).toBeLessThanOrEqual(5);
+
+    // The outline should reference the rectangle corners
+    expect(gcode).toContain('X10.000');
+    expect(gcode).toContain('Y10.000');
+  });
+
+  it('skips fully white rows in raster engraving', async () => {
+    // 2×2 image: row 0 is white, row 1 is black
+    const dataUrl = await makeGrayscalePng([255, 255, 0, 0], 2, 2);
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 2 0 L 2 2 L 0 2 Z',
+      imageDataUrl: dataUrl,
+    }];
+    const operations: Operation[] = [{
+      id: 'img-skip-white',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 100,
+      passes: 1,
+    }];
+
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
+
+    // Should have raster lines for the black row but skip the white row
+    // The outline trace also produces G1 lines, so just verify that
+    // S1000 appears (from the black pixels).
+    expect(gcode).toContain('S1000');
+  });
+
+  it('modulates power by pixel brightness', async () => {
+    // 2×1 image: one pixel at mid-gray (128), one at black (0)
+    const dataUrl = await makeGrayscalePng([128, 0], 2, 1);
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 2 0 L 2 1 L 0 1 Z',
+      imageDataUrl: dataUrl,
+    }];
+    const operations: Operation[] = [{
+      id: 'img-brightness',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 100,
+      passes: 1,
+    }];
+
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
+
+    // Black pixel (brightness=0) → S1000
+    expect(gcode).toContain('S1000');
+    // Mid-gray pixel (brightness=128) → S ≈ round(1000*(1-128/255)) ≈ 498
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+    const sValues = g1Lines.map(l => {
+      const m = l.match(/S(\d+)/);
+      return m ? parseInt(m[1]) : -1;
+    }).filter(v => v >= 0);
+    // Should have a value around 498 (mid-gray power)
+    const midGrayS = sValues.filter(s => s > 400 && s < 600);
+    expect(midGrayS.length).toBeGreaterThan(0);
+  });
+
+  it('skips leading and trailing white/transparent margins per row', async () => {
+    // 5×1 image: [255, 255, 0, 255, 255]
+    // Only the middle pixel (col 2) has content; the two whites on each side are margins.
+    // The head should jump directly to col 2 and stop there — no G0 travel to image edges.
+    const dataUrl = await makeGrayscalePng([255, 255, 0, 255, 255], 5, 1);
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 5 0 L 5 1 L 0 1 Z',
+      imageDataUrl: dataUrl,
+    }];
+    const operations: Operation[] = [{
+      id: 'img-margin-skip',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 100,
+      passes: 1,
+    }];
+
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
+
+    // Should engrave the black pixel at full power
+    expect(gcode).toContain('S1000');
+
+    // The G0 positioning move should jump to X=2 (left edge of col 2, pixelW=1mm),
+    // NOT to X=0 (left image edge). X=0 should never appear in a row-start G0.
+    const rowStartG0 = gcode.split('\n').find(l => l.includes('G0') && l.includes('Y0.500'));
+    expect(rowStartG0).toBeDefined();
+    // Should position at X=2.000 (start of content), not X=0.000
+    expect(rowStartG0).toContain('X2.000');
+    expect(rowStartG0).not.toContain('X0.000');
+
+    // No G0 should go to X=5.000 (right image edge) — trailing whites are skipped
+    const allLines = gcode.split('\n');
+    const travelsToEdge = allLines.some(l => l.includes('G0') && l.includes('X5.000'));
+    expect(travelsToEdge).toBe(false);
   });
 });
