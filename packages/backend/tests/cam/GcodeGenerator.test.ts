@@ -479,24 +479,24 @@ describe('GcodeGenerator', () => {
 });
 
 describe('fillBrightness', () => {
-  it('returns 0 for black (#000000)', async () => {
+  it('returns 0 for black (#000000)', () => {
     expect(fillBrightness('#000000')).toBeCloseTo(0);
   });
 
-  it('returns 1 for white (#ffffff)', async () => {
+  it('returns 1 for white (#ffffff)', () => {
     expect(fillBrightness('#ffffff')).toBeCloseTo(1);
   });
 
-  it('returns approximately 0.6 for #999999', async () => {
+  it('returns approximately 0.6 for #999999', () => {
     expect(fillBrightness('#999999')).toBeCloseTo(0.6, 1);
   });
 
-  it('handles short hex (#RGB)', async () => {
+  it('handles short hex (#RGB)', () => {
     expect(fillBrightness('#000')).toBeCloseTo(0);
     expect(fillBrightness('#fff')).toBeCloseTo(1);
   });
 
-  it('returns null for non-hex strings', async () => {
+  it('returns null for non-hex strings', () => {
     expect(fillBrightness('red')).toBeNull();
     expect(fillBrightness(undefined)).toBeNull();
     expect(fillBrightness('')).toBeNull();
