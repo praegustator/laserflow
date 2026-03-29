@@ -6,7 +6,7 @@ import { useToastStore } from '../store/toastStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { api } from '../api/client';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faToggleOn, faToggleOff, faTrash, faClone, faPlus } from '@fortawesome/free-solid-svg-icons';
+import { faToggleOn, faToggleOff, faTrash, faClone, faPlus, faGears, faEye } from '@fortawesome/free-solid-svg-icons';
 
 const OP_TYPE_LABELS: Record<OperationType, string> = {
   cut: '✂ Cut',
