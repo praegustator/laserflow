@@ -487,7 +487,7 @@ describe('fillBrightness', () => {
     expect(fillBrightness('#ffffff')).toBeCloseTo(1);
   });
 
-  it('returns ≈0.6 for #999999', () => {
+  it('returns approximately 0.6 for #999999', () => {
     expect(fillBrightness('#999999')).toBeCloseTo(0.6, 1);
   });
 

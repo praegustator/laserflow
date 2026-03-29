@@ -392,7 +392,7 @@ export function generateGcode(
         // The S value is scaled by the fill shade: darker = more power,
         // lighter = less.  fill="none" shapes (fill === undefined) are
         // skipped — they have no interior to raster.
-        if (op.type === 'engrave' && geo.fill && geo.fill !== 'none') {
+        if (op.type === 'engrave' && geo.fill) {
           const interval = op.engraveLineInterval ?? 0.1;
           const angle = op.engraveLineAngle ?? 0;
           // Scale power by shade brightness (black = full power, white = 0)
