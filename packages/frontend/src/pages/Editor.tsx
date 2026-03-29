@@ -10,13 +10,77 @@ import OperationsPanel from '../components/OperationsPanel';
 import LayerTransformPanel from '../components/LayerTransformPanel';
 import ShapeTransformPanel from '../components/ShapeTransformPanel';
 import ImageImportDialog from '../components/ImageImportDialog';
-import type { Layer } from '../types';
-import { hasMultipleSubpaths, computeLayerWorldBBox, computeMultiLayerWorldBBox } from '../utils/geometry';
+import type { Layer, PivotAnchor } from '../types';
+import { hasMultipleSubpaths, computeLayerWorldBBox, computeMultiLayerWorldBBox, worldAnchorPoint } from '../utils/geometry';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faEye, faEyeSlash, faTrash, faFileImport, faObjectGroup, faLayerGroup, faScissors, faArrowUpFromBracket, faMagnifyingGlassPlus, faMagnifyingGlassMinus, faExpand, faCompress, faBezierCurve, faImage } from '@fortawesome/free-solid-svg-icons';
+import { faEye, faEyeSlash, faTrash, faFileImport, faObjectGroup, faLayerGroup, faScissors, faArrowUpFromBracket, faMagnifyingGlassPlus, faMagnifyingGlassMinus, faExpand, faCompress, faBezierCurve, faImage, faCrosshairs, faXmark } from '@fortawesome/free-solid-svg-icons';
 
 const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];
 const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|bmp|webp)$/i;
+
+const PIVOT_GRID: PivotAnchor[][] = [
+  ['tl', 'tc', 'tr'],
+  ['ml', 'mc', 'mr'],
+  ['bl', 'bc', 'br'],
+];
+
+const PIVOT_LABELS: Record<PivotAnchor, string> = {
+  tl: 'Top-left', tc: 'Top-centre', tr: 'Top-right',
+  ml: 'Middle-left', mc: 'Centre', mr: 'Middle-right',
+  bl: 'Bottom-left', bc: 'Bottom-centre', br: 'Bottom-right',
+};
+
+interface AlignPickerProps {
+  targetLabel: string;
+  onConfirm: (sourceAnchor: PivotAnchor, targetAnchor: PivotAnchor) => void;
+  onCancel: () => void;
+}
+
+function AlignPivotPicker({ targetLabel, onConfirm, onCancel }: AlignPickerProps) {
+  const [sourceAnchor, setSourceAnchor] = useState<PivotAnchor>('mc');
+  const [targetAnchor, setTargetAnchor] = useState<PivotAnchor>('mc');
+
+  const AnchorGrid = ({ value, onChange, label }: { value: PivotAnchor; onChange: (a: PivotAnchor) => void; label: string }) => (
+    <div>
+      <p className="text-xs text-gray-500 uppercase mb-1">{label}</p>
+      <div className="grid grid-cols-3 gap-0.5 w-20">
+        {PIVOT_GRID.flat().map(a => (
+          <button
+            key={a}
+            onClick={() => onChange(a)}
+            title={PIVOT_LABELS[a]}
+            className={`w-6 h-6 rounded text-xs flex items-center justify-center transition-colors ${
+              value === a ? 'bg-orange-500 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-400'
+            }`}
+          >●</button>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="absolute inset-x-0 top-0 z-20 bg-gray-900 border-b border-orange-500 px-3 py-3 shadow-lg">
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div>
+          <p className="text-xs font-semibold text-orange-400 uppercase tracking-wide">Align to: {targetLabel}</p>
+          <p className="text-xs text-gray-500 mt-0.5">Pick a point on the selection and a point on the target.</p>
+        </div>
+        <button onClick={onCancel} className="text-gray-500 hover:text-gray-200 text-xs flex-shrink-0">
+          <FontAwesomeIcon icon={faXmark} />
+        </button>
+      </div>
+      <div className="flex gap-6 items-start">
+        <AnchorGrid value={sourceAnchor} onChange={setSourceAnchor} label="Selection point" />
+        <div className="text-gray-500 text-lg mt-5">→</div>
+        <AnchorGrid value={targetAnchor} onChange={setTargetAnchor} label="Target point" />
+      </div>
+      <button
+        onClick={() => onConfirm(sourceAnchor, targetAnchor)}
+        className="mt-3 w-full py-1 text-xs rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold transition-colors"
+      >Align</button>
+    </div>
+  );
+}
 
 export default function Editor() {
   const projects = useProjectStore(s => s.projects);
@@ -40,6 +104,7 @@ export default function Editor() {
   const saveVersion = useProjectStore(s => s.saveVersion);
   const restoreVersion = useProjectStore(s => s.restoreVersion);
   const deleteVersion = useProjectStore(s => s.deleteVersion);
+  const alignLayersToPoint = useProjectStore(s => s.alignLayersToPoint);
   const originPosition = useAppSettings(s => s.originPosition);
   const workAreaHeight = useAppSettings(s => s.workAreaHeight);
   const autoZoomOnLayerSelect = useAppSettings(s => s.autoZoomOnLayerSelect);
@@ -77,6 +142,9 @@ export default function Editor() {
   const [currentZoom, setCurrentZoom] = useState(1.5);
   // Image import dialog state: queue of image files waiting for DPI confirmation
   const [imageImportQueue, setImageImportQueue] = useState<File[]>([]);
+  // Alignment mode state
+  const [alignMode, setAlignMode] = useState(false);
+  const [alignTarget, setAlignTarget] = useState<{ type: 'layer'; layerId: string; label: string } | { type: 'board'; label: string } | null>(null);
 
   const project = projects.find(p => p.id === activeProjectId) ?? null;
 
@@ -315,6 +383,35 @@ export default function Editor() {
     setSelectedShapeIds(new Set());
   }, [selectedLayerIds, removeLayer, addToast]);
 
+  const exitAlignMode = useCallback(() => {
+    setAlignMode(false);
+    setAlignTarget(null);
+  }, []);
+
+  /** Called when user confirms alignment in the popup */
+  const handleAlignConfirm = useCallback((sourceAnchor: PivotAnchor, targetAnchor: PivotAnchor) => {
+    if (!alignTarget || !project) return;
+    const workAreaWidth = useAppSettings.getState().workAreaWidth;
+    const workH = useAppSettings.getState().workAreaHeight;
+    let targetWx: number, targetWy: number;
+    if (alignTarget.type === 'board') {
+      const boardBbox = { minX: 0, minY: 0, maxX: workAreaWidth, maxY: workH, width: workAreaWidth, height: workH };
+      const pt = worldAnchorPoint(boardBbox, targetAnchor);
+      targetWx = pt.x;
+      targetWy = pt.y;
+    } else {
+      const targetLayer = project.layers.find(l => l.id === alignTarget.layerId);
+      if (!targetLayer) { exitAlignMode(); return; }
+      const bbox = computeLayerWorldBBox(targetLayer);
+      if (!bbox) { exitAlignMode(); return; }
+      const pt = worldAnchorPoint(bbox, targetAnchor);
+      targetWx = pt.x;
+      targetWy = pt.y;
+    }
+    alignLayersToPoint(Array.from(selectedLayerIds), targetWx, targetWy, sourceAnchor);
+    exitAlignMode();
+  }, [alignTarget, project, alignLayersToPoint, selectedLayerIds, exitAlignMode]);
+
   const shortcuts = useMemo<ShortcutDef[]>(() => {
     const singleLayerId = selectedLayerIds.size === 1 ? Array.from(selectedLayerIds)[0] : null;
     return [
@@ -328,7 +425,10 @@ export default function Editor() {
           setSelectedLayerIds(new Set());
         }
       }},
-      { key: 'Escape', label: 'Deselect', handler: () => { setSelectedLayerIds(new Set()); setSelectedShapeIds(new Set()); } },
+      { key: 'Escape', label: 'Deselect / cancel align', handler: () => {
+        if (alignMode) { exitAlignMode(); return; }
+        setSelectedLayerIds(new Set()); setSelectedShapeIds(new Set());
+      }},
     ];
   }, [selectedLayerIds, selectedShapeIds, removeLayer, removeShapes]);
   useKeyboardShortcuts(shortcuts);
@@ -438,11 +538,25 @@ export default function Editor() {
             {/* Layers list — click outside layers to deselect */}
             <div
               className="flex-1 overflow-y-auto p-2 space-y-1 min-h-0 relative"
-              onClick={() => { setSelectedLayerIds(new Set()); setSelectedShapeIds(new Set()); }}
+              onClick={() => { if (!alignMode) { setSelectedLayerIds(new Set()); setSelectedShapeIds(new Set()); } }}
               onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
               onDragLeave={e => { e.stopPropagation(); setDragOver(false); }}
               onDrop={e => { e.stopPropagation(); handleDrop(e); }}
             >
+              {/* Align mode banner */}
+              {alignMode && !alignTarget && (
+                <div className="sticky top-0 z-10 flex items-center gap-2 bg-orange-900/80 border border-orange-500 rounded px-2 py-1.5 mb-1 backdrop-blur-sm">
+                  <FontAwesomeIcon icon={faCrosshairs} className="text-orange-400 text-xs flex-shrink-0" />
+                  <span className="text-xs text-orange-200 flex-1">Click a layer to align to, or:</span>
+                  <button
+                    onClick={e => { e.stopPropagation(); setAlignTarget({ type: 'board', label: 'Board' }); }}
+                    className="text-xs px-1.5 py-0.5 rounded bg-orange-600 hover:bg-orange-500 text-white"
+                  >Board</button>
+                  <button onClick={e => { e.stopPropagation(); exitAlignMode(); }} className="text-orange-400 hover:text-orange-200 text-xs ml-1">
+                    <FontAwesomeIcon icon={faXmark} />
+                  </button>
+                </div>
+              )}
               {dragOver && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-950/80 border-2 border-dashed border-orange-400 rounded pointer-events-none">
                   <p className="text-sm font-bold text-orange-400">Drop SVG/image file(s) here</p>
@@ -471,6 +585,11 @@ export default function Editor() {
                   onClick={e => {
                     e.stopPropagation();
                     setColorPickerLayerId(null);
+                    // In align mode, non-selected layers become the alignment target
+                    if (alignMode && !selectedLayerIds.has(layer.id)) {
+                      setAlignTarget({ type: 'layer', layerId: layer.id, label: layer.name });
+                      return;
+                    }
                     if (e.shiftKey || e.metaKey || e.ctrlKey) {
                       // Multi-select: toggle this layer
                       setSelectedLayerIds(prev => {
@@ -484,7 +603,15 @@ export default function Editor() {
                     }
                     setSelectedShapeIds(new Set());
                   }}
-                  className={`rounded-lg border p-2 cursor-pointer transition-colors ${selectedLayerIds.has(layer.id) ? 'border-orange-500 bg-gray-800' : opHighlightedLayerIds.has(layer.id) ? 'border-gray-700 bg-blue-900/20' : 'border-gray-700 hover:border-gray-600'} ${dragOverLayerId === layer.id ? 'border-blue-400 border-dashed' : ''}`}
+                  className={`rounded-lg border p-2 cursor-pointer transition-colors ${
+                    selectedLayerIds.has(layer.id)
+                      ? 'border-orange-500 bg-gray-800'
+                      : alignMode && !selectedLayerIds.has(layer.id)
+                        ? 'border-blue-500/60 hover:border-blue-400 hover:bg-blue-900/20'
+                        : opHighlightedLayerIds.has(layer.id)
+                          ? 'border-gray-700 bg-blue-900/20'
+                          : 'border-gray-700 hover:border-gray-600'
+                  } ${dragOverLayerId === layer.id ? 'border-blue-400 border-dashed' : ''}`}
                 >
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-gray-600 cursor-grab active:cursor-grabbing select-none mr-0.5" title="Drag to reorder">⠿</span>
@@ -661,32 +788,54 @@ export default function Editor() {
               )}
 
               {/* Bulk actions for multi-layer selection */}
-              {selectedLayerIds.size > 1 && (
+              {selectedLayerIds.size >= 1 && (
                 <div className="flex items-center gap-2 mt-1 pt-1 border-t border-gray-700">
-                  <span className="text-xs text-gray-500">{selectedLayerIds.size} layers selected</span>
+                  <span className="text-xs text-gray-500">{selectedLayerIds.size} layer{selectedLayerIds.size !== 1 ? 's' : ''} selected</span>
                   <div className="flex-1" />
-                  <button
-                    onClick={e => { e.stopPropagation(); handleDeleteSelectedLayers(); }}
-                    className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"
-                    title="Delete selected layers"
-                  ><FontAwesomeIcon icon={faTrash} /> Delete</button>
-                  <button
-                    onClick={e => {
-                      e.stopPropagation();
-                      if (!project) return;
-                      const ids = Array.from(selectedLayerIds);
-                      const targetId = mergeLayers(ids);
-                      if (!targetId) return;
-                      setSelectedLayerIds(new Set([targetId]));
-                      const targetName = project.layers.find(l => l.id === targetId)?.name ?? 'layer';
-                      addToast('info', `Merged ${ids.length} layers into "${targetName}"`);
-                    }}
-                    className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1"
-                    title="Merge selected layers into one"
-                  ><FontAwesomeIcon icon={faObjectGroup} /> Merge</button>
+                  {!alignMode && (
+                    <button
+                      onClick={e => { e.stopPropagation(); setAlignMode(true); }}
+                      className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                      title="Align selected layers to another layer or the board"
+                    ><FontAwesomeIcon icon={faCrosshairs} /> Align</button>
+                  )}
+                  {selectedLayerIds.size > 1 && (
+                    <>
+                      <button
+                        onClick={e => { e.stopPropagation(); handleDeleteSelectedLayers(); }}
+                        className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"
+                        title="Delete selected layers"
+                      ><FontAwesomeIcon icon={faTrash} /> Delete</button>
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          if (!project) return;
+                          const ids = Array.from(selectedLayerIds);
+                          const targetId = mergeLayers(ids);
+                          if (!targetId) return;
+                          setSelectedLayerIds(new Set([targetId]));
+                          const targetName = project.layers.find(l => l.id === targetId)?.name ?? 'layer';
+                          addToast('info', `Merged ${ids.length} layers into "${targetName}"`);
+                        }}
+                        className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1"
+                        title="Merge selected layers into one"
+                      ><FontAwesomeIcon icon={faObjectGroup} /> Merge</button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
+
+            {/* Alignment pivot picker overlay */}
+            {alignTarget && (
+              <div className="relative flex-shrink-0">
+                <AlignPivotPicker
+                  targetLabel={alignTarget.label}
+                  onConfirm={handleAlignConfirm}
+                  onCancel={exitAlignMode}
+                />
+              </div>
+            )}
 
             {/* Layer/Shape transform panel — shown at bottom when layer(s) are selected */}
             {selectedLayerIds.size >= 1 && (() => {

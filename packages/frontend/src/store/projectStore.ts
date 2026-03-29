@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '../api/client';
 import type { Project, ProjectFile, ProjectVersion, Layer, Shape, Operation, PathGeometry, Job, PivotAnchor } from '../types';
-import { computeShapesBoundingBox, bakeLayerTransform, splitPathIntoSubpaths } from '../utils/geometry';
+import { computeShapesBoundingBox, bakeLayerTransform, splitPathIntoSubpaths, computeLayerWorldBBox, computeMultiLayerWorldBBox, worldAnchorPoint } from '../utils/geometry';
 import { useAppSettings, type OriginPosition } from './appSettingsStore';
 
 function uid(): string {
@@ -57,6 +57,12 @@ interface ProjectStore {
 
   /** Split a layer into separate layers, one per shape (original layer is removed). */
   splitLayerIntoShapeLayers: (layerId: string) => string[];
+
+  /**
+   * Align one or more layers so that `sourceAnchor` of their combined world bounding box
+   * coincides with (targetWx, targetWy) in world space.
+   */
+  alignLayersToPoint: (sourceLayerIds: string[], targetWx: number, targetWy: number, sourceAnchor: PivotAnchor) => void;
 
   // Operations
   addOperation: () => string | null;
@@ -683,6 +689,33 @@ export const useProjectStore = create<ProjectStore>()(
           }),
         }));
         return newIds;
+      },
+
+      alignLayersToPoint: (sourceLayerIds, targetWx, targetWy, sourceAnchor) => {
+        const { activeProjectId } = get();
+        if (!activeProjectId) return;
+        const project = getActiveProject(get().projects, activeProjectId);
+        if (!project) return;
+        const sourceLayers = sourceLayerIds
+          .map(id => project.layers.find(l => l.id === id))
+          .filter(Boolean) as Layer[];
+        if (sourceLayers.length === 0) return;
+        const worldBbox = computeMultiLayerWorldBBox(sourceLayers);
+        if (!worldBbox) return;
+        const sourcePoint = worldAnchorPoint(worldBbox, sourceAnchor);
+        const dx = targetWx - sourcePoint.x;
+        const dy = targetWy - sourcePoint.y;
+        set(s => ({
+          projects: updateProject(s.projects, activeProjectId, p => ({
+            ...p,
+            layers: p.layers.map(l =>
+              sourceLayerIds.includes(l.id)
+                ? { ...l, offsetX: l.offsetX + dx, offsetY: l.offsetY + dy }
+                : l,
+            ),
+            gcodeUpToDate: false,
+          })),
+        }));
       },
 
       addOperation: () => {
