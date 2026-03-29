@@ -21,7 +21,7 @@ interface ProjectStore {
 
   // File import
   importSvgFile: (file: File) => Promise<void>;
-  importImageFile: (file: File) => Promise<void>;
+  importImageFile: (file: File, dpi?: number) => Promise<void>;
 
   // Layer management
   addLayer: (name: string) => void;
@@ -191,7 +191,7 @@ export const useProjectStore = create<ProjectStore>()(
         }));
       },
 
-      importImageFile: async (file: File) => {
+      importImageFile: async (file: File, dpi?: number) => {
         const { activeProjectId } = get();
         if (!activeProjectId) return;
 
@@ -213,11 +213,10 @@ export const useProjectStore = create<ProjectStore>()(
 
         if (imgW === 0 || imgH === 0) throw new Error('Image has zero dimensions');
 
-        // Convert pixels to mm: default 10 pixels per mm (254 DPI).
-        // This aligns well with the default engraveLineInterval of 0.1mm.
-        const PX_PER_MM = 10;
-        const widthMm = imgW / PX_PER_MM;
-        const heightMm = imgH / PX_PER_MM;
+        // Convert pixels to mm using the supplied DPI (default 96 — the CSS/browser standard).
+        const effectiveDpi = dpi && dpi > 0 ? dpi : 96;
+        const widthMm = (imgW / effectiveDpi) * 25.4;
+        const heightMm = (imgH / effectiveDpi) * 25.4;
 
         const fileId = uid();
         const baseName = file.name.replace(/\.[^.]+$/, '');
