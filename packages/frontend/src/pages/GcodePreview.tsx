@@ -139,7 +139,7 @@ export default function GcodePreview() {
     let maxS = 0;
     for (const line of gcode.split('\n')) {
       const t = line.trim();
-      if ((t.startsWith('G1 ') || t.startsWith('G1\t')) ) {
+      if ((t.startsWith('G1 ') || t.startsWith('G1\t'))) {
         const m = t.match(/S([\d.]+)/);
         if (m) {
           const s = parseFloat(m[1]);
@@ -297,13 +297,12 @@ export default function GcodePreview() {
     prevY = displayY;
   }
 
-  /** Convert normalised power 0–1 to an orange colour string.
-   *  Full power → bright #f97316, near-zero → dark #7c2d12. */
+  /** Convert normalised power 0–1 to a monochrome colour string.
+   *  Full power → near-white, near-zero → dark gray. */
   function powerToColor(power: number): string {
-    // Interpolate between dark-orange (low) and bright-orange (high).
-    // Use HSL: hue fixed at ~22° (orange), saturation ~90%, lightness 20-55%.
-    const l = Math.round(20 + power * 35);
-    return `hsl(22,90%,${l}%)`;
+    // Lightness: 20% at zero power (barely visible on dark bg), 95% at full power.
+    const l = Math.round(20 + power * 75);
+    return `hsl(0,0%,${l}%)`;
   }
 
   const handleExport = () => {

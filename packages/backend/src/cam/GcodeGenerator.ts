@@ -402,38 +402,45 @@ export function rasterImageToGcode(
   for (let row = 0; row < image.height; row++) {
     const leftToRight = row % 2 === 0;
     const y = bbox.y + (row + 0.5) * pixelH;
-
-    // Determine the effective pixel range for this scan line
-    const startCol = leftToRight ? 0 : image.width - 1;
-    const endCol = leftToRight ? image.width : -1;
     const step = leftToRight ? 1 : -1;
 
-    // Skip fully white rows (no power needed)
-    let rowHasContent = false;
+    // Find the first and last non-white pixels in this row.
+    // At this point all transparency has already been composited to white (brightness=255)
+    // by ImageParser, so brightness=255 means "no engraving power needed" regardless
+    // of whether the original pixel was white or transparent.
+    // This lets us skip those margins entirely — the head jumps directly to the first
+    // content pixel and stops after the last one, avoiding needless travel over edges.
     const rowOffset = row * image.width;
-    for (let col = 0; col < image.width; col++) {
-      if (image.pixels[rowOffset + col] < 255) {
-        rowHasContent = true;
-        break;
+    let firstContentCol = -1;
+    let lastContentCol = -1;
+    for (let c = 0; c < image.width; c++) {
+      if (image.pixels[rowOffset + c] < 255) {
+        if (firstContentCol === -1) firstContentCol = c;
+        lastContentCol = c;
       }
     }
-    if (!rowHasContent) continue;
+    // Skip fully white rows (no power needed on any pixel)
+    if (firstContentCol === -1) continue;
 
-    // Move to start of row
-    const startX = bbox.x + (leftToRight ? 0 : bbox.w);
+    // Adjust scan range to content extent only (skip leading & trailing whites)
+    const scanStartCol = leftToRight ? firstContentCol : lastContentCol;
+    const scanEndCol   = leftToRight ? lastContentCol + 1 : firstContentCol - 1; // exclusive sentinel
+
+    // Move directly to first content pixel (skip leading transparent margin)
+    const startX = bbox.x + (leftToRight ? firstContentCol : lastContentCol + 1) * pixelW;
     const [tsx, tsy] = applyTransform(startX, y, transform);
     lines.push(`G0 X${fmt(tsx)} Y${fmt(tsy)} S0`);
 
     // Engrave pixel by pixel — group consecutive pixels with the same
     // brightness into single G1 moves for efficiency.
-    let col = startCol;
-    while (col !== endCol) {
+    let col = scanStartCol;
+    while (col !== scanEndCol) {
       const brightness = image.pixels[rowOffset + col];
       const pixelSValue = Math.round(sValue * (1 - brightness / 255));
 
       // Find run of consecutive pixels with same brightness
       let runEnd = col + step;
-      while (runEnd !== endCol && image.pixels[rowOffset + runEnd] === brightness) {
+      while (runEnd !== scanEndCol && image.pixels[rowOffset + runEnd] === brightness) {
         runEnd += step;
       }
 
@@ -443,7 +450,7 @@ export function rasterImageToGcode(
       if (pixelSValue > 0) {
         lines.push(`G1 X${fmt(tex)} Y${fmt(tey)} F${feedRate} S${pixelSValue}`);
       } else {
-        // White pixels — rapid move with laser off
+        // Interior white pixels — rapid move with laser off (bridges to next content pixel)
         lines.push(`G0 X${fmt(tex)} Y${fmt(tey)} S0`);
       }
       col = runEnd;

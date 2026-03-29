@@ -541,8 +541,7 @@ describe('raster image engraving', () => {
     // Black pixel → full power (S1000)
     expect(gcode).toContain('S1000');
 
-    // White pixel → no power — emitted as G0 (rapid) not G1
-    // The last pixel in row 0 is white (255), so it should produce a G0 S0.
+    // G0 S0 moves are present (for row positioning and any interior white gaps)
     const g0Lines = gcode.split('\n').filter(l => l.includes('G0') && l.includes('S0'));
     expect(g0Lines.length).toBeGreaterThan(0);
   });
@@ -628,5 +627,41 @@ describe('raster image engraving', () => {
     // Should have a value around 498 (mid-gray power)
     const midGrayS = sValues.filter(s => s > 400 && s < 600);
     expect(midGrayS.length).toBeGreaterThan(0);
+  });
+
+  it('skips leading and trailing white/transparent margins per row', async () => {
+    // 5×1 image: [255, 255, 0, 255, 255]
+    // Only the middle pixel (col 2) has content; the two whites on each side are margins.
+    // The head should jump directly to col 2 and stop there — no G0 travel to image edges.
+    const dataUrl = await makeGrayscalePng([255, 255, 0, 255, 255], 5, 1);
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 5 0 L 5 1 L 0 1 Z',
+      imageDataUrl: dataUrl,
+    }];
+    const operations: Operation[] = [{
+      id: 'img-margin-skip',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 100,
+      passes: 1,
+    }];
+
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
+
+    // Should engrave the black pixel at full power
+    expect(gcode).toContain('S1000');
+
+    // The G0 positioning move should jump to X=2 (left edge of col 2, pixelW=1mm),
+    // NOT to X=0 (left image edge). X=0 should never appear in a row-start G0.
+    const rowStartG0 = gcode.split('\n').find(l => l.includes('G0') && l.includes('Y0.500'));
+    expect(rowStartG0).toBeDefined();
+    // Should position at X=2.000 (start of content), not X=0.000
+    expect(rowStartG0).toContain('X2.000');
+    expect(rowStartG0).not.toContain('X0.000');
+
+    // No G0 should go to X=5.000 (right image edge) — trailing whites are skipped
+    const allLines = gcode.split('\n');
+    const travelsToEdge = allLines.some(l => l.includes('G0') && l.includes('X5.000'));
+    expect(travelsToEdge).toBe(false);
   });
 });
