@@ -31,8 +31,9 @@ export function fillBrightness(fill: string | undefined): number | null {
     g = parseInt(s[2] + s[2], 16);
     b = parseInt(s[3] + s[3], 16);
   } else {
-    // Try rgb(r, g, b) / rgb(r g b) functional notation
-    const rgbMatch = s.match(/^rgb\(\s*(\d{1,3})\s*[,\s]\s*(\d{1,3})\s*[,\s]\s*(\d{1,3})\s*\)$/i);
+    // Try rgb(r, g, b) comma-separated or rgb(r g b) space-separated notation
+    const rgbMatch = s.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i)
+      ?? s.match(/^rgb\(\s*(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})\s*\)$/i);
     if (rgbMatch) {
       r = parseInt(rgbMatch[1], 10);
       g = parseInt(rgbMatch[2], 10);
