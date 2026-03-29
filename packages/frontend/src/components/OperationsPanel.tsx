@@ -308,11 +308,13 @@ function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRen
           />
         ) : (
           <>
-            <span
-              className="text-xs text-gray-300 truncate max-w-[80px]"
-              title="Double-click to rename"
-              onDoubleClick={e => { e.stopPropagation(); setLocalLabel(op.label ?? ''); setEditingLabel(true); }}
-            >{op.label || ''}</span>
+            {op.label ? (
+              <span
+                className="text-xs text-gray-400 italic truncate max-w-[80px]"
+                title="Double-click to rename"
+                onDoubleClick={e => { e.stopPropagation(); setLocalLabel(op.label ?? ''); setEditingLabel(true); }}
+              >({op.label})</span>
+            ) : null}
             <button
               onClick={e => { e.stopPropagation(); setLocalLabel(op.label ?? ''); setEditingLabel(true); }}
               className="text-gray-600 hover:text-orange-400 text-[10px] flex-shrink-0"
