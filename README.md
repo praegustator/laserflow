@@ -15,6 +15,10 @@ LaserFlow is an open-source, browser-based CAM (Computer-Aided Manufacturing) to
 * ♻️ Save and reuse material and machine configurations
 * 🧪 Inspect raw serial communication between the app and the machine
 
+<img width="1884" height="1023" alt="Screenshot 2026-03-30 at 00 50 57" src="https://github.com/user-attachments/assets/9dbad68f-12be-4a83-b6c3-ab1269b05390" />
+<img width="1884" height="1023" alt="Screenshot 2026-03-30 at 00 52 27" src="https://github.com/user-attachments/assets/0289eb83-ea89-4f6a-9075-5f54ac4d6106" />
+<img width="1884" height="1023" alt="Screenshot 2026-03-30 at 00 54 03" src="https://github.com/user-attachments/assets/79b6ec5e-5ed6-4486-b324-96c37e989ac4" />
+
 ## Quick Start
 
 ```sh
