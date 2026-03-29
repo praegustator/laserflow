@@ -443,7 +443,7 @@ export default function Editor() {
           <>
             <span className="text-sm font-semibold text-gray-100">{project.name}</span>
             <span className="text-xs text-gray-500">
-              {project.files.length} file{project.files.length !== 1 ? 's' : ''} · {project.layers.length} layer{project.layers.length !== 1 ? 's' : ''} · {project.operations.length} op{project.operations.length !== 1 ? 's' : ''}
+              {project.layers.length} layer{project.layers.length !== 1 ? 's' : ''} · {project.operations.length} op{project.operations.length !== 1 ? 's' : ''}
             </span>
             <span className="text-xs text-gray-600">· {new Date(project.updatedAt).toLocaleString()}</span>
             <div className="flex-1" />
