@@ -35,6 +35,16 @@ interface OperationParamsPanelProps {
 function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParamsPanelProps) {
   const [editingPower, setEditingPower] = useState(false);
   const [localPower, setLocalPower] = useState('');
+  const [editingFeedRate, setEditingFeedRate] = useState(false);
+  const [localFeedRate, setLocalFeedRate] = useState('');
+  const [editingPasses, setEditingPasses] = useState(false);
+  const [localPasses, setLocalPasses] = useState('');
+  const [editingZOffset, setEditingZOffset] = useState(false);
+  const [localZOffset, setLocalZOffset] = useState('');
+  const [editingLineInterval, setEditingLineInterval] = useState(false);
+  const [localLineInterval, setLocalLineInterval] = useState('');
+  const [editingLineAngle, setEditingLineAngle] = useState(false);
+  const [localLineAngle, setLocalLineAngle] = useState('');
 
   const multiType = sharedValue(selectedOps, o => o.type);
   const multiFeedRate = sharedValue(selectedOps, o => o.feedRate);
@@ -51,6 +61,42 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
     onChange({ power: val });
     setLocalPower(String(val));
     setEditingPower(false);
+  };
+
+  const commitFeedRate = () => {
+    const val = Math.max(1, Math.min(10000, Math.round(Number(localFeedRate) || 1)));
+    onChange({ feedRate: val });
+    setLocalFeedRate(String(val));
+    setEditingFeedRate(false);
+  };
+
+  const commitPasses = () => {
+    const val = Math.max(1, Math.min(20, Math.round(Number(localPasses) || 1)));
+    onChange({ passes: val });
+    setLocalPasses(String(val));
+    setEditingPasses(false);
+  };
+
+  const commitZOffset = () => {
+    const val = Number(localZOffset) || 0;
+    onChange({ zOffset: Math.round(val * 10) / 10 });
+    setLocalZOffset(String(Math.round(val * 10) / 10));
+    setEditingZOffset(false);
+  };
+
+  const commitLineInterval = () => {
+    const val = Math.max(0.01, Math.min(10, Number(localLineInterval) || 0.1));
+    const rounded = Math.round(val * 100) / 100;
+    onChange({ engraveLineInterval: rounded });
+    setLocalLineInterval(String(rounded));
+    setEditingLineInterval(false);
+  };
+
+  const commitLineAngle = () => {
+    const val = Math.max(0, Math.min(359, Math.round(Number(localLineAngle) || 0)));
+    onChange({ engraveLineAngle: val });
+    setLocalLineAngle(String(val));
+    setEditingLineAngle(false);
   };
 
   const label = selectedOps.length === 1
@@ -108,16 +154,28 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
 
           {/* Feed rate */}
           <div>
-            <label className="text-xs text-gray-500 uppercase">Feed Rate (mm/min)</label>
-            <input
-              type="number"
-              value={multiFeedRate ?? ''}
-              placeholder={multiFeedRate === null ? 'mixed' : undefined}
-              min={1}
-              max={10000}
-              onChange={e => { if (e.target.value) onChange({ feedRate: Number(e.target.value) }); }}
-              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
-            />
+            <div className="flex justify-between">
+              <label className="text-xs text-gray-500 uppercase">Feed Rate (mm/min)</label>
+              {editingFeedRate ? (
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={localFeedRate}
+                  onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalFeedRate(v); }}
+                  onBlur={commitFeedRate}
+                  onFocus={e => e.currentTarget.select()}
+                  onKeyDown={e => { if (e.key === 'Enter') commitFeedRate(); if (e.key === 'Escape') setEditingFeedRate(false); }}
+                  autoFocus
+                  className="w-16 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-right focus:outline-none"
+                />
+              ) : (
+                <span
+                  className="text-xs text-gray-400 cursor-pointer hover:text-gray-200"
+                  title="Double-click to edit"
+                  onDoubleClick={() => { setLocalFeedRate(String(multiFeedRate ?? '')); setEditingFeedRate(true); }}
+                >{multiFeedRate !== null ? multiFeedRate : 'mixed'}</span>
+              )}
+            </div>
           </div>
 
           {/* Power */}
@@ -156,29 +214,54 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
 
           {/* Passes */}
           <div>
-            <label className="text-xs text-gray-500 uppercase">Passes</label>
-            <input
-              type="number"
-              value={multiPasses ?? ''}
-              placeholder={multiPasses === null ? 'mixed' : undefined}
-              min={1}
-              max={20}
-              onChange={e => { if (e.target.value) onChange({ passes: Number(e.target.value) }); }}
-              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
-            />
+            <div className="flex justify-between">
+              <label className="text-xs text-gray-500 uppercase">Passes</label>
+              {editingPasses ? (
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={localPasses}
+                  onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalPasses(v); }}
+                  onBlur={commitPasses}
+                  onFocus={e => e.currentTarget.select()}
+                  onKeyDown={e => { if (e.key === 'Enter') commitPasses(); if (e.key === 'Escape') setEditingPasses(false); }}
+                  autoFocus
+                  className="w-10 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-right focus:outline-none"
+                />
+              ) : (
+                <span
+                  className="text-xs text-gray-400 cursor-pointer hover:text-gray-200"
+                  title="Double-click to edit"
+                  onDoubleClick={() => { setLocalPasses(String(multiPasses ?? '')); setEditingPasses(true); }}
+                >{multiPasses !== null ? `×${multiPasses}` : 'mixed'}</span>
+              )}
+            </div>
           </div>
 
           {/* Z Offset */}
           <div>
-            <label className="text-xs text-gray-500 uppercase">Z Offset (mm)</label>
-            <input
-              type="number"
-              value={multiZOffset ?? ''}
-              placeholder={multiZOffset === null ? 'mixed' : undefined}
-              step={0.1}
-              onChange={e => { if (e.target.value !== '') onChange({ zOffset: Number(e.target.value) }); }}
-              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
-            />
+            <div className="flex justify-between">
+              <label className="text-xs text-gray-500 uppercase">Z Offset (mm)</label>
+              {editingZOffset ? (
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={localZOffset}
+                  onChange={e => { const v = e.target.value; if (v === '' || v === '-' || /^-?\d*\.?\d*$/.test(v)) setLocalZOffset(v); }}
+                  onBlur={commitZOffset}
+                  onFocus={e => e.currentTarget.select()}
+                  onKeyDown={e => { if (e.key === 'Enter') commitZOffset(); if (e.key === 'Escape') setEditingZOffset(false); }}
+                  autoFocus
+                  className="w-14 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-right focus:outline-none"
+                />
+              ) : (
+                <span
+                  className="text-xs text-gray-400 cursor-pointer hover:text-gray-200"
+                  title="Double-click to edit"
+                  onDoubleClick={() => { setLocalZOffset(String(multiZOffset ?? 0)); setEditingZOffset(true); }}
+                >{multiZOffset !== null ? multiZOffset : 'mixed'}</span>
+              )}
+            </div>
           </div>
 
           {/* Engrave fill settings — shown when any selected op is engrave */}
@@ -189,30 +272,52 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
                 <p className="text-xs text-gray-600 mb-2">Controls hatch-fill for shapes with a fill colour.</p>
               </div>
               <div>
-                <label className="text-xs text-gray-500 uppercase">Line Interval (mm)</label>
-                <input
-                  type="number"
-                  value={multiLineInterval ?? ''}
-                  placeholder={multiLineInterval === null ? 'mixed' : undefined}
-                  min={0.01}
-                  max={10}
-                  step={0.01}
-                  onChange={e => { if (e.target.value) onChange({ engraveLineInterval: Number(e.target.value) }); }}
-                  className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
-                />
+                <div className="flex justify-between">
+                  <label className="text-xs text-gray-500 uppercase">Line Interval (mm)</label>
+                  {editingLineInterval ? (
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={localLineInterval}
+                      onChange={e => { const v = e.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setLocalLineInterval(v); }}
+                      onBlur={commitLineInterval}
+                      onFocus={e => e.currentTarget.select()}
+                      onKeyDown={e => { if (e.key === 'Enter') commitLineInterval(); if (e.key === 'Escape') setEditingLineInterval(false); }}
+                      autoFocus
+                      className="w-14 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-right focus:outline-none"
+                    />
+                  ) : (
+                    <span
+                      className="text-xs text-gray-400 cursor-pointer hover:text-gray-200"
+                      title="Double-click to edit"
+                      onDoubleClick={() => { setLocalLineInterval(String(multiLineInterval ?? 0.1)); setEditingLineInterval(true); }}
+                    >{multiLineInterval !== null ? multiLineInterval : 'mixed'}</span>
+                  )}
+                </div>
               </div>
               <div>
-                <label className="text-xs text-gray-500 uppercase">Line Angle (°)</label>
-                <input
-                  type="number"
-                  value={multiLineAngle ?? ''}
-                  placeholder={multiLineAngle === null ? 'mixed' : undefined}
-                  min={0}
-                  max={359}
-                  step={1}
-                  onChange={e => { if (e.target.value !== '') onChange({ engraveLineAngle: Number(e.target.value) }); }}
-                  className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
-                />
+                <div className="flex justify-between">
+                  <label className="text-xs text-gray-500 uppercase">Line Angle (°)</label>
+                  {editingLineAngle ? (
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={localLineAngle}
+                      onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalLineAngle(v); }}
+                      onBlur={commitLineAngle}
+                      onFocus={e => e.currentTarget.select()}
+                      onKeyDown={e => { if (e.key === 'Enter') commitLineAngle(); if (e.key === 'Escape') setEditingLineAngle(false); }}
+                      autoFocus
+                      className="w-12 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-right focus:outline-none"
+                    />
+                  ) : (
+                    <span
+                      className="text-xs text-gray-400 cursor-pointer hover:text-gray-200"
+                      title="Double-click to edit"
+                      onDoubleClick={() => { setLocalLineAngle(String(multiLineAngle ?? 0)); setEditingLineAngle(true); }}
+                    >{multiLineAngle !== null ? `${multiLineAngle}°` : 'mixed'}</span>
+                  )}
+                </div>
               </div>
             </>
           )}
@@ -246,7 +351,6 @@ function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRen
   const [editingLabel, setEditingLabel] = useState(false);
   const [localLabel, setLocalLabel] = useState(op.label ?? '');
   const [assignOpen, setAssignOpen] = useState(false);
-  const [expanded, setExpanded] = useState(false);
   const assignRef = useRef<HTMLDivElement>(null);
 
   const commitLabel = () => {
@@ -317,7 +421,7 @@ function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRen
             ) : null}
             <button
               onClick={e => { e.stopPropagation(); setLocalLabel(op.label ?? ''); setEditingLabel(true); }}
-              className="text-gray-600 hover:text-orange-400 text-[10px] flex-shrink-0 ml-0.5"
+              className="text-gray-600 hover:text-orange-400 text-[10px] flex-shrink-0"
               title="Rename operation"
             ><FontAwesomeIcon icon={faPencil} /></button>
           </>
@@ -329,12 +433,7 @@ function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRen
           <span className="text-xs text-yellow-500" title="No layers assigned">⚠</span>
         )}
 
-        {/* Expand/collapse button to show layers */}
-        <button
-          onClick={e => { e.stopPropagation(); setExpanded(v => !v); }}
-          className="text-gray-500 hover:text-gray-200 text-xs flex-shrink-0"
-          title={expanded ? 'Collapse layers' : 'Expand layers'}
-        >{expanded ? '▾' : '▸'} <span className="text-[10px]">{op.layerIds.length}</span></button>
+        <span className="text-xs text-gray-500 flex-shrink-0">{op.layerIds.length}</span>
 
         <span className="text-xs text-gray-600 flex-shrink-0 hidden xl:block">
           {op.feedRate}mm/min · {op.power}% · ×{op.passes}
@@ -346,9 +445,8 @@ function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRen
         </div>
       </div>
 
-      {/* Expanded layer assignment section */}
-      {expanded && (
-        <div className="px-2 py-1.5 bg-gray-850 border-t border-gray-700/50" onClick={e => e.stopPropagation()}>
+      {/* Layer assignment section — always visible */}
+      <div className="px-2 py-1.5 bg-gray-850 border-t border-gray-700/50" onClick={e => e.stopPropagation()}>
           <div className="flex flex-wrap gap-1 items-center">
             {op.layerIds.map(lid => {
               const layer = layers.find(l => l.id === lid);
@@ -390,7 +488,6 @@ function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRen
             )}
           </div>
         </div>
-      )}
     </div>
   );
 }

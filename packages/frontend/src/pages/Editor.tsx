@@ -109,7 +109,8 @@ function RulerCalibration({ currentScale, onApply, onClose }: RulerCalibrationPr
     const onMove = (e: MouseEvent) => {
       if (!dragStartRef.current) return;
       const delta = e.clientX - dragStartRef.current.x;
-      setLengthPx(Math.max(10, dragStartRef.current.px + delta));
+      const maxPx = rulerRef.current?.clientWidth ?? 468;
+      setLengthPx(Math.max(10, Math.min(maxPx, dragStartRef.current.px + delta)));
     };
     const onUp = () => setDragging(false);
     window.addEventListener('mousemove', onMove);
@@ -135,18 +136,17 @@ function RulerCalibration({ currentScale, onApply, onClose }: RulerCalibrationPr
         </p>
 
         {/* Draggable ruler bar */}
-        <div className="relative h-10 bg-gray-800 rounded overflow-visible">
+        <div ref={rulerRef} className="relative h-10 bg-gray-800 rounded overflow-hidden">
           <div
-            ref={rulerRef}
             className="absolute left-0 top-0 h-full bg-orange-500/30 border-r-2 border-orange-400 rounded-l flex items-center"
-            style={{ width: Math.max(10, lengthPx) }}
+            style={{ width: Math.min(lengthPx, rulerRef.current?.clientWidth ?? 468) }}
           >
             <span className="text-xs text-orange-300 px-2 truncate">{Math.round(lengthPx)} px</span>
           </div>
           {/* Drag handle */}
           <div
             className={`absolute top-0 h-full w-4 flex items-center justify-center cursor-col-resize z-10 ${dragging ? 'text-orange-300' : 'text-orange-500 hover:text-orange-300'}`}
-            style={{ left: Math.max(10, lengthPx) - 8 }}
+            style={{ left: Math.min(lengthPx, rulerRef.current?.clientWidth ?? 468) - 8 }}
             onMouseDown={onMouseDown}
           >
             <div className="w-1 h-6 bg-current rounded-full" />
@@ -248,6 +248,9 @@ export default function Editor() {
   const [transformPreview, setTransformPreview] = useState<TransformPreview>({ deltaX: 0, deltaY: 0, deltaRotation: 0 });
   // Current canvas zoom level (scale factor, e.g. 1.5 = 150%)
   const [currentZoom, setCurrentZoom] = useState(1.5);
+  // Editable zoom %
+  const [editingZoom, setEditingZoom] = useState(false);
+  const [localZoom, setLocalZoom] = useState('');
   // Image import dialog state: queue of image files waiting for DPI confirmation
   const [imageImportQueue, setImageImportQueue] = useState<File[]>([]);
   // Alignment mode state
@@ -1088,14 +1091,41 @@ export default function Editor() {
                 className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded text-xs transition-colors"
                 title="Zoom in"
               ><FontAwesomeIcon icon={faMagnifyingGlassPlus} /></button>
-              <span
-                className="text-xs text-gray-300 min-w-[3rem] text-center tabular-nums select-none cursor-help"
-                title={calibratedPxPerMm
-                  ? `${currentZoom.toFixed(3)} px/mm (calibrated: ${calibratedPxPerMm.toFixed(3)} px/mm) — 100% = real physical size.`
-                  : `${currentZoom.toFixed(3)} px/mm — Use the ruler calibration (📐) to match your physical display so 100% = real size.`}
-              >
-                {Math.round((calibratedPxPerMm ? currentZoom / calibratedPxPerMm : currentZoom) * 100)}%
-              </span>
+              {editingZoom ? (
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={localZoom}
+                  onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalZoom(v); }}
+                  onBlur={() => {
+                    const pct = Math.max(1, Math.min(5000, Number(localZoom) || 100));
+                    const newScale = calibratedPxPerMm ? pct / 100 * calibratedPxPerMm : pct / 100;
+                    canvasRef.current?.setScale(newScale);
+                    setEditingZoom(false);
+                  }}
+                  onFocus={e => e.currentTarget.select()}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.currentTarget.blur(); }
+                    if (e.key === 'Escape') setEditingZoom(false);
+                  }}
+                  autoFocus
+                  className="w-14 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-center focus:outline-none"
+                />
+              ) : (
+                <span
+                  className="text-xs text-gray-300 min-w-[3rem] text-center tabular-nums select-none cursor-pointer hover:text-gray-100"
+                  title={calibratedPxPerMm
+                    ? `${currentZoom.toFixed(3)} px/mm — double-click to set zoom`
+                    : `${currentZoom.toFixed(3)} px/mm — double-click to set zoom`}
+                  onDoubleClick={() => {
+                    const pct = Math.round((calibratedPxPerMm ? currentZoom / calibratedPxPerMm : currentZoom) * 100);
+                    setLocalZoom(String(pct));
+                    setEditingZoom(true);
+                  }}
+                >
+                  {Math.round((calibratedPxPerMm ? currentZoom / calibratedPxPerMm : currentZoom) * 100)}%
+                </span>
+              )}
               <button
                 onClick={() => canvasRef.current?.zoomOut()}
                 className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded text-xs transition-colors"
@@ -1126,6 +1156,18 @@ export default function Editor() {
                 title="Calibrate zoom to physical ruler"
               >📐</button>
             </div>
+
+            {/* Uncalibrated warning */}
+            {!calibratedPxPerMm && (
+              <div
+                className="absolute top-12 right-2 z-10 flex items-center gap-1.5 bg-yellow-900/80 backdrop-blur-sm border border-yellow-700/60 rounded-lg px-2.5 py-1 cursor-pointer hover:bg-yellow-800/80 transition-colors"
+                title="Screen not calibrated — displayed sizes may not match real dimensions. Click to calibrate."
+                onClick={() => setShowRulerCalibration(true)}
+              >
+                <span className="text-yellow-400 text-xs">⚠</span>
+                <span className="text-yellow-300/90 text-[10px]">Size may be inaccurate — calibrate 📐</span>
+              </div>
+            )}
 
             {/* Ruler calibration overlay */}
             {showRulerCalibration && (

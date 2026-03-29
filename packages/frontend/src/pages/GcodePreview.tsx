@@ -76,9 +76,10 @@ export default function GcodePreview() {
   const navigate = useNavigate();
   const originFlip = useAppSettings(s => s.originPosition) === 'bottom-left';
 
-  // The job ID to send to queue (from project or active job)
-  const queueableJobId = activeProject?.jobId ?? activeJob?.id ?? null;
-  const hasGcode = !!(activeProject?.gcode ?? activeJob?.gcode);
+  // When activeJobId is set (e.g. preview from Queue), prioritize that job's gcode.
+  // Otherwise fall back to the active project's gcode.
+  const queueableJobId = (activeJob?.gcode ? activeJob?.id : null) ?? activeProject?.jobId ?? activeJob?.id ?? null;
+  const hasGcode = !!(activeJob?.gcode ?? activeProject?.gcode);
 
   const [showNameDialog, setShowNameDialog] = useState(false);
   const [jobName, setJobName] = useState('');
@@ -114,8 +115,8 @@ export default function GcodePreview() {
     void handleSendToQueue(jobName);
   };
 
-  // Use project gcode first, then fall back to active job
-  const initialGcode = activeProject?.gcode ?? activeJob?.gcode ?? '';
+  // When activeJobId is set (preview from Queue), prioritize job's gcode
+  const initialGcode = activeJob?.gcode ?? activeProject?.gcode ?? '';
 
   const [gcode, setGcode] = useState(initialGcode);
   const [tab, setTab] = useState<Tab>('preview');
@@ -132,7 +133,7 @@ export default function GcodePreview() {
   const lineEls = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
-    const gc = activeProject?.gcode ?? activeJob?.gcode;
+    const gc = activeJob?.gcode ?? activeProject?.gcode;
     if (gc) setGcode(gc);
   }, [activeProject, activeJob]);
 
