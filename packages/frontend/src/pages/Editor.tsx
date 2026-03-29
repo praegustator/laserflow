@@ -84,17 +84,19 @@ function AlignPivotPicker({ targetLabel, onConfirm, onCancel }: AlignPickerProps
 
 /* ─── Ruler Calibration overlay ─── */
 interface RulerCalibrationProps {
-  currentScale: number;   // current px/mm
   onApply: (pxPerMm: number) => void;
   onClose: () => void;
 }
 
-function RulerCalibration({ currentScale, onApply, onClose }: RulerCalibrationProps) {
+function RulerCalibration({ onApply, onClose }: RulerCalibrationProps) {
   // Default ruler length: 100 mm rendered at the current scale
   const defaultLengthMm = 100;
+  // Approximate inner width of the ruler bar container (dialog is w-[480px] minus padding)
   const FALLBACK_RULER_WIDTH = 468;
-  const [lengthPx, setLengthPx] = useState(Math.round(defaultLengthMm * currentScale));
+  // Start the bar at half the container width so the handle is centred and easy to grab
+  const [lengthPx, setLengthPx] = useState(Math.round(FALLBACK_RULER_WIDTH / 2));
   const [inputMm, setInputMm] = useState(String(defaultLengthMm));
+  const [manualDpi, setManualDpi] = useState('');
   const [dragging, setDragging] = useState(false);
   const rulerRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ x: number; px: number } | null>(null);
@@ -104,6 +106,7 @@ function RulerCalibration({ currentScale, onApply, onClose }: RulerCalibrationPr
     e.preventDefault();
     dragStartRef.current = { x: e.clientX, px: lengthPx };
     setDragging(true);
+    setManualDpi(''); // clear manual DPI when dragging
   };
 
   useEffect(() => {
@@ -121,7 +124,9 @@ function RulerCalibration({ currentScale, onApply, onClose }: RulerCalibrationPr
   }, [dragging]);
 
   const targetMm = Math.max(1, parseFloat(inputMm) || defaultLengthMm);
-  const derivedPxPerMm = lengthPx / targetMm;
+  // If the user entered a DPI value directly, use that; otherwise derive from the bar
+  const manualDpiNum = parseFloat(manualDpi);
+  const derivedPxPerMm = (manualDpi !== '' && manualDpiNum > 0) ? manualDpiNum / 25.4 : lengthPx / targetMm;
 
   return (
     <div className="absolute inset-0 z-30 bg-gray-950/90 flex flex-col items-center justify-center gap-6 select-none">
@@ -132,9 +137,9 @@ function RulerCalibration({ currentScale, onApply, onClose }: RulerCalibrationPr
         </div>
 
         <p className="text-xs text-gray-400 leading-relaxed">
-          Drag the right edge of the orange bar to match a known length on your physical ruler,
+          Drag the handle to match a known length on your physical ruler,
           then enter that length in mm and click <strong className="text-orange-400">Apply</strong>.
-          This sets 1 mm on screen = 1 mm in real life.
+          Or enter your monitor DPI directly below.
         </p>
 
         {/* Draggable ruler bar */}
@@ -145,17 +150,17 @@ function RulerCalibration({ currentScale, onApply, onClose }: RulerCalibrationPr
           >
             <span className="text-xs text-orange-300 px-2 truncate">{Math.round(lengthPx)} px</span>
           </div>
-          {/* Drag handle */}
+          {/* Drag handle — centred at the bar edge */}
           <div
-            className={`absolute top-0 h-full w-4 flex items-center justify-center cursor-col-resize z-10 ${dragging ? 'text-orange-300' : 'text-orange-500 hover:text-orange-300'}`}
-            style={{ left: Math.min(lengthPx, rulerWidth()) - 8 }}
+            className={`absolute top-0 h-full w-5 flex items-center justify-center cursor-col-resize z-10 ${dragging ? 'text-orange-300' : 'text-orange-500 hover:text-orange-300'}`}
+            style={{ left: Math.min(lengthPx, rulerWidth()) - 10 }}
             onMouseDown={onMouseDown}
           >
-            <div className="w-1 h-6 bg-current rounded-full" />
+            <div className="w-1.5 h-7 bg-current rounded-full" />
           </div>
         </div>
 
-        {/* Length input */}
+        {/* Physical length input */}
         <div className="flex items-center gap-3">
           <label className="text-xs text-gray-400 flex-shrink-0">This bar measures</label>
           <input
@@ -163,10 +168,25 @@ function RulerCalibration({ currentScale, onApply, onClose }: RulerCalibrationPr
             min={1}
             max={1000}
             value={inputMm}
-            onChange={e => setInputMm(e.target.value)}
+            onChange={e => { setInputMm(e.target.value); setManualDpi(''); }}
             className="w-24 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-orange-500 text-right"
           />
           <label className="text-xs text-gray-400">mm on my ruler</label>
+        </div>
+
+        {/* Manual DPI entry */}
+        <div className="flex items-center gap-3">
+          <label className="text-xs text-gray-400 flex-shrink-0">Or enter DPI directly</label>
+          <input
+            type="number"
+            min={1}
+            max={1000}
+            value={manualDpi}
+            placeholder={String(Math.round(derivedPxPerMm * 25.4))}
+            onChange={e => setManualDpi(e.target.value)}
+            className="w-24 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-orange-500 text-right"
+          />
+          <label className="text-xs text-gray-400">DPI</label>
         </div>
 
         <p className="text-xs text-gray-500">
@@ -1174,7 +1194,6 @@ export default function Editor() {
             {/* Ruler calibration overlay */}
             {showRulerCalibration && (
               <RulerCalibration
-                currentScale={currentZoom}
                 onApply={pxPerMm => { setCalibratedPxPerMm(pxPerMm); canvasRef.current?.setScale(pxPerMm); setShowRulerCalibration(false); }}
                 onClose={() => setShowRulerCalibration(false)}
               />

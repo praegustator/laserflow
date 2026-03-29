@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Operation, OperationType, Layer, MaterialPreset, Project } from '../types';
 import { useProjectStore } from '../store/projectStore';
+import { useJobStore } from '../store/jobStore';
 import { useToastStore } from '../store/toastStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { api } from '../api/client';
@@ -433,8 +434,6 @@ function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRen
           <span className="text-xs text-yellow-500" title="No layers assigned">⚠</span>
         )}
 
-        <span className="text-xs text-gray-500 flex-shrink-0">{op.layerIds.length}</span>
-
         <span className="text-xs text-gray-600 flex-shrink-0 hidden xl:block">
           {op.feedRate}mm/min · {op.power}% · ×{op.passes}
         </span>
@@ -511,6 +510,7 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
   const duplicateOperation = useProjectStore(s => s.duplicateOperation);
   const compileJob = useProjectStore(s => s.compileJob);
   const addToast = useToastStore(s => s.addToast);
+  const setActiveJobId = useJobStore(s => s.setActiveJobId);
   const originPosition = useAppSettings(s => s.originPosition);
   const workAreaHeight = useAppSettings(s => s.workAreaHeight);
   const navigate = useNavigate();
@@ -695,7 +695,7 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
             title={gcodeUpToDate ? 'G-code is up to date' : 'Generate G-code from operations'}
           ><FontAwesomeIcon icon={faGears} className="mr-1" />{generating ? 'Generating…' : 'Generate'}</button>
           <button
-            onClick={() => { void navigate('/gcode-preview'); }}
+            onClick={() => { setActiveJobId(null); void navigate('/gcode-preview'); }}
             disabled={!gcodeUpToDate}
             className="flex-1 py-2 text-sm rounded bg-blue-700 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
             title={gcodeUpToDate ? 'Preview generated G-code' : 'Generate G-code first'}
