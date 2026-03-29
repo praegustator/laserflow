@@ -12,7 +12,7 @@ import ShapeTransformPanel from '../components/ShapeTransformPanel';
 import type { Layer } from '../types';
 import { hasMultipleSubpaths, computeLayerWorldBBox, computeMultiLayerWorldBBox } from '../utils/geometry';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faEye, faEyeSlash, faTrash, faFileImport, faObjectGroup, faLayerGroup, faScissors, faArrowUpFromBracket, faMagnifyingGlassPlus, faMagnifyingGlassMinus, faExpand, faCompress } from '@fortawesome/free-solid-svg-icons';
+import { faEye, faEyeSlash, faTrash, faFileImport, faObjectGroup, faLayerGroup, faScissors, faArrowUpFromBracket, faMagnifyingGlassPlus, faMagnifyingGlassMinus, faExpand, faCompress, faBezierCurve, faImage } from '@fortawesome/free-solid-svg-icons';
 
 const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];
 const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|bmp|webp)$/i;
@@ -585,11 +585,18 @@ export default function Editor() {
                                 className="flex-1 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 focus:outline-none min-w-0"
                               />
                             ) : (
-                              <span
-                                className={`truncate flex-1 ${isShapeSelected ? 'text-yellow-200' : 'text-gray-400'}`}
-                                title={`${shape.name} — double-click to rename`}
-                                onDoubleClick={e => { e.stopPropagation(); startEditingShapeName(shape.id, layer.id, shape.name); }}
-                              >{shape.name}</span>
+                              <>
+                                <FontAwesomeIcon
+                                  icon={shape.imageDataUrl ? faImage : faBezierCurve}
+                                  className={`flex-shrink-0 text-[9px] ${shape.imageDataUrl ? 'text-purple-400' : 'text-sky-400'}`}
+                                  title={shape.imageDataUrl ? 'Raster image (PNG/JPEG)' : 'Vector shape (SVG)'}
+                                />
+                                <span
+                                  className={`truncate flex-1 ${isShapeSelected ? 'text-yellow-200' : 'text-gray-400'}`}
+                                  title={`${shape.name} — double-click to rename`}
+                                  onDoubleClick={e => { e.stopPropagation(); startEditingShapeName(shape.id, layer.id, shape.name); }}
+                                >{shape.name}</span>
+                              </>
                             )}
                           </div>
                         );

@@ -67,7 +67,7 @@ export const useJobStore = create<JobStore>((set, get) => ({
     set((s) => ({
       activeJobId: s.activeJobId === jobId ? null : s.activeJobId,
       jobs: s.jobs.map((j) =>
-        j.id === jobId ? { ...j, status: 'idle' } : j,
+        j.id === jobId ? { ...j, status: 'canceled' } : j,
       ),
     }));
   },

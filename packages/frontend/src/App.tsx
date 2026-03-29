@@ -18,6 +18,7 @@ function AppInner() {
   const addConsoleEntry = useMachineStore((s) => s.addConsoleEntry);
   const setMachineState = useMachineStore((s) => s.setMachineState);
   const setBackendConnected = useMachineStore((s) => s.setBackendConnected);
+  const handleUnexpectedDisconnect = useMachineStore((s) => s.handleUnexpectedDisconnect);
   const updateJobProgress = useJobStore((s) => s.updateJobProgress);
   const updateJobStatus = useJobStore((s) => s.updateJobStatus);
   const backendUrl = useAppSettings((s) => s.backendUrl);
@@ -61,6 +62,11 @@ function AppInner() {
                 failedGcodeLineNumber: s.failedGcodeLineNumber,
                 failedGcodeLineContent: s.failedGcodeLineContent,
               } : undefined);
+            } else if (msg.type === 'serialStatus') {
+              const d = msg.data as { status: string };
+              if (d.status === 'disconnected') {
+                handleUnexpectedDisconnect();
+              }
             }
           } catch {
             // ignore malformed messages
@@ -80,7 +86,7 @@ function AppInner() {
 
     connect();
     return cleanup;
-  }, [backendUrl, addConsoleEntry, setMachineState, setBackendConnected, updateJobProgress, updateJobStatus]);
+  }, [backendUrl, addConsoleEntry, setMachineState, setBackendConnected, handleUnexpectedDisconnect, updateJobProgress, updateJobStatus]);
 
   return (
     <Routes>

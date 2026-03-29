@@ -15,6 +15,7 @@ import {
   faHourglass,
   faCheckCircle,
   faExclamationCircle,
+  faBan,
   faGripVertical,
   faBorderAll,
 } from '@fortawesome/free-solid-svg-icons';
@@ -28,6 +29,7 @@ const STATUS_STYLES: Record<string, { color: string; icon: typeof faCircle; labe
   running: { color: 'text-green-400', icon: faPlay, label: 'Running' },
   paused: { color: 'text-orange-400', icon: faPause, label: 'Paused' },
   completed: { color: 'text-blue-400', icon: faCheckCircle, label: 'Completed' },
+  canceled: { color: 'text-gray-400', icon: faBan, label: 'Canceled' },
   error: { color: 'text-red-400', icon: faExclamationCircle, label: 'Error' },
 };
 
@@ -423,7 +425,7 @@ export default function Queue() {
     .filter(j => j.status === 'running' || j.status === 'paused');
 
   const finishedJobs = jobs
-    .filter(j => j.status === 'completed' || j.status === 'error')
+    .filter(j => j.status === 'completed' || j.status === 'canceled' || j.status === 'error')
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   /** Trace the bounding-box frame of a job's G-code with laser off. */
@@ -478,7 +480,7 @@ export default function Queue() {
         <div className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-4 py-2 flex items-center gap-3 flex-wrap">
           <h1 className="text-sm font-semibold text-gray-300 uppercase tracking-widest">Job Queue</h1>
           <span className="text-xs text-gray-500">
-            {jobs.length} job{jobs.length !== 1 ? 's' : ''}
+            {queuedJobs.length + runningJobs.length + finishedJobs.length} job{(queuedJobs.length + runningJobs.length + finishedJobs.length) !== 1 ? 's' : ''}
           </span>
 
           <div className="flex-1" />
@@ -505,7 +507,7 @@ export default function Queue() {
           <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">
             Loading jobs…
           </div>
-        ) : jobs.length === 0 ? (
+        ) : (queuedJobs.length + runningJobs.length + finishedJobs.length) === 0 ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <div className="text-5xl mb-4">📭</div>

@@ -216,9 +216,9 @@ export function registerRoutes(app: FastifyInstance): void {
     if (!job) return reply.code(404).send({ error: 'Not found' });
 
     jobEngine.abort();
-    job.status = 'idle';
+    job.status = 'canceled';
     jobRepo.save(job);
-    return reply.send({ status: 'idle' });
+    return reply.send({ status: 'canceled' });
   });
 
   // Duplicate a job (creates a new copy with 'idle' status)

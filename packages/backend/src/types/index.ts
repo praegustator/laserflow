@@ -16,7 +16,7 @@ export interface MaterialPreset {
   cutThick: { feedRate: number; power: number };
 }
 
-export type JobStatus = 'idle' | 'queued' | 'running' | 'paused' | 'completed' | 'error';
+export type JobStatus = 'idle' | 'queued' | 'running' | 'paused' | 'completed' | 'canceled' | 'error';
 
 export type OperationType = 'cut' | 'engrave' | 'ignore';
 

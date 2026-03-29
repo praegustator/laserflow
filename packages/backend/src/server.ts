@@ -94,6 +94,11 @@ export async function buildServer() {
     }
   });
 
+  // Notify the frontend when the serial port closes unexpectedly so it can auto-reconnect.
+  serialManager.on('disconnect', () => {
+    wsBroadcaster.broadcast('serialStatus', { status: 'disconnected' });
+  });
+
   setInterval(() => {
     if (serialManager.getStatus() === 'connected') {
       serialManager.writeRealtime('?');
