@@ -344,10 +344,20 @@ export function splitPathIntoSubpaths(d: string): string[] {
   }
 }
 
+import type { PivotAnchor } from '../types';
+
 /**
- * Returns true if the SVG path `d` string contains more than one subpath
- * (i.e. more than one absolute MOVE_TO command).
+ * Get the world-space anchor point from a world bounding box and a PivotAnchor.
  */
+export function worldAnchorPoint(bbox: BBox, anchor: PivotAnchor): { x: number; y: number } {
+  const col = anchor[1] === 'l' ? 0 : anchor[1] === 'c' ? 0.5 : 1;
+  const row = anchor[0] === 't' ? 0 : anchor[0] === 'm' ? 0.5 : 1;
+  return {
+    x: bbox.minX + bbox.width * col,
+    y: bbox.minY + bbox.height * row,
+  };
+}
+
 export function hasMultipleSubpaths(d: string): boolean {
   try {
     const commands = new SVGPathData(d).toAbs().commands;

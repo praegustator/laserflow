@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { api } from '../api/client';
 import type { MachineState, PortInfo, ConsoleEntry } from '../types';
 
+const LAST_PORT_KEY = 'laserflow_last_port';
+
 interface MachineStore {
   /** Whether the frontend WebSocket can reach the backend server */
   backendConnected: boolean;
@@ -12,11 +14,15 @@ interface MachineStore {
   baudRate: number;
   consoleLog: ConsoleEntry[];
   ports: PortInfo[];
+  /** Whether to automatically reconnect when the serial port disconnects unexpectedly */
+  shouldAutoReconnect: boolean;
 
   setBackendConnected: (v: boolean) => void;
   fetchPorts: () => Promise<void>;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
+  /** Called when the backend notifies that the serial port closed unexpectedly */
+  handleUnexpectedDisconnect: () => void;
   sendCommand: (command: string) => Promise<void>;
   addConsoleEntry: (entry: Omit<ConsoleEntry, 'id' | 'timestamp'>) => void;
   setMachineState: (state: Partial<MachineState>) => void;
@@ -25,6 +31,10 @@ interface MachineStore {
 }
 
 let _entryCounter = 0;
+let _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let _reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 10;
+const RECONNECT_BASE_DELAY_MS = 3000;
 
 export const useMachineStore = create<MachineStore>((set, get) => ({
   backendConnected: false,
@@ -34,13 +44,27 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
   baudRate: 115200,
   consoleLog: [],
   ports: [],
+  shouldAutoReconnect: false,
 
   setBackendConnected: (v) => set({ backendConnected: v }),
 
   fetchPorts: async () => {
     const ports = await api.get('/api/ports') as PortInfo[];
     set({ ports });
-    if (ports.length > 0 && !get().selectedPort) {
+
+    const { selectedPort, connectionStatus, shouldAutoReconnect } = get();
+    const lastPort = localStorage.getItem(LAST_PORT_KEY) ?? '';
+
+    // Prefer the remembered port over the first available port
+    if (lastPort && ports.some(p => p.path === lastPort)) {
+      if (!selectedPort || selectedPort !== lastPort) {
+        set({ selectedPort: lastPort });
+      }
+      // Auto-connect if the last port reappeared and we should reconnect
+      if (shouldAutoReconnect && connectionStatus === 'disconnected') {
+        void get().connect();
+      }
+    } else if (ports.length > 0 && !selectedPort) {
       set({ selectedPort: ports[0].path });
     }
   },
@@ -50,7 +74,10 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
     set({ connectionStatus: 'connecting' });
     try {
       await api.post('/api/connect', { port: selectedPort, baudRate });
-      set({ connectionStatus: 'connected' });
+      // Remember this port for future auto-reconnects
+      localStorage.setItem(LAST_PORT_KEY, selectedPort);
+      _reconnectAttempts = 0;
+      set({ connectionStatus: 'connected', shouldAutoReconnect: true });
     } catch (err) {
       set({ connectionStatus: 'disconnected' });
       throw err;
@@ -58,11 +85,41 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
   },
 
   disconnect: async () => {
+    // Cancel any pending auto-reconnect — user explicitly disconnected
+    if (_reconnectTimer !== null) {
+      clearTimeout(_reconnectTimer);
+      _reconnectTimer = null;
+    }
+    _reconnectAttempts = 0;
+    set({ shouldAutoReconnect: false });
     await api.post('/api/disconnect');
     set({
       connectionStatus: 'disconnected',
       machineState: null,
     });
+  },
+
+  handleUnexpectedDisconnect: () => {
+    set({ connectionStatus: 'disconnected', machineState: null });
+    const { shouldAutoReconnect, selectedPort } = get();
+    if (!shouldAutoReconnect || !selectedPort) return;
+    if (_reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      // Give up after max attempts; port polling will take over when the device reappears
+      _reconnectAttempts = 0;
+      return;
+    }
+    // Exponential backoff capped at 30 s
+    const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** _reconnectAttempts, 30000);
+    _reconnectAttempts += 1;
+    if (_reconnectTimer !== null) clearTimeout(_reconnectTimer);
+    _reconnectTimer = setTimeout(() => {
+      _reconnectTimer = null;
+      if (get().connectionStatus === 'disconnected' && get().shouldAutoReconnect) {
+        void get().connect().catch(() => {
+          get().handleUnexpectedDisconnect();
+        });
+      }
+    }, delay);
   },
 
   sendCommand: async (command: string) => {

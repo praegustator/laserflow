@@ -37,7 +37,11 @@ export class JobRepository {
   }
 
   findAll(): Job[] {
-    return Array.from(this.jobs.values());
+    return Array.from(this.jobs.values()).filter(j => !j.deletedAt);
+  }
+
+  findAllDeleted(): Job[] {
+    return Array.from(this.jobs.values()).filter(j => !!j.deletedAt);
   }
 
   findById(id: string): Job | null {
@@ -49,9 +53,42 @@ export class JobRepository {
     this.persist();
   }
 
+  /** Soft-delete: set deletedAt instead of removing. */
   delete(id: string): void {
+    const job = this.jobs.get(id);
+    if (job) {
+      job.deletedAt = new Date().toISOString();
+      this.persist();
+    }
+  }
+
+  /** Permanently remove from storage. */
+  purge(id: string): void {
     this.jobs.delete(id);
     this.persist();
+  }
+
+  /** Permanently remove all soft-deleted jobs older than `days` days. */
+  purgeOlderThan(days: number): number {
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    let count = 0;
+    for (const [id, job] of this.jobs) {
+      if (job.deletedAt && new Date(job.deletedAt).getTime() < cutoff) {
+        this.jobs.delete(id);
+        count++;
+      }
+    }
+    if (count > 0) this.persist();
+    return count;
+  }
+
+  /** Restore a soft-deleted job. */
+  restore(id: string): boolean {
+    const job = this.jobs.get(id);
+    if (!job || !job.deletedAt) return false;
+    delete job.deletedAt;
+    this.persist();
+    return true;
   }
 }
 

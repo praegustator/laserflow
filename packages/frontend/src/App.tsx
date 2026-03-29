@@ -3,7 +3,6 @@ import { HashRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import BackendOverlay from './components/BackendOverlay';
 import Dashboard from './pages/Dashboard';
-import Console from './pages/Console';
 import Editor from './pages/Editor';
 import Settings from './pages/Settings';
 import GcodePreview from './pages/GcodePreview';
@@ -18,6 +17,7 @@ function AppInner() {
   const addConsoleEntry = useMachineStore((s) => s.addConsoleEntry);
   const setMachineState = useMachineStore((s) => s.setMachineState);
   const setBackendConnected = useMachineStore((s) => s.setBackendConnected);
+  const handleUnexpectedDisconnect = useMachineStore((s) => s.handleUnexpectedDisconnect);
   const updateJobProgress = useJobStore((s) => s.updateJobProgress);
   const updateJobStatus = useJobStore((s) => s.updateJobStatus);
   const backendUrl = useAppSettings((s) => s.backendUrl);
@@ -61,6 +61,11 @@ function AppInner() {
                 failedGcodeLineNumber: s.failedGcodeLineNumber,
                 failedGcodeLineContent: s.failedGcodeLineContent,
               } : undefined);
+            } else if (msg.type === 'serialStatus') {
+              const d = msg.data as { status: string };
+              if (d.status === 'disconnected') {
+                handleUnexpectedDisconnect();
+              }
             }
           } catch {
             // ignore malformed messages
@@ -80,13 +85,12 @@ function AppInner() {
 
     connect();
     return cleanup;
-  }, [backendUrl, addConsoleEntry, setMachineState, setBackendConnected, updateJobProgress, updateJobStatus]);
+  }, [backendUrl, addConsoleEntry, setMachineState, setBackendConnected, handleUnexpectedDisconnect, updateJobProgress, updateJobStatus]);
 
   return (
     <Routes>
       <Route path="/" element={<Layout />}>
         <Route index element={<Dashboard />} />
-        <Route path="console" element={<Console />} />
         <Route path="editor" element={<Editor />} />
         <Route path="settings" element={<Settings />} />
         <Route path="gcode-preview" element={<GcodePreview />} />

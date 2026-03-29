@@ -16,9 +16,9 @@ export interface MaterialPreset {
   cutThick: { feedRate: number; power: number };
 }
 
-export type JobStatus = 'idle' | 'queued' | 'running' | 'paused' | 'completed' | 'error';
+export type JobStatus = 'idle' | 'queued' | 'running' | 'paused' | 'completed' | 'canceled' | 'error';
 
-export type OperationType = 'cut' | 'engrave' | 'ignore';
+export type OperationType = 'cut' | 'engrave';
 
 export interface Operation {
   id: string;
@@ -61,6 +61,8 @@ export interface Job {
   failedGcodeLineContent?: string;
   projectId?: string;
   projectVersion?: string;
+  /** ISO timestamp when the job was soft-deleted (moved to trash). Undefined = active. */
+  deletedAt?: string;
 }
 
 export interface MachineState {

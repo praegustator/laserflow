@@ -15,10 +15,16 @@ import {
   faHourglass,
   faCheckCircle,
   faExclamationCircle,
+  faBan,
   faGripVertical,
   faBorderAll,
+  faTerminal,
+  faChevronDown,
+  faChevronUp,
 } from '@fortawesome/free-solid-svg-icons';
 import JogControls from '../components/JogControls';
+import ConnectionPanel from '../components/ConnectionPanel';
+import ConsoleLog from '../components/ConsoleLog';
 import type { Job, JobProgress } from '../types';
 
 /* ─── Status styles ─── */
@@ -28,6 +34,7 @@ const STATUS_STYLES: Record<string, { color: string; icon: typeof faCircle; labe
   running: { color: 'text-green-400', icon: faPlay, label: 'Running' },
   paused: { color: 'text-orange-400', icon: faPause, label: 'Paused' },
   completed: { color: 'text-blue-400', icon: faCheckCircle, label: 'Completed' },
+  canceled: { color: 'text-gray-400', icon: faBan, label: 'Canceled' },
   error: { color: 'text-red-400', icon: faExclamationCircle, label: 'Error' },
 };
 
@@ -423,8 +430,10 @@ export default function Queue() {
     .filter(j => j.status === 'running' || j.status === 'paused');
 
   const finishedJobs = jobs
-    .filter(j => j.status === 'completed' || j.status === 'error')
+    .filter(j => j.status === 'completed' || j.status === 'canceled' || j.status === 'error')
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  const visibleJobsCount = queuedJobs.length + runningJobs.length + finishedJobs.length;
 
   /** Trace the bounding-box frame of a job's G-code with laser off. */
   const handleTraceFrame = useCallback(async (job: Job) => {
@@ -470,15 +479,35 @@ export default function Queue() {
     machineConnected,
   }), [jobProgress, selectedIds, handleSelect, wrap, startJob, pauseJob, resumeJob, abortJob, deleteJob, handleDuplicate, handleRerun, handleTraceFrame, renameJob, projectNameById, machineConnected]);
 
+  // Terminal panel state (VS Code style)
+  const [terminalOpen, setTerminalOpen] = useState(true);
+  const [terminalHeight, setTerminalHeight] = useState(220);
+  const terminalDragRef = useRef<{ startY: number; startH: number } | null>(null);
+  const [cmdInput, setCmdInput] = useState('');
+
+  const handleSendCmd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cmd = cmdInput.trim();
+    if (!cmd || !machineConnected) return;
+    setCmdInput('');
+    try {
+      await sendCommand(cmd);
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : 'Failed to send command');
+    }
+  };
+
   return (
     <div className="flex h-full min-h-0">
-      {/* Main content */}
+      {/* Main content: job board + terminal */}
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
+        {/* ── Job board area ── */}
+        <div className="flex-1 flex flex-col min-h-0 min-w-0">
         {/* Toolbar */}
         <div className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-4 py-2 flex items-center gap-3 flex-wrap">
           <h1 className="text-sm font-semibold text-gray-300 uppercase tracking-widest">Job Queue</h1>
           <span className="text-xs text-gray-500">
-            {jobs.length} job{jobs.length !== 1 ? 's' : ''}
+            {visibleJobsCount} job{visibleJobsCount !== 1 ? 's' : ''}
           </span>
 
           <div className="flex-1" />
@@ -505,7 +534,7 @@ export default function Queue() {
           <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">
             Loading jobs…
           </div>
-        ) : jobs.length === 0 ? (
+        ) : visibleJobsCount === 0 ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <div className="text-5xl mb-4">📭</div>
@@ -569,19 +598,81 @@ export default function Queue() {
             </div>
           </div>
         )}
-      </div>
+      </div>{/* end job board area */}
 
-      {/* Right sidebar: Machine Controls */}
-      <div className="w-64 flex-shrink-0 bg-gray-900 border-l border-gray-800 overflow-y-auto p-4 space-y-4">
-        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Machine Controls</h2>
+      {/* ── VS Code-style Terminal panel ── */}
+      <div
+        className="flex-shrink-0 border-t border-gray-700 bg-gray-950 flex flex-col"
+        style={terminalOpen ? { height: terminalHeight } : { height: 'auto' }}
+      >
+        {/* Terminal title bar + drag handle */}
+        <div
+          className={`flex items-center gap-2 px-3 py-1 bg-gray-900 border-b border-gray-700 select-none ${terminalOpen ? 'cursor-row-resize' : 'cursor-default'}`}
+          onMouseDown={terminalOpen ? e => {
+            e.preventDefault();
+            terminalDragRef.current = { startY: e.clientY, startH: terminalHeight };
+            const onMove = (ev: MouseEvent) => {
+              if (!terminalDragRef.current) return;
+              const delta = terminalDragRef.current.startY - ev.clientY;
+              setTerminalHeight(Math.max(80, Math.min(800, terminalDragRef.current.startH + delta)));
+            };
+            const onUp = () => {
+              terminalDragRef.current = null;
+              window.removeEventListener('mousemove', onMove);
+              window.removeEventListener('mouseup', onUp);
+            };
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+          } : undefined}
+        >
+          <FontAwesomeIcon icon={faTerminal} className="text-gray-500 text-xs" />
+          <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Terminal</span>
+          <span className="text-xs text-gray-600 ml-1">GRBL Console</span>
+          <div className="flex-1" />
+          <button
+            onMouseDown={e => e.stopPropagation()}
+            onClick={() => setTerminalOpen(o => !o)}
+            className="text-gray-500 hover:text-gray-200 text-xs px-1.5 py-0.5 rounded hover:bg-gray-700 transition-colors"
+            title={terminalOpen ? 'Collapse terminal' : 'Expand terminal'}
+          >
+            <FontAwesomeIcon icon={terminalOpen ? faChevronDown : faChevronUp} />
+          </button>
+        </div>
 
-        {!machineConnected && (
-          <p className="text-xs text-yellow-400 bg-yellow-900/20 rounded px-2 py-1.5">
-            ⚠ Machine not connected — go to Console to connect
-          </p>
+        {/* Terminal body: log + send command */}
+        {terminalOpen && (
+          <div className="flex-1 flex flex-col min-h-0">
+            <ConsoleLog />
+            {/* Send command input */}
+            <form
+              onSubmit={e => { void handleSendCmd(e); }}
+              className="flex-shrink-0 flex items-center gap-2 px-3 py-2 border-t border-gray-800 bg-gray-900"
+            >
+              <span className="text-gray-600 font-mono text-xs select-none">$</span>
+              <input
+                value={cmdInput}
+                onChange={e => setCmdInput(e.target.value)}
+                disabled={!machineConnected}
+                placeholder={machineConnected ? 'Send GRBL command… (e.g. ?, $, G0X0Y0)' : 'Connect to send commands'}
+                className="flex-1 bg-transparent text-xs text-gray-100 placeholder-gray-600 focus:outline-none font-mono disabled:opacity-40"
+              />
+              <button
+                type="submit"
+                disabled={!machineConnected || !cmdInput.trim()}
+                className="px-3 py-1 rounded bg-orange-600 hover:bg-orange-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold transition-colors"
+              >Send</button>
+            </form>
+          </div>
         )}
+      </div>
+      </div>{/* end main content column */}
 
-        {/* Jog controls */}
+      {/* ── Right sidebar: Connection + Machine Controls ── */}
+      <div className="w-64 flex-shrink-0 bg-gray-900 border-l border-gray-800 overflow-y-auto p-4 space-y-4">
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Connection</h2>
+        <ConnectionPanel showStatus={false} />
+
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest pt-2 border-t border-gray-800">Machine Controls</h2>
         <div>
           <div className="text-xs text-gray-500 uppercase mb-2">Jog Controls</div>
           <JogControls />

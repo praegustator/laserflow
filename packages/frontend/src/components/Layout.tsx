@@ -3,7 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import MachineStatus from './MachineStatus';
 import Footer from './Footer';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faFolderOpen, faPenToSquare, faKeyboard, faCode, faListCheck, faGear } from '@fortawesome/free-solid-svg-icons';
+import { faFolderOpen, faPenToSquare, faCode, faListCheck, faGear } from '@fortawesome/free-solid-svg-icons';
 import { useJobStore } from '../store/jobStore';
 import { useToastStore } from '../store/toastStore';
 import { useMachineStore } from '../store/machineStore';
@@ -11,7 +11,6 @@ import { useMachineStore } from '../store/machineStore';
 const navItems = [
   { to: '/', label: 'Projects', icon: faFolderOpen, end: true },
   { to: '/editor', label: 'Editor', icon: faPenToSquare },
-  { to: '/console', label: 'Console', icon: faKeyboard },
   { to: '/gcode-preview', label: 'G-code', icon: faCode },
   { to: '/queue', label: 'Queue', icon: faListCheck },
   { to: '/settings', label: 'Settings', icon: faGear },

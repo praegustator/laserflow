@@ -1,5 +1,5 @@
-export type JobStatus = 'idle' | 'queued' | 'running' | 'paused' | 'completed' | 'error';
-export type OperationType = 'cut' | 'engrave' | 'ignore';
+export type JobStatus = 'idle' | 'queued' | 'running' | 'paused' | 'completed' | 'canceled' | 'error';
+export type OperationType = 'cut' | 'engrave';
 
 export interface Operation {
   id: string;
@@ -176,6 +176,6 @@ export interface JobProgress {
 }
 
 export interface WsMessage {
-  type: 'console' | 'machineStatus' | 'jobProgress' | 'jobStatus';
+  type: 'console' | 'machineStatus' | 'jobProgress' | 'jobStatus' | 'serialStatus';
   data: unknown;
 }

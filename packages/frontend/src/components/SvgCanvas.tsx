@@ -27,6 +27,8 @@ export interface SvgCanvasHandle {
   panToLayers: (bbox: BBox) => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  /** Set an exact scale (px/mm), keeping the canvas centre fixed */
+  setScale: (pxPerMm: number) => void;
 }
 
 interface Props {
@@ -48,7 +50,6 @@ interface Props {
 const OP_COLORS: Record<string, string> = {
   cut: '#ef4444',
   engrave: '#3b82f6',
-  ignore: '#6b7280',
 };
 
 const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];
@@ -154,6 +155,16 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
       setTransform(t => {
         const el = svgRef.current;
         const newScale = Math.max(0.1, t.scale * 0.8);
+        if (!el) return { ...t, scale: newScale };
+        const { width, height } = el.getBoundingClientRect();
+        const cx = width / 2, cy = height / 2;
+        return { scale: newScale, tx: cx - (cx - t.tx) * (newScale / t.scale), ty: cy - (cy - t.ty) * (newScale / t.scale) };
+      });
+    },
+    setScale(pxPerMm: number) {
+      setTransform(t => {
+        const el = svgRef.current;
+        const newScale = Math.max(0.1, Math.min(50, pxPerMm));
         if (!el) return { ...t, scale: newScale };
         const { width, height } = el.getBoundingClientRect();
         const cx = width / 2, cy = height / 2;
@@ -428,7 +439,7 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
                   );
                 })}
                 {/* Bounding box and pivot point for selected layer — non-scaling */}
-                {isSelected && bbox && (
+                {isSelected && bbox && selectedLayerIds.size === 1 && (
                   <>
                     <rect
                       x={bbox.minX}
@@ -458,20 +469,29 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
             if (selectedLayers.length < 2) return null;
             const wb = computeMultiLayerWorldBBox(selectedLayers);
             if (!wb) return null;
+            const cx = wb.minX + wb.width / 2;
+            const cy = wb.minY + wb.height / 2;
+            const PIVOT_R = 5 / scale;
+            const ARM = 10 / scale;
             return (
-              <rect
-                x={wb.minX}
-                y={wb.minY}
-                width={wb.width}
-                height={wb.height}
-                fill="none"
-                stroke="#facc15"
-                strokeWidth={0.4}
-                strokeDasharray={`${8 / scale} ${4 / scale}`}
-                opacity={0.6}
-                vectorEffect="non-scaling-stroke"
-                style={{ pointerEvents: 'none' }}
-              />
+              <g style={{ pointerEvents: 'none' }}>
+                <rect
+                  x={wb.minX}
+                  y={wb.minY}
+                  width={wb.width}
+                  height={wb.height}
+                  fill="none"
+                  stroke="#facc15"
+                  strokeWidth={0.4}
+                  strokeDasharray={`${8 / scale} ${4 / scale}`}
+                  opacity={0.6}
+                  vectorEffect="non-scaling-stroke"
+                />
+                {/* Combined pivot indicator at centre of joint bbox */}
+                <ellipse cx={cx} cy={cy} rx={PIVOT_R} ry={PIVOT_R} fill="#facc15" opacity={0.7} />
+                <line x1={cx - ARM} y1={cy} x2={cx + ARM} y2={cy} stroke="#facc15" strokeWidth={0.3} opacity={0.7} vectorEffect="non-scaling-stroke" />
+                <line x1={cx} y1={cy - ARM} x2={cx} y2={cy + ARM} stroke="#facc15" strokeWidth={0.3} opacity={0.7} vectorEffect="non-scaling-stroke" />
+              </g>
             );
           })()}
 

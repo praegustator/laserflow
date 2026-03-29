@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Layer, PivotAnchor } from '../types';
-import { computeShapesBoundingBox, computeMultiLayerWorldBBox, type BBox } from '../utils/geometry';
+import { computeShapesBoundingBox, computeLayerWorldBBox, computeMultiLayerWorldBBox, type BBox } from '../utils/geometry';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowsLeftRight, faArrowsUpDown, faLock, faLockOpen } from '@fortawesome/free-solid-svg-icons';
 
@@ -202,39 +202,91 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
     onUpdate(layer.id, { scaleX: newSx, scaleY: newSy, offsetX: newOffsetX, offsetY: newOffsetY });
   }, [layer.id, layer.scaleX, layer.scaleY, ratioLocked, naturalW, naturalH, pivotWorldX, pivotWorldY, pivotNatX, pivotNatY, onUpdate]);
 
+  /**
+   * Rotate all selected layers by `dr` degrees around the joint pivot (`multiPivotWorld`).
+   * Each layer's own rotation property is incremented by dr, and its world-space offset
+   * is orbited around the joint pivot so the group rotates as a whole.
+   */
+  const applyGroupRotation = useCallback((dr: number) => {
+    if (!Number.isFinite(dr) || dr === 0) return;
+    const θ = (dr * Math.PI) / 180;
+    const cos = Math.cos(θ);
+    const sin = Math.sin(θ);
+    const jx = multiPivotWorld.px;
+    const jy = multiPivotWorld.py;
+    for (const l of layers) {
+      const wb = computeLayerWorldBBox(l);
+      // Use the layer's world bbox center as the representative point to orbit
+      const wx = wb ? wb.minX + wb.width / 2 : l.offsetX;
+      const wy = wb ? wb.minY + wb.height / 2 : l.offsetY;
+      const dx = wx - jx;
+      const dy = wy - jy;
+      const newWx = jx + dx * cos - dy * sin;
+      const newWy = jy + dx * sin + dy * cos;
+      onUpdate(l.id, {
+        rotation: ((l.rotation ?? 0) + dr) % 360,
+        offsetX: l.offsetX + (newWx - wx),
+        offsetY: l.offsetY + (newWy - wy),
+      });
+    }
+  }, [layers, multiPivotWorld, onUpdate]);
+
   const commitRotation = useCallback((raw: string) => {
     const v = parseDecimal(raw);
-    if (Number.isFinite(v)) {
+    if (!Number.isFinite(v)) return;
+    if (!multi) {
       onUpdate(layer.id, { rotation: v % 360 });
+    } else {
+      // Treat as a delta relative to the first layer's current rotation
+      const dr = v - (layer.rotation ?? 0);
+      applyGroupRotation(dr);
     }
-  }, [layer.id, onUpdate]);
+  }, [multi, layer.id, layer.rotation, applyGroupRotation, onUpdate]);
 
   /** Apply a relative delta to the current rotation and reset. */
   const commitDeltaRot = useCallback(() => {
     const dr = parseDecimal(deltaRot);
     if (Number.isFinite(dr)) {
-      for (const l of layers) {
-        onUpdate(l.id, { rotation: ((l.rotation ?? 0) + dr) % 360 });
+      if (multi) {
+        applyGroupRotation(dr);
+      } else {
+        onUpdate(layer.id, { rotation: ((layer.rotation ?? 0) + dr) % 360 });
       }
     }
     setDeltaRot('0');
-  }, [layers, deltaRot, onUpdate]);
+  }, [multi, layer.id, layer.rotation, deltaRot, applyGroupRotation, onUpdate]);
 
   /** Apply a relative scale multiplier to selected layer(s) and reset.
-   *  Used for both multi-layer and single-layer relative mode.
-   *  Adjusts offset so each layer's pivot world position stays fixed. */
+   *  Single-layer: keeps that layer's own pivot fixed in world space.
+   *  Multi-layer: scales each layer's world position relative to the shared joint pivot. */
   const commitDeltaScale = useCallback(() => {
     const dsx = parseDecimal(deltaScaleX);
     const dsy = ratioLocked ? dsx : parseDecimal(deltaScaleY);
     if (!Number.isFinite(dsx) || dsx <= 0 || !Number.isFinite(dsy) || dsy <= 0) return;
-    for (const l of layers) {
-      const lbbox = computeShapesBoundingBox(l.shapes);
-      const { px, py } = getPivotCoords(lbbox, l.pivot ?? 'tl');
-      const oldWorldX = l.offsetX + l.scaleX * px;
-      const oldWorldY = l.offsetY + l.scaleY * py;
-      const newSx = l.scaleX * dsx;
-      const newSy = l.scaleY * dsy;
-      onUpdate(l.id, {
+
+    if (multi) {
+      // Joint pivot in world space
+      const jx = multiPivotWorld.px;
+      const jy = multiPivotWorld.py;
+      for (const l of layers) {
+        // Scale each layer's offset relative to the joint pivot:
+        //   new_offsetX = jx + (offsetX - jx) * dsx
+        //   new_offsetY = jy + (offsetY - jy) * dsy
+        onUpdate(l.id, {
+          scaleX: l.scaleX * dsx,
+          scaleY: l.scaleY * dsy,
+          offsetX: jx + (l.offsetX - jx) * dsx,
+          offsetY: jy + (l.offsetY - jy) * dsy,
+        });
+      }
+    } else {
+      const lbbox = computeShapesBoundingBox(layer.shapes);
+      const { px, py } = getPivotCoords(lbbox, layer.pivot ?? 'tl');
+      const oldWorldX = layer.offsetX + layer.scaleX * px;
+      const oldWorldY = layer.offsetY + layer.scaleY * py;
+      const newSx = layer.scaleX * dsx;
+      const newSy = layer.scaleY * dsy;
+      onUpdate(layer.id, {
         scaleX: newSx,
         scaleY: newSy,
         offsetX: oldWorldX - newSx * px,
@@ -243,7 +295,7 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
     }
     setDeltaScaleX('1');
     setDeltaScaleY('1');
-  }, [layers, deltaScaleX, deltaScaleY, ratioLocked, onUpdate]);
+  }, [multi, layers, layer, deltaScaleX, deltaScaleY, ratioLocked, multiPivotWorld, onUpdate]);
 
   /**
    * Flip mirror and adjust the layer offset so the pivot stays at the same world position.

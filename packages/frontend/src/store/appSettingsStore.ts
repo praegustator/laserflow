@@ -13,7 +13,6 @@ interface AppSettings {
   autoScrollConsole: boolean;
   autoZoomOnLayerSelect: boolean;
   autoPanOnLayerSelect: boolean;
-  singleExpandedOp: boolean;
   setBackendUrl: (url: string) => void;
   setOriginPosition: (pos: OriginPosition) => void;
   setWorkAreaWidth: (w: number) => void;
@@ -23,7 +22,6 @@ interface AppSettings {
   setAutoScrollConsole: (v: boolean) => void;
   setAutoZoomOnLayerSelect: (v: boolean) => void;
   setAutoPanOnLayerSelect: (v: boolean) => void;
-  setSingleExpandedOp: (v: boolean) => void;
 }
 
 export const useAppSettings = create<AppSettings>()(
@@ -38,7 +36,6 @@ export const useAppSettings = create<AppSettings>()(
       autoScrollConsole: true,
       autoZoomOnLayerSelect: false,
       autoPanOnLayerSelect: true,
-      singleExpandedOp: true,
       setBackendUrl: (url) => set({ backendUrl: url }),
       setOriginPosition: (pos) => set({ originPosition: pos }),
       setWorkAreaWidth: (w) => set({ workAreaWidth: w }),
@@ -48,7 +45,6 @@ export const useAppSettings = create<AppSettings>()(
       setAutoScrollConsole: (v) => set({ autoScrollConsole: v }),
       setAutoZoomOnLayerSelect: (v) => set({ autoZoomOnLayerSelect: v }),
       setAutoPanOnLayerSelect: (v) => set({ autoPanOnLayerSelect: v }),
-      setSingleExpandedOp: (v) => set({ singleExpandedOp: v }),
     }),
     { name: 'laserflow-settings' },
   ),

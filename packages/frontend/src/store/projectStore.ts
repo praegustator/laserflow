@@ -1,12 +1,17 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '../api/client';
-import type { Project, ProjectFile, ProjectVersion, Layer, Shape, Operation, PathGeometry, Job } from '../types';
-import { computeShapesBoundingBox, bakeLayerTransform, splitPathIntoSubpaths } from '../utils/geometry';
-import { useAppSettings } from './appSettingsStore';
+import type { Project, ProjectFile, ProjectVersion, Layer, Shape, Operation, PathGeometry, Job, PivotAnchor } from '../types';
+import { computeShapesBoundingBox, bakeLayerTransform, splitPathIntoSubpaths, computeMultiLayerWorldBBox, worldAnchorPoint } from '../utils/geometry';
+import { useAppSettings, type OriginPosition } from './appSettingsStore';
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/** Return the default layer pivot anchor that matches the board origin position. */
+function defaultPivot(originPosition: OriginPosition): PivotAnchor {
+  return originPosition === 'bottom-left' ? 'bl' : 'tl';
 }
 
 interface ProjectStore {
@@ -52,6 +57,12 @@ interface ProjectStore {
 
   /** Split a layer into separate layers, one per shape (original layer is removed). */
   splitLayerIntoShapeLayers: (layerId: string) => string[];
+
+  /**
+   * Align one or more layers so that `sourceAnchor` of their combined world bounding box
+   * coincides with (targetWx, targetWy) in world space.
+   */
+  alignLayersToPoint: (sourceLayerIds: string[], targetWx: number, targetWy: number, sourceAnchor: PivotAnchor) => void;
 
   // Operations
   addOperation: () => string | null;
@@ -151,7 +162,6 @@ export const useProjectStore = create<ProjectStore>()(
         // Compute bounding box to position the layer based on origin setting
         const bbox = computeShapesBoundingBox(shapes);
         const { originPosition, workAreaHeight } = useAppSettings.getState();
-
         // For top-left origin: align shape top to board top, left to board left.
         // For bottom-left origin: align shape bottom to board bottom (machine origin), left to board left.
         const offsetX = bbox ? -bbox.minX : 0;
@@ -178,7 +188,7 @@ export const useProjectStore = create<ProjectStore>()(
           rotation: 0,
           mirrorX: false,
           mirrorY: false,
-          pivot: 'tl',
+          pivot: defaultPivot(originPosition),
         };
 
         set(s => ({
@@ -260,7 +270,7 @@ export const useProjectStore = create<ProjectStore>()(
           rotation: 0,
           mirrorX: false,
           mirrorY: false,
-          pivot: 'tl',
+          pivot: defaultPivot(originPosition),
         };
 
         set(s => ({
@@ -276,6 +286,7 @@ export const useProjectStore = create<ProjectStore>()(
       addLayer: (name: string) => {
         const { activeProjectId } = get();
         if (!activeProjectId) return;
+        const { originPosition } = useAppSettings.getState();
         const layer: Layer = {
           id: uid(),
           name,
@@ -288,7 +299,7 @@ export const useProjectStore = create<ProjectStore>()(
           rotation: 0,
           mirrorX: false,
           mirrorY: false,
-          pivot: 'tl',
+          pivot: defaultPivot(originPosition),
         };
         set(s => ({
           projects: updateProject(s.projects, activeProjectId, p => ({
@@ -593,7 +604,7 @@ export const useProjectStore = create<ProjectStore>()(
                 rotation: 0,
                 mirrorX: false,
                 mirrorY: false,
-                pivot: 'tl' as const,
+                pivot: defaultPivot(useAppSettings.getState().originPosition),
               } : l),
             operations: p.operations.map(op => ({
               ...op,
@@ -678,6 +689,33 @@ export const useProjectStore = create<ProjectStore>()(
           }),
         }));
         return newIds;
+      },
+
+      alignLayersToPoint: (sourceLayerIds, targetWx, targetWy, sourceAnchor) => {
+        const { activeProjectId } = get();
+        if (!activeProjectId) return;
+        const project = getActiveProject(get().projects, activeProjectId);
+        if (!project) return;
+        const sourceLayers = sourceLayerIds
+          .map(id => project.layers.find(l => l.id === id))
+          .filter(Boolean) as Layer[];
+        if (sourceLayers.length === 0) return;
+        const worldBbox = computeMultiLayerWorldBBox(sourceLayers);
+        if (!worldBbox) return;
+        const sourcePoint = worldAnchorPoint(worldBbox, sourceAnchor);
+        const dx = targetWx - sourcePoint.x;
+        const dy = targetWy - sourcePoint.y;
+        set(s => ({
+          projects: updateProject(s.projects, activeProjectId, p => ({
+            ...p,
+            layers: p.layers.map(l =>
+              sourceLayerIds.includes(l.id)
+                ? { ...l, offsetX: l.offsetX + dx, offsetY: l.offsetY + dy }
+                : l,
+            ),
+            gcodeUpToDate: false,
+          })),
+        }));
       },
 
       addOperation: () => {
@@ -916,7 +954,7 @@ export const useProjectStore = create<ProjectStore>()(
         const project = getActiveProject(projects, activeProjectId);
         if (!project) throw new Error('No active project');
 
-        const enabledOps = project.operations.filter(op => op.enabled && op.type !== 'ignore');
+        const enabledOps = project.operations.filter(op => op.enabled);
         if (enabledOps.length === 0) throw new Error('No enabled operations');
 
         // Collect geometry from all layers referenced by enabled operations.
