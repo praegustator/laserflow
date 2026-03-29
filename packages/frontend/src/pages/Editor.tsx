@@ -15,6 +15,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faEye, faEyeSlash, faTrash, faFileImport, faObjectGroup, faLayerGroup, faScissors, faArrowUpFromBracket, faMagnifyingGlassPlus, faMagnifyingGlassMinus, faExpand, faCompress } from '@fortawesome/free-solid-svg-icons';
 
 const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];
+const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|bmp|webp)$/i;
 
 export default function Editor() {
   const projects = useProjectStore(s => s.projects);
@@ -90,8 +91,6 @@ export default function Editor() {
       canvasRef.current.fitLayers(bbox);
     }
   }, [selectedLayerIds, autoZoomOnLayerSelect]);
-
-  const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|bmp|webp)$/i;
 
   const handleFiles = useCallback(async (files: FileList | File[]) => {
     for (const file of Array.from(files)) {

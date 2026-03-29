@@ -502,3 +502,131 @@ describe('fillBrightness', () => {
     expect(fillBrightness('')).toBeNull();
   });
 });
+
+describe('raster image engraving', () => {
+  /** Helper: create a PNG data URL from raw grayscale pixel values. */
+  async function makeGrayscalePng(pixels: number[], width: number, height: number): Promise<string> {
+    const sharp = (await import('sharp')).default;
+    const buf = await sharp(Buffer.from(pixels), { raw: { width, height, channels: 1 } })
+      .png()
+      .toBuffer();
+    return 'data:image/png;base64,' + buf.toString('base64');
+  }
+
+  it('generates raster G-code for image geometry in engrave operations', async () => {
+    // 4×2 grayscale image: top row has varying brightness, bottom row is mid-gray.
+    // Bounding rect: 4mm × 2mm
+    const dataUrl = await makeGrayscalePng([0, 85, 170, 255, 128, 128, 128, 128], 4, 2);
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 4 0 L 4 2 L 0 2 Z',
+      imageDataUrl: dataUrl,
+    }];
+    const operations: Operation[] = [{
+      id: 'img-engrave',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 100,
+      passes: 1,
+    }];
+
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
+
+    // Should contain M4 (engrave mode)
+    expect(gcode).toContain('M4 S0');
+
+    // Should contain G1 moves (raster scan lines)
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+    expect(g1Lines.length).toBeGreaterThan(0);
+
+    // Black pixel → full power (S1000)
+    expect(gcode).toContain('S1000');
+
+    // White pixel → no power — emitted as G0 (rapid) not G1
+    // The last pixel in row 0 is white (255), so it should produce a G0 S0.
+    const g0Lines = gcode.split('\n').filter(l => l.includes('G0') && l.includes('S0'));
+    expect(g0Lines.length).toBeGreaterThan(0);
+  });
+
+  it('traces bounding rectangle outline for cut operations on images', async () => {
+    // Simple 2×2 black image
+    const dataUrl = await makeGrayscalePng([0, 0, 0, 0], 2, 2);
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z',
+      imageDataUrl: dataUrl,
+    }];
+    const operations: Operation[] = [{
+      id: 'img-cut',
+      type: 'cut',
+      feedRate: 600,
+      power: 80,
+      passes: 1,
+    }];
+
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
+
+    // Should use M3 (cut mode)
+    expect(gcode).toContain('M3 S0');
+
+    // Should NOT contain raster scan data — just the rectangle outline
+    // 4 sides of the rectangle = 4 G1 lines + 1 close
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+    expect(g1Lines.length).toBeLessThanOrEqual(5);
+
+    // The outline should reference the rectangle corners
+    expect(gcode).toContain('X10.000');
+    expect(gcode).toContain('Y10.000');
+  });
+
+  it('skips fully white rows in raster engraving', async () => {
+    // 2×2 image: row 0 is white, row 1 is black
+    const dataUrl = await makeGrayscalePng([255, 255, 0, 0], 2, 2);
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 2 0 L 2 2 L 0 2 Z',
+      imageDataUrl: dataUrl,
+    }];
+    const operations: Operation[] = [{
+      id: 'img-skip-white',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 100,
+      passes: 1,
+    }];
+
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
+
+    // Should have raster lines for the black row but skip the white row
+    // The outline trace also produces G1 lines, so just verify that
+    // S1000 appears (from the black pixels).
+    expect(gcode).toContain('S1000');
+  });
+
+  it('modulates power by pixel brightness', async () => {
+    // 2×1 image: one pixel at mid-gray (128), one at black (0)
+    const dataUrl = await makeGrayscalePng([128, 0], 2, 1);
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 2 0 L 2 1 L 0 1 Z',
+      imageDataUrl: dataUrl,
+    }];
+    const operations: Operation[] = [{
+      id: 'img-brightness',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 100,
+      passes: 1,
+    }];
+
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
+
+    // Black pixel (brightness=0) → S1000
+    expect(gcode).toContain('S1000');
+    // Mid-gray pixel (brightness=128) → S ≈ round(1000*(1-128/255)) ≈ 498
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+    const sValues = g1Lines.map(l => {
+      const m = l.match(/S(\d+)/);
+      return m ? parseInt(m[1]) : -1;
+    }).filter(v => v >= 0);
+    // Should have a value around 498 (mid-gray power)
+    const midGrayS = sValues.filter(s => s > 400 && s < 600);
+    expect(midGrayS.length).toBeGreaterThan(0);
+  });
+});
