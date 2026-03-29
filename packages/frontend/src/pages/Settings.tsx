@@ -243,6 +243,8 @@ export default function Settings() {
   const setAutoScrollConsole = useAppSettings((s) => s.setAutoScrollConsole);
   const autoZoomOnLayerSelect = useAppSettings((s) => s.autoZoomOnLayerSelect);
   const setAutoZoomOnLayerSelect = useAppSettings((s) => s.setAutoZoomOnLayerSelect);
+  const autoPanOnLayerSelect = useAppSettings((s) => s.autoPanOnLayerSelect);
+  const setAutoPanOnLayerSelect = useAppSettings((s) => s.setAutoPanOnLayerSelect);
   const singleExpandedOp = useAppSettings((s) => s.singleExpandedOp);
   const setSingleExpandedOp = useAppSettings((s) => s.setSingleExpandedOp);
 
@@ -794,6 +796,19 @@ export default function Settings() {
               type="checkbox"
               checked={autoZoomOnLayerSelect}
               onChange={e => setAutoZoomOnLayerSelect(e.target.checked)}
+              className="accent-orange-500 w-4 h-4"
+            />
+          </div>
+          <div className="border-t border-gray-700" />
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm text-gray-200">Auto-pan to selected layer</div>
+              <div className="text-xs text-gray-500">Center the canvas on a layer when you select it (without changing zoom)</div>
+            </div>
+            <input
+              type="checkbox"
+              checked={autoPanOnLayerSelect}
+              onChange={e => setAutoPanOnLayerSelect(e.target.checked)}
               className="accent-orange-500 w-4 h-4"
             />
           </div>

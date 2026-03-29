@@ -62,14 +62,14 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
 
   return (
     <div
-      className={`border rounded-lg overflow-hidden transition-colors ${op.enabled ? 'border-gray-700' : 'border-gray-800 opacity-60'} ${isDragOver ? 'border-orange-400 border-dashed' : ''} ${isSelected ? 'ring-1 ring-orange-500' : isLayerHighlighted ? 'ring-1 ring-blue-500/60' : ''}`}
+      className={`border rounded-lg overflow-hidden transition-colors ${op.enabled ? 'border-gray-700' : 'border-gray-800 opacity-60'} ${isDragOver ? 'border-orange-400 border-dashed' : ''} ${isSelected ? 'ring-1 ring-orange-500' : ''}`}
       onClick={onSelect}
       onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOver(op.id); }}
       onDrop={e => { e.preventDefault(); onDrop(); }}
     >
       {/* Header — drag handle is restricted to this element only */}
       <div
-        className="flex items-center gap-1 px-2 py-2 bg-gray-800 cursor-grab active:cursor-grabbing"
+        className={`flex items-center gap-1 px-2 py-2 ${isLayerHighlighted ? 'bg-blue-900/25' : 'bg-gray-800'} cursor-grab active:cursor-grabbing`}
         draggable
         onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; onDragStart(op.id); }}
         onDragEnd={() => onDrop()}
@@ -82,7 +82,7 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
         ><FontAwesomeIcon icon={op.enabled ? faToggleOn : faToggleOff} /></button>
 
         <button
-          onClick={(e) => { e.stopPropagation(); onToggleExpanded(); }}
+          onClick={onToggleExpanded}
           className="flex-1 flex items-center gap-2 text-left min-w-0"
         >
           <span className={`text-sm font-semibold whitespace-nowrap ${OP_COLORS[op.type]}`}>
