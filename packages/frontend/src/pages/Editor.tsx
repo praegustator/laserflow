@@ -573,7 +573,7 @@ export default function Editor() {
                 >{project.name}</span>
                 <button
                   onClick={() => { setProjectNameDraft(project.name); setEditingProjectName(true); }}
-                  className="text-gray-600 hover:text-orange-400 text-[10px]"
+                  className="text-gray-600 hover:text-orange-400 text-[10px] ml-1"
                   title="Rename project"
                 ><FontAwesomeIcon icon={faPencil} /></button>
               </>
@@ -710,9 +710,20 @@ export default function Editor() {
               ) : (
                 project.layers.map((layer, idx) => {
                 const currentColor = layer.color ?? LAYER_COLORS[idx % LAYER_COLORS.length];
+                const isDragging = dragLayerId.current === layer.id;
+                const isDropTarget = dragOverLayerId === layer.id && dragLayerId.current !== layer.id;
+                const dragFromIdx = dragLayerId.current ? project.layers.findIndex(l => l.id === dragLayerId.current) : -1;
+                const showBefore = isDropTarget && dragFromIdx > idx;
+                const showAfter = isDropTarget && dragFromIdx < idx;
                 return (
+                <div key={layer.id}>
+                {showBefore && (
+                  <div className="h-8 border-2 border-dashed border-orange-400/50 rounded-lg mb-1" />
+                )}
                 <div
-                  key={layer.id}
+                  className={isDragging ? 'opacity-40' : ''}
+                >
+                <div
                   draggable
                   onDragStart={e => { e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; handleLayerDragStart(layer.id); }}
                   onDragOver={e => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; handleLayerDragOver(layer.id); }}
@@ -747,7 +758,7 @@ export default function Editor() {
                         : opHighlightedLayerIds.has(layer.id)
                           ? 'border-gray-700 bg-blue-900/20'
                           : 'border-gray-700 hover:border-gray-600'
-                  } ${dragOverLayerId === layer.id ? 'border-blue-400 border-dashed' : ''}`}
+                  }`}
                 >
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-gray-600 cursor-grab active:cursor-grabbing select-none mr-0.5" title="Drag to reorder">⠿</span>
@@ -830,7 +841,7 @@ export default function Editor() {
                         >{layer.name}</span>
                         <button
                           onClick={e => { e.stopPropagation(); startEditingLayerName(layer.id, layer.name); }}
-                          className="text-gray-600 hover:text-orange-400 text-[10px] flex-shrink-0"
+                          className="text-gray-600 hover:text-orange-400 text-[10px] flex-shrink-0 ml-0.5"
                           title="Rename layer"
                         ><FontAwesomeIcon icon={faPencil} /></button>
                       </>
@@ -892,7 +903,7 @@ export default function Editor() {
                                 >{shape.name}</span>
                                 <button
                                   onClick={e => { e.stopPropagation(); startEditingShapeName(shape.id, layer.id, shape.name); }}
-                                  className="text-gray-600 hover:text-orange-400 text-[9px] flex-shrink-0"
+                                  className="text-gray-600 hover:text-orange-400 text-[9px] flex-shrink-0 ml-0.5"
                                   title="Rename shape"
                                 ><FontAwesomeIcon icon={faPencil} /></button>
                               </>
@@ -931,6 +942,11 @@ export default function Editor() {
                       )}
                     </div>
                   )}
+                </div>
+                </div>
+                {showAfter && (
+                  <div className="h-8 border-2 border-dashed border-orange-400/50 rounded-lg mt-1" />
+                )}
                 </div>
               )})
               )}

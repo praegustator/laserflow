@@ -16,6 +16,8 @@ interface AppSettings {
   autoPanOnLayerSelect: boolean;
   /** Calibrated display scale (px per mm). When set, zoom % is shown relative to this value so that 100 % = real physical size. */
   calibratedPxPerMm: number | null;
+  /** Trace the bounding rectangle with laser off before running a job. */
+  frameBeforeRun: boolean;
   /** Last used view mode on the Projects page ('card' or 'table'). */
   projectsViewMode: ProjectsViewMode;
   setBackendUrl: (url: string) => void;
@@ -28,6 +30,7 @@ interface AppSettings {
   setAutoZoomOnLayerSelect: (v: boolean) => void;
   setAutoPanOnLayerSelect: (v: boolean) => void;
   setCalibratedPxPerMm: (v: number | null) => void;
+  setFrameBeforeRun: (v: boolean) => void;
   setProjectsViewMode: (v: ProjectsViewMode) => void;
 }
 
@@ -44,6 +47,7 @@ export const useAppSettings = create<AppSettings>()(
       autoZoomOnLayerSelect: false,
       autoPanOnLayerSelect: true,
       calibratedPxPerMm: null,
+      frameBeforeRun: true,
       projectsViewMode: 'card',
       setBackendUrl: (url) => set({ backendUrl: url }),
       setOriginPosition: (pos) => set({ originPosition: pos }),
@@ -55,6 +59,7 @@ export const useAppSettings = create<AppSettings>()(
       setAutoZoomOnLayerSelect: (v) => set({ autoZoomOnLayerSelect: v }),
       setAutoPanOnLayerSelect: (v) => set({ autoPanOnLayerSelect: v }),
       setCalibratedPxPerMm: (v) => set({ calibratedPxPerMm: v }),
+      setFrameBeforeRun: (v) => set({ frameBeforeRun: v }),
       setProjectsViewMode: (v) => set({ projectsViewMode: v }),
     }),
     { name: 'laserflow-settings' },

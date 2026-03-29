@@ -239,6 +239,8 @@ export default function Settings() {
   const setUnits = useAppSettings((s) => s.setUnits);
   const safetyConfirmation = useAppSettings((s) => s.safetyConfirmation);
   const setSafetyConfirmation = useAppSettings((s) => s.setSafetyConfirmation);
+  const frameBeforeRun = useAppSettings((s) => s.frameBeforeRun);
+  const setFrameBeforeRun = useAppSettings((s) => s.setFrameBeforeRun);
   const autoScrollConsole = useAppSettings((s) => s.autoScrollConsole);
   const setAutoScrollConsole = useAppSettings((s) => s.setAutoScrollConsole);
   const autoZoomOnLayerSelect = useAppSettings((s) => s.autoZoomOnLayerSelect);
@@ -768,6 +770,19 @@ export default function Settings() {
               type="checkbox"
               checked={safetyConfirmation}
               onChange={e => setSafetyConfirmation(e.target.checked)}
+              className="accent-orange-500 w-4 h-4"
+            />
+          </div>
+          <div className="border-t border-gray-700" />
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm text-gray-200">Frame Before Run</div>
+              <div className="text-xs text-gray-500">Trace the bounding rectangle with laser off before starting a job</div>
+            </div>
+            <input
+              type="checkbox"
+              checked={frameBeforeRun}
+              onChange={e => setFrameBeforeRun(e.target.checked)}
               className="accent-orange-500 w-4 h-4"
             />
           </div>

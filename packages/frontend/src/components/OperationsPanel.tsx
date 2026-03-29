@@ -317,7 +317,7 @@ function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRen
             ) : null}
             <button
               onClick={e => { e.stopPropagation(); setLocalLabel(op.label ?? ''); setEditingLabel(true); }}
-              className="text-gray-600 hover:text-orange-400 text-[10px] flex-shrink-0"
+              className="text-gray-600 hover:text-orange-400 text-[10px] flex-shrink-0 ml-0.5"
               title="Rename operation"
             ><FontAwesomeIcon icon={faPencil} /></button>
           </>
@@ -512,35 +512,49 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
             No operations. Add one below.
           </div>
         ) : (
-          operations.map((op) => {
+          operations.map((op, idx) => {
             const isOpSelected = selectedOpIds.has(op.id);
             const isLayerHighlighted = !isOpSelected && !!selectedLayerIds && op.layerIds.some(lid => selectedLayerIds.has(lid));
+            const isDragging = dragOpId.current === op.id;
+            const isDropTarget = dragOverId === op.id && dragOpId.current !== op.id;
+            const dragFromIdx = dragOpId.current ? operations.findIndex(o => o.id === dragOpId.current) : -1;
+            const showBefore = isDropTarget && dragFromIdx > idx;
+            const showAfter = isDropTarget && dragFromIdx < idx;
             return (
-            <OperationRow
-              key={op.id}
-              op={op}
-              index={operations.indexOf(op) + 1}
-              onRemove={() => removeOperation(op.id)}
-              onToggleEnabled={() => toggleOperationEnabled(op.id)}
-              onDuplicate={() => {
-                const layerIds = selectedLayerIds ? Array.from(selectedLayerIds) : undefined;
-                const newId = duplicateOperation(op.id, layerIds);
-                if (newId) {
-                  setSelectedOpIds(new Set([newId]));
-                }
-              }}
-              onRename={label => updateOperation(op.id, { label })}
-              layers={layers}
-              onAssignLayer={layerId => assignLayerToOperation(op.id, layerId)}
-              onUnassignLayer={layerId => unassignLayerFromOperation(op.id, layerId)}
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              isDragOver={dragOverId === op.id}
-              isSelected={isOpSelected}
-              onSelect={(e) => handleSelectOp(op.id, e)}
-              isLayerHighlighted={isLayerHighlighted}
-            />
+            <div key={op.id}>
+              {showBefore && (
+                <div className="h-8 border-2 border-dashed border-orange-400/50 rounded-lg mb-2" />
+              )}
+              <div className={isDragging ? 'opacity-40' : ''}>
+              <OperationRow
+                op={op}
+                index={idx + 1}
+                onRemove={() => removeOperation(op.id)}
+                onToggleEnabled={() => toggleOperationEnabled(op.id)}
+                onDuplicate={() => {
+                  const layerIds = selectedLayerIds ? Array.from(selectedLayerIds) : undefined;
+                  const newId = duplicateOperation(op.id, layerIds);
+                  if (newId) {
+                    setSelectedOpIds(new Set([newId]));
+                  }
+                }}
+                onRename={label => updateOperation(op.id, { label })}
+                layers={layers}
+                onAssignLayer={layerId => assignLayerToOperation(op.id, layerId)}
+                onUnassignLayer={layerId => unassignLayerFromOperation(op.id, layerId)}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                isDragOver={false}
+                isSelected={isOpSelected}
+                onSelect={(e) => handleSelectOp(op.id, e)}
+                isLayerHighlighted={isLayerHighlighted}
+              />
+              </div>
+              {showAfter && (
+                <div className="h-8 border-2 border-dashed border-orange-400/50 rounded-lg mt-2" />
+              )}
+            </div>
             );
           })
         )}

@@ -1,8 +1,10 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useJobStore } from '../store/jobStore';
 import { useProjectStore } from '../store/projectStore';
 import { useMachineStore } from '../store/machineStore';
 import { useToastStore } from '../store/toastStore';
+import { useAppSettings } from '../store/appSettingsStore';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faPlay,
@@ -22,6 +24,7 @@ import {
   faChevronDown,
   faChevronUp,
   faPencil,
+  faCode,
 } from '@fortawesome/free-solid-svg-icons';
 import JogControls from '../components/JogControls';
 import ConnectionPanel from '../components/ConnectionPanel';
@@ -105,6 +108,7 @@ interface JobCardProps {
   onDuplicate: () => void;
   onRerun: () => void;
   onTraceFrame: () => void;
+  onPreviewGcode: () => void;
   onRename: (newName: string) => void;
   projectName?: string;
   draggable?: boolean;
@@ -116,7 +120,7 @@ interface JobCardProps {
 
 function JobCard({
   job, progress, selected, onSelect, onStart, onPause, onResume, onAbort,
-  onDelete, onDuplicate, onRerun, onTraceFrame, onRename, projectName, draggable, onDragStart, onDragOver, onDrop,
+  onDelete, onDuplicate, onRerun, onTraceFrame, onPreviewGcode, onRename, projectName, draggable, onDragStart, onDragOver, onDrop,
   machineConnected,
 }: JobCardProps) {
   const st = STATUS_STYLES[job.status] ?? STATUS_STYLES.idle;
@@ -126,7 +130,7 @@ function JobCard({
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState(job.name);
-  const [frameBeforeRun, setFrameBeforeRun] = useState(true);
+  const frameBeforeRun = useAppSettings(s => s.frameBeforeRun);
 
   const handleNameDoubleClick = () => {
     setEditedName(job.name);
@@ -178,7 +182,7 @@ function JobCard({
             className="flex-1 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0.5 text-gray-100 focus:outline-none font-medium"
           />
         ) : (
-          <div className="flex items-center gap-0.5 flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
             <h3
               className="font-medium text-gray-200 truncate text-xs cursor-text"
               onDoubleClick={handleNameDoubleClick}
@@ -230,26 +234,12 @@ function JobCard({
       {/* Actions */}
       <div className="flex flex-wrap gap-1 pt-0.5">
         {(job.status === 'idle' || job.status === 'queued') && (
-          <>
-            <button
-              onClick={() => onStart(frameBeforeRun)}
-              disabled={!machineConnected}
-              className="px-2 py-0.5 text-[10px] rounded bg-green-700 hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors flex items-center gap-1"
-              title={machineConnected ? 'Start job' : 'Machine not connected'}
-            ><FontAwesomeIcon icon={faPlay} /> Run</button>
-            <label
-              className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer select-none"
-              title="Trace bounding rectangle with laser off before running"
-            >
-              <input
-                type="checkbox"
-                checked={frameBeforeRun}
-                onChange={e => setFrameBeforeRun(e.target.checked)}
-                className="accent-orange-500 w-3 h-3"
-              />
-              Frame first
-            </label>
-          </>
+          <button
+            onClick={() => onStart(frameBeforeRun)}
+            disabled={!machineConnected}
+            className="px-2 py-0.5 text-[10px] rounded bg-green-700 hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors flex items-center gap-1"
+            title={machineConnected ? 'Start job' : 'Machine not connected'}
+          ><FontAwesomeIcon icon={faPlay} /> Run</button>
         )}
         {(job.status === 'idle' || job.status === 'queued') && job.gcode && (
           <button
@@ -258,6 +248,13 @@ function JobCard({
             className="px-2 py-0.5 text-[10px] rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 transition-colors flex items-center gap-1"
             title={machineConnected ? 'Trace bounding box with laser off' : 'Machine not connected'}
           ><FontAwesomeIcon icon={faBorderAll} /> Trace</button>
+        )}
+        {job.gcode && (
+          <button
+            onClick={onPreviewGcode}
+            className="px-2 py-0.5 text-[10px] rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors flex items-center gap-1"
+            title="Preview G-code"
+          ><FontAwesomeIcon icon={faCode} /> Preview</button>
         )}
         {job.status === 'running' && (
           <button
@@ -326,13 +323,16 @@ export default function Queue() {
   const renameJob = useJobStore(s => s.renameJob);
   const bulkDeleteJobs = useJobStore(s => s.bulkDeleteJobs);
   const reorderJobs = useJobStore(s => s.reorderJobs);
+  const setActiveJobId = useJobStore(s => s.setActiveJobId);
   const projects = useProjectStore(s => s.projects);
   const connectionStatus = useMachineStore(s => s.connectionStatus);
   const sendCommand = useMachineStore(s => s.sendCommand);
   const addToast = useToastStore(s => s.addToast);
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const dragIdRef = useRef<string | null>(null);
+  const [dragOverJobId, setDragOverJobId] = useState<string | null>(null);
 
   const machineConnected = connectionStatus === 'connected';
 
@@ -412,7 +412,12 @@ export default function Queue() {
   /* ─── Drag & drop for queued jobs ─── */
   const handleDragStart = useCallback((id: string) => { dragIdRef.current = id; }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); }, []);
+  const handleDragOver = useCallback((e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    if (dragIdRef.current && dragIdRef.current !== targetId) {
+      setDragOverJobId(targetId);
+    }
+  }, []);
 
   const handleDrop = useCallback((targetId: string) => {
     if (!dragIdRef.current || dragIdRef.current === targetId) return;
@@ -427,7 +432,13 @@ export default function Queue() {
     ids.splice(toIdx, 0, dragIdRef.current);
     void reorderJobs(ids);
     dragIdRef.current = null;
+    setDragOverJobId(null);
   }, [jobs, reorderJobs]);
+
+  const handleDragEnd = useCallback(() => {
+    dragIdRef.current = null;
+    setDragOverJobId(null);
+  }, []);
 
   /* ─── Group jobs by status ─── */
   const queuedJobs = jobs
@@ -469,6 +480,11 @@ export default function Queue() {
     }
   }, [sendCommand, addToast]);
 
+  const handlePreviewGcode = useCallback((job: Job) => {
+    setActiveJobId(job.id);
+    void navigate('/gcode-preview');
+  }, [setActiveJobId, navigate]);
+
   const cardProps = useCallback((job: Job) => ({
     job,
     progress: jobProgress[job.id],
@@ -482,10 +498,11 @@ export default function Queue() {
     onDuplicate: () => { void handleDuplicate(job.id); },
     onRerun: () => { void handleRerun(job.id); },
     onTraceFrame: () => { void handleTraceFrame(job); },
+    onPreviewGcode: () => { handlePreviewGcode(job); },
     onRename: (newName: string) => { void wrap(() => renameJob(job.id, newName), 'Job renamed')(); },
     projectName: job.projectId ? projectNameById[job.projectId] : undefined,
     machineConnected,
-  }), [jobProgress, selectedIds, handleSelect, wrap, startJob, pauseJob, resumeJob, abortJob, deleteJob, handleDuplicate, handleRerun, handleTraceFrame, renameJob, projectNameById, machineConnected]);
+  }), [jobProgress, selectedIds, handleSelect, wrap, startJob, pauseJob, resumeJob, abortJob, deleteJob, handleDuplicate, handleRerun, handleTraceFrame, handlePreviewGcode, renameJob, projectNameById, machineConnected]);
 
   // Terminal panel state (VS Code style)
   const [terminalOpen, setTerminalOpen] = useState(true);
@@ -562,16 +579,32 @@ export default function Queue() {
                   {queuedJobs.length === 0 ? (
                     <p className="text-xs text-gray-600 text-center py-8">No queued jobs</p>
                   ) : (
-                    queuedJobs.map(job => (
-                      <JobCard
-                        key={job.id}
-                        {...cardProps(job)}
-                        draggable
-                        onDragStart={() => handleDragStart(job.id)}
-                        onDragOver={handleDragOver}
-                        onDrop={() => handleDrop(job.id)}
-                      />
-                    ))
+                    queuedJobs.map((job, idx) => {
+                      const isDragging = dragIdRef.current === job.id;
+                      const isDropTarget = dragOverJobId === job.id && dragIdRef.current !== job.id;
+                      const dragFromIdx = dragIdRef.current ? queuedJobs.findIndex(j => j.id === dragIdRef.current) : -1;
+                      const showBefore = isDropTarget && dragFromIdx > idx;
+                      const showAfter = isDropTarget && dragFromIdx < idx;
+                      return (
+                        <div key={job.id} onDragEnd={handleDragEnd}>
+                          {showBefore && (
+                            <div className="h-10 border-2 border-dashed border-orange-400/50 rounded-lg mb-2" />
+                          )}
+                          <div className={isDragging ? 'opacity-40' : ''}>
+                            <JobCard
+                              {...cardProps(job)}
+                              draggable
+                              onDragStart={() => handleDragStart(job.id)}
+                              onDragOver={e => handleDragOver(e, job.id)}
+                              onDrop={() => handleDrop(job.id)}
+                            />
+                          </div>
+                          {showAfter && (
+                            <div className="h-10 border-2 border-dashed border-orange-400/50 rounded-lg mt-2" />
+                          )}
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>
