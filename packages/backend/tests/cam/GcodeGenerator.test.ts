@@ -345,10 +345,11 @@ describe('GcodeGenerator', () => {
     expect(gcode).toContain('M4 S0');
 
     // Hatch lines appear as G1 moves.  With 1mm interval on a 10mm square
-    // we expect roughly 9-10 scan lines, each producing one G1 segment.
+    // we expect roughly 10 scan lines, each producing one G1 segment.
+    // No outline is traced for filled shapes in engrave mode.
     const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
-    // At minimum we need the hatch lines plus the outline segments (4 sides)
-    expect(g1Lines.length).toBeGreaterThan(10);
+    expect(g1Lines.length).toBeGreaterThanOrEqual(9);
+    expect(g1Lines.length).toBeLessThanOrEqual(11);
   });
 
   it('does NOT hatch-fill shapes without fill in engrave operations', async () => {
@@ -394,6 +395,39 @@ describe('GcodeGenerator', () => {
     expect(g1Lines.length).toBeLessThanOrEqual(5);
   });
 
+  it('does NOT trace outline for filled shapes in engrave operations', async () => {
+    // A filled rectangle should get hatch-fill only, with no outline border.
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z',
+      fill: '#000000',
+    }];
+    const operations: Operation[] = [{
+      id: 'engrave-no-outline',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 50,
+      passes: 1,
+      engraveLineInterval: 1,
+    }];
+    const gcode = await generateGcode(geometry, operations, defaultProfile);
+
+    // Hatch lines should be present
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+    expect(g1Lines.length).toBeGreaterThanOrEqual(9);
+
+    // The outline would close the path back to the starting corner (0,0).
+    // With only hatch-fill, no G1 move should trace along the rectangle edges.
+    // Specifically, hatch scan lines are horizontal — no G1 should have Y=0.000
+    // (bottom edge) or Y=10.000 (top edge) at full path-tracing S values.
+    const outlineCornerLines = g1Lines.filter(l =>
+      (l.includes('X0.000') && l.includes('Y0.000')) ||
+      (l.includes('X10.000') && l.includes('Y0.000')) ||
+      (l.includes('X10.000') && l.includes('Y10.000')) ||
+      (l.includes('X0.000') && l.includes('Y10.000'))
+    );
+    expect(outlineCornerLines.length).toBe(0);
+  });
+
   it('respects engraveLineAngle for angled hatch lines', async () => {
     // Filled square with 90° angle (vertical scan lines)
     const geometry: PathGeometry[] = [{
@@ -412,8 +446,8 @@ describe('GcodeGenerator', () => {
     const gcode = await generateGcode(geometry, operations, defaultProfile);
 
     const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
-    // Should still produce hatch lines
-    expect(g1Lines.length).toBeGreaterThan(10);
+    // Should produce hatch lines (no outline for filled engrave shapes)
+    expect(g1Lines.length).toBeGreaterThanOrEqual(9);
   });
 
   it('scales hatch-fill S value by fill shade brightness', async () => {
@@ -470,9 +504,9 @@ describe('GcodeGenerator', () => {
     }];
     const gcode = await generateGcode(geometry, operations, defaultProfile);
 
-    // Should produce hatch lines plus outline
+    // Should produce hatch lines (no outline for filled engrave shapes)
     const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
-    expect(g1Lines.length).toBeGreaterThan(10);
+    expect(g1Lines.length).toBeGreaterThanOrEqual(9);
     // Black fill = full operation power (500)
     expect(gcode).toContain('S500');
   });
@@ -600,9 +634,8 @@ describe('raster image engraving', () => {
 
     const gcode = await generateGcode(geometry, operations, defaultProfile);
 
-    // Should have raster lines for the black row but skip the white row
-    // The outline trace also produces G1 lines, so just verify that
-    // S1000 appears (from the black pixels).
+    // Should have raster lines for the black row but skip the white row.
+    // S1000 appears from the black pixels at full power.
     expect(gcode).toContain('S1000');
   });
 
@@ -670,5 +703,48 @@ describe('raster image engraving', () => {
     const allLines = gcode.split('\n');
     const travelsToEdge = allLines.some(l => l.includes('G0') && l.includes('X5.000'));
     expect(travelsToEdge).toBe(false);
+  });
+
+  it('respects engraveLineInterval for raster image scan line spacing', async () => {
+    // 2×4 black image, bounding rect 2mm × 4mm.
+    // Natural pixel height = 4/4 = 1mm per row → 4 scan lines.
+    // With engraveLineInterval=0.5mm → round(4/0.5) = 8 scan lines.
+    const dataUrl = await makeGrayscalePng([
+      0, 0,
+      0, 0,
+      0, 0,
+      0, 0,
+    ], 2, 4);
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 2 0 L 2 4 L 0 4 Z',
+      imageDataUrl: dataUrl,
+    }];
+
+    // Without lineInterval: expect 4 scan lines (one per pixel row)
+    const opsDefault: Operation[] = [{
+      id: 'img-default-interval',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 100,
+      passes: 1,
+    }];
+    const gcodeDefault = await generateGcode(geometry, opsDefault, defaultProfile);
+    // Count G0 positioning moves for scan lines (have decimal Y coords, unlike header/footer G0 X0 Y0 S0)
+    const g0Default = gcodeDefault.split('\n').filter(l => l.startsWith('G0') && l.includes('S0') && /Y\d+\.\d+/.test(l));
+    // Each scan line starts with a G0 positioning move
+    expect(g0Default.length).toBe(4);
+
+    // With lineInterval=0.5mm: expect 8 scan lines
+    const opsInterval: Operation[] = [{
+      id: 'img-custom-interval',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 100,
+      passes: 1,
+      engraveLineInterval: 0.5,
+    }];
+    const gcodeInterval = await generateGcode(geometry, opsInterval, defaultProfile);
+    const g0Interval = gcodeInterval.split('\n').filter(l => l.startsWith('G0') && l.includes('S0') && /Y\d+\.\d+/.test(l));
+    expect(g0Interval.length).toBe(8);
   });
 });

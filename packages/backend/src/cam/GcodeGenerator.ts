@@ -391,6 +391,7 @@ export function rasterImageToGcode(
   feedRate: number,
   sValue: number,
   transform: PathTransform = IDENTITY_TRANSFORM,
+  lineInterval?: number,
 ): string {
   const bbox = parsePathBBox(d);
   if (!bbox || image.width === 0 || image.height === 0) return '';
@@ -399,9 +400,19 @@ export function rasterImageToGcode(
   const pixelW = bbox.w / image.width;
   const pixelH = bbox.h / image.height;
 
-  for (let row = 0; row < image.height; row++) {
-    const leftToRight = row % 2 === 0;
-    const y = bbox.y + (row + 0.5) * pixelH;
+  // When a lineInterval is provided, use it for scan line spacing so that
+  // raster images are engraved with the same density as SVG hatch fills.
+  // Otherwise fall back to the natural pixel height.
+  const effectiveInterval = lineInterval && lineInterval > 0 ? lineInterval : pixelH;
+  const numLines = Math.max(1, Math.round(bbox.h / effectiveInterval));
+  const actualInterval = bbox.h / numLines;
+
+  for (let lineIdx = 0; lineIdx < numLines; lineIdx++) {
+    const leftToRight = lineIdx % 2 === 0;
+    const y = bbox.y + (lineIdx + 0.5) * actualInterval;
+
+    // Map Y position to nearest pixel row
+    const row = Math.min(image.height - 1, Math.max(0, Math.floor((y - bbox.y) / pixelH)));
     const step = leftToRight ? 1 : -1;
 
     // Find the first and last non-white pixels in this row.
@@ -513,7 +524,7 @@ export async function generateGcode(
         if (geo.imageDataUrl) {
           if (op.type === 'engrave') {
             const image = await decodeImageDataUrl(geo.imageDataUrl);
-            const rasterGcode = rasterImageToGcode(image, geo.d, op.feedRate, sValue, transform);
+            const rasterGcode = rasterImageToGcode(image, geo.d, op.feedRate, sValue, transform, op.engraveLineInterval);
             if (rasterGcode) lines.push(rasterGcode);
             // For engrave, only raster-scan the pixels — do NOT trace the bounding
             // rectangle outline, as that would burn an unwanted border around the image.
@@ -541,9 +552,13 @@ export async function generateGcode(
           if (hatchGcode) lines.push(hatchGcode);
         }
 
-        // Always trace the outline (cut or engrave)
-        const pathGcode = pathToGcode(geo.d, op.feedRate, sValue, transform);
-        lines.push(pathGcode);
+        // For engrave ops: filled shapes were hatch-filled above — skip the
+        // outline to avoid burning an unwanted border around each shape.
+        // For cut ops (or unfilled engrave shapes): always trace the outline.
+        if (op.type !== 'engrave' || !geo.fill) {
+          const pathGcode = pathToGcode(geo.d, op.feedRate, sValue, transform);
+          lines.push(pathGcode);
+        }
       }
       lines.push('');
     }
