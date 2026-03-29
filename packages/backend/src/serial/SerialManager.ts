@@ -111,6 +111,18 @@ class SerialManager extends EventEmitter {
     });
   }
 
+  /**
+   * Write a GRBL realtime character (?, !, ~, 0x18, etc.) directly to the
+   * serial port WITHOUT appending a newline.  Realtime characters are
+   * intercepted by GRBL's serial ISR and never enter the line buffer, but a
+   * trailing '\n' WOULD enter the buffer and can split an in-flight G-code
+   * line, causing parse errors such as error:24.
+   */
+  writeRealtime(char: string): void {
+    if (!this.port?.isOpen) return;
+    this.port.write(char[0], () => {});
+  }
+
   getStatus(): ConnectionStatus {
     return this.status;
   }

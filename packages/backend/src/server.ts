@@ -96,7 +96,7 @@ export async function buildServer() {
 
   setInterval(() => {
     if (serialManager.getStatus() === 'connected') {
-      serialManager.sendCommand('?').catch(() => {});
+      serialManager.writeRealtime('?');
     }
   }, 200);
 

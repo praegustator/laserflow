@@ -49,13 +49,27 @@ export class JobExecutionEngine extends EventEmitter {
       }
 
       if (resp.type === 'error' && this.currentJob) {
+        const jobId = this.currentJob.id;
         this.emit('jobError', {
-          jobId: this.currentJob.id,
+          jobId,
           error: line,
           failedGcodeLineNumber: sentRecord?.lineNumber,
           failedGcodeLineContent: sentRecord?.content,
         });
         this.aborted = true;
+
+        // Safety: immediately turn off the laser/spindle so it does not
+        // keep burning in one spot after motion has stopped.
+        serialManager.sendCommand('M5').catch((e) => {
+          this.emit('jobError', { jobId, error: `Failed to send M5 after GRBL error: ${e}` });
+        });
+
+        this.currentJob = null;
+        this.lines = [];
+        this.currentLine = 0;
+        this.bytesSent = 0;
+        this.sentLines = [];
+        this.sentLineContents = [];
         return;
       }
 
@@ -132,19 +146,18 @@ export class JobExecutionEngine extends EventEmitter {
 
   pause(): void {
     this.paused = true;
-    serialManager.sendCommand('!').catch(() => {});
+    serialManager.writeRealtime('!');
   }
 
   resume(): void {
     this.paused = false;
-    serialManager.sendCommand('~').catch(() => {});
+    serialManager.writeRealtime('~');
     this.sendNext();
   }
 
   abort(): void {
     this.aborted = true;
-    const resetChar = String.fromCharCode(0x18);
-    serialManager.sendCommand(resetChar).catch(() => {});
+    serialManager.writeRealtime(String.fromCharCode(0x18));
     this.currentJob = null;
     this.lines = [];
     this.currentLine = 0;
