@@ -3,12 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import type { Operation, OperationType, Layer, MaterialPreset, Project } from '../types';
 import { useProjectStore } from '../store/projectStore';
 import { useToastStore } from '../store/toastStore';
-import { useMachineStore } from '../store/machineStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { api } from '../api/client';
-import { computeBoundingBox } from '../utils/geometry';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faToggleOn, faToggleOff, faTrash, faClone, faChevronUp, faChevronDown, faGears, faEye, faBorderAll } from '@fortawesome/free-solid-svg-icons';
+import { faToggleOn, faToggleOff, faTrash, faClone, faChevronUp, faChevronDown, faGears, faEye } from '@fortawesome/free-solid-svg-icons';
 
 const OP_TYPE_LABELS: Record<OperationType, string> = {
   cut: '✂ Cut',
@@ -282,12 +280,11 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
 interface Props {
   project: Project;
   layers: Layer[];
-  originPosition: string;
   selectedLayerIds?: Set<string>;
   onSelectedOpIdsChange?: (layerIds: Set<string>) => void;
 }
 
-export default function OperationsPanel({ project, layers, originPosition, selectedLayerIds, onSelectedOpIdsChange }: Props) {
+export default function OperationsPanel({ project, layers, selectedLayerIds, onSelectedOpIdsChange }: Props) {
   const addOperation = useProjectStore(s => s.addOperation);
   const addOperationForLayers = useProjectStore(s => s.addOperationForLayers);
   const updateOperation = useProjectStore(s => s.updateOperation);
@@ -299,8 +296,8 @@ export default function OperationsPanel({ project, layers, originPosition, selec
   const duplicateOperation = useProjectStore(s => s.duplicateOperation);
   const compileJob = useProjectStore(s => s.compileJob);
   const addToast = useToastStore(s => s.addToast);
-  const connectionStatus = useMachineStore(s => s.connectionStatus);
-  const sendCommand = useMachineStore(s => s.sendCommand);
+  const singleExpandedOp = useAppSettings(s => s.singleExpandedOp);
+  const originPosition = useAppSettings(s => s.originPosition);
   const workAreaHeight = useAppSettings(s => s.workAreaHeight);
   const navigate = useNavigate();
   const [generating, setGenerating] = useState(false);
@@ -341,6 +338,10 @@ export default function OperationsPanel({ project, layers, originPosition, selec
 
   const toggleExpanded = (id: string) => {
     setExpandedOpIds(prev => {
+      if (singleExpandedOp) {
+        // In single-expand mode: opening an op collapses all others
+        return prev.has(id) ? new Set<string>() : new Set([id]);
+      }
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
@@ -378,68 +379,6 @@ export default function OperationsPanel({ project, layers, originPosition, selec
       addToast('error', err instanceof Error ? err.message : 'Failed to generate G-code');
     } finally {
       setGenerating(false);
-    }
-  };
-
-  /** Trace the bounding-box frame of all enabled-operation geometry with laser off. */
-  const handleTraceFrame = async () => {
-    const enabledOps = project.operations.filter(o => o.enabled && o.type !== 'ignore');
-    if (enabledOps.length === 0) {
-      addToast('error', 'No enabled operations');
-      return;
-    }
-
-    // Compute the bounding box of all operation geometry with layer transforms applied
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    let hasGeometry = false;
-    for (const op of enabledOps) {
-      for (const layerId of op.layerIds) {
-        const layer = layers.find(l => l.id === layerId);
-        if (!layer || layer.shapes.length === 0) continue;
-        const layerBbox = computeBoundingBox(layer.shapes.map(s => ({ d: s.d })));
-        if (!layerBbox) continue;
-        hasGeometry = true;
-        // Transform the four corners of the layer bbox through the layer transform
-        const corners = [
-          [layerBbox.minX, layerBbox.minY],
-          [layerBbox.maxX, layerBbox.minY],
-          [layerBbox.maxX, layerBbox.maxY],
-          [layerBbox.minX, layerBbox.maxY],
-        ];
-        for (const [cx, cy] of corners) {
-          const tx = layer.offsetX + cx * layer.scaleX;
-          let ty = layer.offsetY + cy * layer.scaleY;
-          if (originPosition === 'bottom-left') {
-            ty = workAreaHeight - ty;
-          }
-          if (tx < minX) minX = tx;
-          if (ty < minY) minY = ty;
-          if (tx > maxX) maxX = tx;
-          if (ty > maxY) maxY = ty;
-        }
-      }
-    }
-
-    if (!hasGeometry || !Number.isFinite(minX)) {
-      addToast('error', 'No geometry in enabled operations');
-      return;
-    }
-
-    const fmt = (n: number) => n.toFixed(3);
-    const feedRate = Math.max(...enabledOps.map(o => o.feedRate));
-
-    // Send G-code commands sequentially to trace the frame rectangle with laser off
-    try {
-      await sendCommand('M5');
-      await sendCommand('G90');
-      await sendCommand(`G0 X${fmt(minX)} Y${fmt(minY)}`);
-      await sendCommand(`G1 X${fmt(maxX)} Y${fmt(minY)} F${feedRate}`);
-      await sendCommand(`G1 X${fmt(maxX)} Y${fmt(maxY)} F${feedRate}`);
-      await sendCommand(`G1 X${fmt(minX)} Y${fmt(maxY)} F${feedRate}`);
-      await sendCommand(`G1 X${fmt(minX)} Y${fmt(minY)} F${feedRate}`);
-      addToast('success', 'Tracing job frame…');
-    } catch (err) {
-      addToast('error', err instanceof Error ? err.message : 'Failed to trace frame');
     }
   };
 
@@ -621,13 +560,6 @@ export default function OperationsPanel({ project, layers, originPosition, selec
             title={gcodeUpToDate ? 'Preview generated G-code' : 'Generate G-code first'}
           ><FontAwesomeIcon icon={faEye} className="mr-1" />Preview</button>
         </div>
-
-        <button
-          onClick={() => { void handleTraceFrame(); }}
-          disabled={!hasEnabledOps || connectionStatus !== 'connected'}
-          className="w-full py-1.5 text-sm rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 font-semibold transition-colors"
-          title="Trace the bounding box of all operation geometry with laser off"
-        ><FontAwesomeIcon icon={faBorderAll} className="mr-1" />Trace Frame</button>
 
         {project.gcode && (
           <p className={`text-xs text-center ${gcodeUpToDate ? 'text-green-400' : 'text-yellow-500'}`}>

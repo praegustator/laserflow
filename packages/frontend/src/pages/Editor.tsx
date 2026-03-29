@@ -1,18 +1,18 @@
-import { useRef, useState, useCallback, useMemo } from 'react';
+import { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { useProjectStore } from '../store/projectStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { useToastStore } from '../store/toastStore';
 import { useKeyboardShortcuts, type ShortcutDef } from '../hooks/useKeyboardShortcuts';
-import SvgCanvas, { type TransformPreview } from '../components/SvgCanvas';
+import SvgCanvas, { type TransformPreview, type SvgCanvasHandle } from '../components/SvgCanvas';
 import OperationsPanel from '../components/OperationsPanel';
 import LayerTransformPanel from '../components/LayerTransformPanel';
 import ShapeTransformPanel from '../components/ShapeTransformPanel';
 import type { Layer } from '../types';
-import { hasMultipleSubpaths } from '../utils/geometry';
+import { hasMultipleSubpaths, computeLayerWorldBBox, computeMultiLayerWorldBBox } from '../utils/geometry';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faEye, faEyeSlash, faTrash, faFileImport, faObjectGroup, faLayerGroup, faScissors, faArrowUpFromBracket } from '@fortawesome/free-solid-svg-icons';
+import { faEye, faEyeSlash, faTrash, faFileImport, faObjectGroup, faLayerGroup, faScissors, faArrowUpFromBracket, faMagnifyingGlassPlus, faMagnifyingGlassMinus, faExpand, faCompress } from '@fortawesome/free-solid-svg-icons';
 
 const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];
 
@@ -39,9 +39,11 @@ export default function Editor() {
   const deleteVersion = useProjectStore(s => s.deleteVersion);
   const originPosition = useAppSettings(s => s.originPosition);
   const workAreaHeight = useAppSettings(s => s.workAreaHeight);
+  const autoZoomOnLayerSelect = useAppSettings(s => s.autoZoomOnLayerSelect);
   const addToast = useToastStore(s => s.addToast);
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const canvasRef = useRef<SvgCanvasHandle>(null);
 
   const [selectedLayerIds, setSelectedLayerIds] = useState<Set<string>>(new Set());
   const [selectedShapeIds, setSelectedShapeIds] = useState<Set<string>>(new Set());
@@ -69,6 +71,24 @@ export default function Editor() {
   const [transformPreview, setTransformPreview] = useState<TransformPreview>({ deltaX: 0, deltaY: 0, deltaRotation: 0 });
 
   const project = projects.find(p => p.id === activeProjectId) ?? null;
+
+  // Keep a ref to the latest project so the auto-zoom effect always sees current layers
+  // without re-triggering on every layer transform update.
+  const projectRef = useRef(project);
+  projectRef.current = project;
+
+  // Auto-zoom canvas to fit selected layer(s) when selection changes
+  useEffect(() => {
+    if (!autoZoomOnLayerSelect || !canvasRef.current || !projectRef.current || selectedLayerIds.size === 0) return;
+    const selectedLayers = projectRef.current.layers.filter(l => selectedLayerIds.has(l.id) && l.visible);
+    if (selectedLayers.length === 0) return;
+    const bbox = selectedLayers.length === 1
+      ? computeLayerWorldBBox(selectedLayers[0])
+      : computeMultiLayerWorldBBox(selectedLayers);
+    if (bbox && bbox.width > 0 && bbox.height > 0) {
+      canvasRef.current.fitLayers(bbox);
+    }
+  }, [selectedLayerIds, autoZoomOnLayerSelect]);
 
   const handleFiles = useCallback(async (files: FileList | File[]) => {
     const svgFiles = Array.from(files).filter(f => f.name.endsWith('.svg'));
@@ -508,12 +528,12 @@ export default function Editor() {
                       >{layer.name}</span>
                     )}
 
-                    {/* Expand/collapse shapes */}
-                    {layer.shapes.length >= 1 && (
+                    {/* Expand/collapse shapes — only when layer has multiple shapes */}
+                    {layer.shapes.length > 1 && (
                       <button
                         onClick={e => { e.stopPropagation(); toggleExpandLayer(layer.id); }}
                         className="text-gray-500 hover:text-gray-200 text-xs"
-                        title={expandedLayerIds.has(layer.id) ? 'Collapse shapes' : `Expand ${layer.shapes.length} shape${layer.shapes.length !== 1 ? 's' : ''}`}
+                        title={expandedLayerIds.has(layer.id) ? 'Collapse shapes' : `Expand ${layer.shapes.length} shapes`}
                       >{expandedLayerIds.has(layer.id) ? '▾' : `▸ ${layer.shapes.length}`}</button>
                     )}
                     {layer.shapes.length > 1 && (
@@ -702,8 +722,40 @@ export default function Editor() {
           </PanelResizeHandle>
 
           {/* Canvas */}
-          <Panel defaultSize="53%" minSize="300px" className="min-w-0 min-h-0">
+          <Panel defaultSize="53%" minSize="300px" className="min-w-0 min-h-0 relative">
+            {/* Navigation toolbar */}
+            <div className="absolute top-2 right-2 z-10 flex gap-1 bg-gray-900/80 backdrop-blur-sm border border-gray-700 rounded-lg p-1">
+              <button
+                onClick={() => canvasRef.current?.zoomIn()}
+                className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded text-xs transition-colors"
+                title="Zoom in"
+              ><FontAwesomeIcon icon={faMagnifyingGlassPlus} /></button>
+              <button
+                onClick={() => canvasRef.current?.zoomOut()}
+                className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded text-xs transition-colors"
+                title="Zoom out"
+              ><FontAwesomeIcon icon={faMagnifyingGlassMinus} /></button>
+              <div className="w-px bg-gray-600 mx-0.5" />
+              <button
+                onClick={() => {
+                  if (selectedLayerIds.size > 0 && project) {
+                    const sel = project.layers.filter(l => selectedLayerIds.has(l.id) && l.visible);
+                    const bbox = sel.length === 1 ? computeLayerWorldBBox(sel[0]) : computeMultiLayerWorldBBox(sel);
+                    if (bbox && bbox.width > 0) canvasRef.current?.fitLayers(bbox);
+                  }
+                }}
+                disabled={selectedLayerIds.size === 0}
+                className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded text-xs transition-colors disabled:opacity-30"
+                title="Fit selected layer(s)"
+              ><FontAwesomeIcon icon={faCompress} /></button>
+              <button
+                onClick={() => canvasRef.current?.fitAll()}
+                className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded text-xs transition-colors"
+                title="Fit entire work area"
+              ><FontAwesomeIcon icon={faExpand} /></button>
+            </div>
             <SvgCanvas
+              ref={canvasRef}
               layers={project.layers}
               operations={project.operations}
               selectedLayerIds={selectedLayerIds}
@@ -725,7 +777,6 @@ export default function Editor() {
             <OperationsPanel
               project={project}
               layers={project.layers}
-              originPosition={originPosition}
               selectedLayerIds={selectedLayerIds}
               onSelectedOpIdsChange={setOpHighlightedLayerIds}
             />

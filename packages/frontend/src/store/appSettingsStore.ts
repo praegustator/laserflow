@@ -11,6 +11,8 @@ interface AppSettings {
   units: 'mm' | 'in';
   safetyConfirmation: boolean;
   autoScrollConsole: boolean;
+  autoZoomOnLayerSelect: boolean;
+  singleExpandedOp: boolean;
   setBackendUrl: (url: string) => void;
   setOriginPosition: (pos: OriginPosition) => void;
   setWorkAreaWidth: (w: number) => void;
@@ -18,6 +20,8 @@ interface AppSettings {
   setUnits: (units: 'mm' | 'in') => void;
   setSafetyConfirmation: (v: boolean) => void;
   setAutoScrollConsole: (v: boolean) => void;
+  setAutoZoomOnLayerSelect: (v: boolean) => void;
+  setSingleExpandedOp: (v: boolean) => void;
 }
 
 export const useAppSettings = create<AppSettings>()(
@@ -30,6 +34,8 @@ export const useAppSettings = create<AppSettings>()(
       units: 'mm',
       safetyConfirmation: true,
       autoScrollConsole: true,
+      autoZoomOnLayerSelect: true,
+      singleExpandedOp: false,
       setBackendUrl: (url) => set({ backendUrl: url }),
       setOriginPosition: (pos) => set({ originPosition: pos }),
       setWorkAreaWidth: (w) => set({ workAreaWidth: w }),
@@ -37,6 +43,8 @@ export const useAppSettings = create<AppSettings>()(
       setUnits: (units) => set({ units }),
       setSafetyConfirmation: (v) => set({ safetyConfirmation: v }),
       setAutoScrollConsole: (v) => set({ autoScrollConsole: v }),
+      setAutoZoomOnLayerSelect: (v) => set({ autoZoomOnLayerSelect: v }),
+      setSingleExpandedOp: (v) => set({ singleExpandedOp: v }),
     }),
     { name: 'laserflow-settings' },
   ),

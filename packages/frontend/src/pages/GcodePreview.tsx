@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useJobStore } from '../store/jobStore';
 import { useProjectStore } from '../store/projectStore';
 import { useToastStore } from '../store/toastStore';
+import { useAppSettings } from '../store/appSettingsStore';
 import { useKeyboardShortcuts, type ShortcutDef } from '../hooks/useKeyboardShortcuts';
 
 interface GMove {
@@ -62,6 +63,7 @@ export default function GcodePreview() {
   const activeProject = projects.find(p => p.id === activeProjectId) ?? null;
   const addToast = useToastStore(s => s.addToast);
   const navigate = useNavigate();
+  const originFlip = useAppSettings(s => s.originPosition) === 'bottom-left';
 
   // The job ID to send to queue (from project or active job)
   const queueableJobId = activeProject?.jobId ?? activeJob?.id ?? null;
@@ -182,20 +184,25 @@ export default function GcodePreview() {
   }, [tab, stepForward, stepBack, jumpToStart, jumpToEnd]);
   useKeyboardShortcuts(shortcuts);
 
-  // Compute bounding box
+  // When bottom-left origin is used, G-code Y=0 is at the physical bottom.
+  // SVG has Y=0 at the top, so we negate Y for display to match how the laser sees it.
+  const fy = useCallback((y: number) => originFlip ? -y : y, [originFlip]);
+
+  // Compute bounding box (using display-space Y)
   const computeBounds = useCallback(() => {
     if (moves.length === 0) return { minX: 0, minY: 0, maxX: 100, maxY: 100 };
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const m of moves) {
+      const dy = fy(m.y);
       if (m.x < minX) minX = m.x;
-      if (m.y < minY) minY = m.y;
+      if (dy < minY) minY = dy;
       if (m.x > maxX) maxX = m.x;
-      if (m.y > maxY) maxY = m.y;
+      if (dy > maxY) maxY = dy;
     }
     const padX = Math.max(5, (maxX - minX) * 0.05);
     const padY = Math.max(5, (maxY - minY) * 0.05);
     return { minX: minX - padX, minY: minY - padY, maxX: maxX + padX, maxY: maxY + padY };
-  }, [moves]);
+  }, [moves, fy]);
 
   const bounds = computeBounds();
   const vbW = bounds.maxX - bounds.minX;
@@ -224,33 +231,36 @@ export default function GcodePreview() {
         );
       }
     }
-    for (let y = startY; y <= bounds.maxY; y += GRID_MINOR) {
-      const isMajor = y % GRID_MAJOR === 0;
+    for (let displayY = startY; displayY <= bounds.maxY; displayY += GRID_MINOR) {
+      const isMajor = Math.round(Math.abs(displayY)) % GRID_MAJOR === 0;
       lines.push(
-        <line key={`gy${y}`} x1={bounds.minX} y1={y} x2={bounds.maxX} y2={y}
+        <line key={`gy${displayY}`} x1={bounds.minX} y1={displayY} x2={bounds.maxX} y2={displayY}
           stroke="#374151" strokeWidth={isMajor ? swMajor : sw} />,
       );
       if (isMajor) {
+        // Show original (positive) G-code Y value in the label
+        const labelVal = originFlip ? -displayY : displayY;
         lines.push(
-          <text key={`ly${y}`} x={bounds.minX + vbW * 0.01} y={y - vbH * 0.005} fontSize={vbW * 0.022}
-            fill="#6b7280">{y}</text>,
+          <text key={`ly${displayY}`} x={bounds.minX + vbW * 0.01} y={displayY - vbH * 0.005} fontSize={vbW * 0.022}
+            fill="#6b7280">{labelVal}</text>,
         );
       }
     }
     return lines;
-  }, [bounds.minX, bounds.minY, bounds.maxX, bounds.maxY, vbW, vbH]);
+  }, [bounds.minX, bounds.minY, bounds.maxX, bounds.maxY, vbW, vbH, originFlip]);
 
-  // Build SVG path data for visible moves
+  // Build SVG path data for visible moves (apply Y flip)
   const visibleMoves = moves.slice(0, currentIdx);
   const rapidSegments: string[] = [];
   const cutSegments: string[] = [];
-  let prevX = 0, prevY = 0;
+  let prevX = 0, prevY = fy(0);
   for (const m of visibleMoves) {
-    const seg = `M${prevX},${prevY} L${m.x},${m.y}`;
+    const displayY = fy(m.y);
+    const seg = `M${prevX},${prevY} L${m.x},${displayY}`;
     if (m.type === 'rapid') rapidSegments.push(seg);
     else cutSegments.push(seg);
     prevX = m.x;
-    prevY = m.y;
+    prevY = displayY;
   }
 
   const handleExport = () => {
@@ -387,7 +397,7 @@ export default function GcodePreview() {
                       {visibleMoves.length > 0 && (
                         <circle
                           cx={visibleMoves[visibleMoves.length - 1].x}
-                          cy={visibleMoves[visibleMoves.length - 1].y}
+                          cy={fy(visibleMoves[visibleMoves.length - 1].y)}
                           r={vbW * 0.008}
                           fill="#fbbf24"
                         />
