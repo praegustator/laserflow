@@ -10,8 +10,8 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faToggleOn, faToggleOff, faTrash, faClone, faPlus, faGears, faEye, faPencil } from '@fortawesome/free-solid-svg-icons';
 
 const OP_TYPE_LABELS: Record<OperationType, string> = {
-  cut: '✂ Cut',
-  engrave: '✏ Engrave',
+  cut: 'Cut',
+  engrave: 'Engrave',
 };
 
 const OP_COLORS: Record<OperationType, string> = {
@@ -34,19 +34,6 @@ interface OperationParamsPanelProps {
 }
 
 function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParamsPanelProps) {
-  const [editingPower, setEditingPower] = useState(false);
-  const [localPower, setLocalPower] = useState('');
-  const [editingFeedRate, setEditingFeedRate] = useState(false);
-  const [localFeedRate, setLocalFeedRate] = useState('');
-  const [editingPasses, setEditingPasses] = useState(false);
-  const [localPasses, setLocalPasses] = useState('');
-  const [editingZOffset, setEditingZOffset] = useState(false);
-  const [localZOffset, setLocalZOffset] = useState('');
-  const [editingLineInterval, setEditingLineInterval] = useState(false);
-  const [localLineInterval, setLocalLineInterval] = useState('');
-  const [editingLineAngle, setEditingLineAngle] = useState(false);
-  const [localLineAngle, setLocalLineAngle] = useState('');
-
   const multiType = sharedValue(selectedOps, o => o.type);
   const multiFeedRate = sharedValue(selectedOps, o => o.feedRate);
   const multiPower = sharedValue(selectedOps, o => o.power);
@@ -57,55 +44,60 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
   const multiPattern = sharedValue(selectedOps, o => o.engravePattern ?? 'lines');
 
   const anyEngrave = selectedOps.some(o => o.type === 'engrave');
-  // lineAngle only makes sense for line-based and dot patterns
   const patternHasAngle = multiPattern === 'lines' || multiPattern === 'crosshatch' || multiPattern === 'dots' || multiPattern === null;
 
-  const commitPower = () => {
-    const val = Math.max(0, Math.min(100, Math.round(Number(localPower) || 0)));
-    onChange({ power: val });
-    setLocalPower(String(val));
-    setEditingPower(false);
-  };
+  // Local text state for each numeric field — always-visible inputs
+  const [localFeedRate, setLocalFeedRate] = useState(String(multiFeedRate ?? ''));
+  const [localPower, setLocalPower] = useState(String(multiPower ?? ''));
+  const [localPasses, setLocalPasses] = useState(String(multiPasses ?? ''));
+  const [localZOffset, setLocalZOffset] = useState(String(multiZOffset ?? 0));
+  const [localLineInterval, setLocalLineInterval] = useState(String(multiLineInterval ?? 0.1));
+  const [localLineAngle, setLocalLineAngle] = useState(String(multiLineAngle ?? 0));
+
+  // Sync local state when the external values change (e.g. after commit or preset apply)
+  useEffect(() => { setLocalFeedRate(multiFeedRate !== null ? String(multiFeedRate) : ''); }, [multiFeedRate]);
+  useEffect(() => { setLocalPower(multiPower !== null ? String(multiPower) : ''); }, [multiPower]);
+  useEffect(() => { setLocalPasses(multiPasses !== null ? String(multiPasses) : ''); }, [multiPasses]);
+  useEffect(() => { setLocalZOffset(multiZOffset !== null ? String(multiZOffset) : ''); }, [multiZOffset]);
+  useEffect(() => { setLocalLineInterval(multiLineInterval !== null ? String(multiLineInterval) : ''); }, [multiLineInterval]);
+  useEffect(() => { setLocalLineAngle(multiLineAngle !== null ? String(multiLineAngle) : ''); }, [multiLineAngle]);
 
   const commitFeedRate = () => {
     const val = Math.max(1, Math.min(10000, Math.round(Number(localFeedRate) || 1)));
     onChange({ feedRate: val });
-    setLocalFeedRate(String(val));
-    setEditingFeedRate(false);
+  };
+
+  const commitPower = () => {
+    const val = Math.max(0, Math.min(100, Math.round(Number(localPower) || 0)));
+    onChange({ power: val });
   };
 
   const commitPasses = () => {
     const val = Math.max(1, Math.min(20, Math.round(Number(localPasses) || 1)));
     onChange({ passes: val });
-    setLocalPasses(String(val));
-    setEditingPasses(false);
   };
 
   const commitZOffset = () => {
     const val = Number(localZOffset) || 0;
     onChange({ zOffset: Math.round(val * 10) / 10 });
-    setLocalZOffset(String(Math.round(val * 10) / 10));
-    setEditingZOffset(false);
   };
 
   const commitLineInterval = () => {
     const val = Math.max(0.01, Math.min(10, Number(localLineInterval) || 0.1));
-    const rounded = Math.round(val * 100) / 100;
-    onChange({ engraveLineInterval: rounded });
-    setLocalLineInterval(String(rounded));
-    setEditingLineInterval(false);
+    onChange({ engraveLineInterval: Math.round(val * 100) / 100 });
   };
 
   const commitLineAngle = () => {
     const val = Math.max(0, Math.min(359, Math.round(Number(localLineAngle) || 0)));
     onChange({ engraveLineAngle: val });
-    setLocalLineAngle(String(val));
-    setEditingLineAngle(false);
   };
 
   const label = selectedOps.length === 1
     ? selectedOps[0].label || selectedOps[0].type
     : `${selectedOps.length} operations`;
+
+  // Shared input class — matches transform panel style
+  const inputCls = 'w-16 text-xs bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-gray-100 text-right focus:outline-none focus:border-orange-500';
 
   return (
     <div className="space-y-2">
@@ -141,7 +133,6 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
                 onChange={e => {
                   const preset = presets.find(p => p.id === e.target.value);
                   if (!preset) return;
-                  // Apply cut or engrave preset depending on majority type
                   const useEngrave = multiType === 'engrave';
                   const settings = useEngrave ? preset.engrave : preset.cutThin;
                   onChange({ feedRate: settings.feedRate, power: settings.power, label: preset.name });
@@ -157,54 +148,34 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
           )}
 
           {/* Feed rate */}
-          <div>
-            <div className="flex justify-between">
-              <label className="text-xs text-gray-500 uppercase">Feed Rate (mm/min)</label>
-              {editingFeedRate ? (
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={localFeedRate}
-                  onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalFeedRate(v); }}
-                  onBlur={commitFeedRate}
-                  onFocus={e => e.currentTarget.select()}
-                  onKeyDown={e => { if (e.key === 'Enter') commitFeedRate(); if (e.key === 'Escape') setEditingFeedRate(false); }}
-                  autoFocus
-                  className="w-16 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-right focus:outline-none"
-                />
-              ) : (
-                <span
-                  className="text-xs text-gray-400 cursor-pointer hover:text-gray-200"
-                  title="Double-click to edit"
-                  onDoubleClick={() => { setLocalFeedRate(String(multiFeedRate ?? '')); setEditingFeedRate(true); }}
-                >{multiFeedRate !== null ? multiFeedRate : 'mixed'}</span>
-              )}
-            </div>
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs text-gray-500 uppercase shrink-0">Feed Rate (mm/min)</label>
+            <input
+              type="text" inputMode="numeric"
+              value={localFeedRate}
+              onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalFeedRate(v); }}
+              onBlur={commitFeedRate}
+              onFocus={e => e.currentTarget.select()}
+              onKeyDown={e => { if (e.key === 'Enter') commitFeedRate(); }}
+              placeholder={multiFeedRate === null ? 'mixed' : undefined}
+              className={inputCls}
+            />
           </div>
 
           {/* Power */}
           <div>
-            <div className="flex justify-between">
-              <label className="text-xs text-gray-500 uppercase">Power (%)</label>
-              {editingPower ? (
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={localPower}
-                  onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalPower(v); }}
-                  onBlur={commitPower}
-                  onFocus={e => e.currentTarget.select()}
-                  onKeyDown={e => { if (e.key === 'Enter') commitPower(); if (e.key === 'Escape') setEditingPower(false); }}
-                  autoFocus
-                  className="w-14 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-right focus:outline-none"
-                />
-              ) : (
-                <span
-                  className="text-xs text-gray-400 cursor-pointer hover:text-gray-200"
-                  title="Double-click to enter power value"
-                  onDoubleClick={() => { setLocalPower(String(multiPower ?? '')); setEditingPower(true); }}
-                >{multiPower !== null ? `${multiPower}%` : 'mixed'}</span>
-              )}
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-xs text-gray-500 uppercase shrink-0">Power (%)</label>
+              <input
+                type="text" inputMode="numeric"
+                value={localPower}
+                onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalPower(v); }}
+                onBlur={commitPower}
+                onFocus={e => e.currentTarget.select()}
+                onKeyDown={e => { if (e.key === 'Enter') commitPower(); }}
+                placeholder={multiPower === null ? 'mixed' : undefined}
+                className={inputCls}
+              />
             </div>
             <input
               type="range"
@@ -217,55 +188,33 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
           </div>
 
           {/* Passes */}
-          <div>
-            <div className="flex justify-between">
-              <label className="text-xs text-gray-500 uppercase">Passes</label>
-              {editingPasses ? (
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={localPasses}
-                  onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalPasses(v); }}
-                  onBlur={commitPasses}
-                  onFocus={e => e.currentTarget.select()}
-                  onKeyDown={e => { if (e.key === 'Enter') commitPasses(); if (e.key === 'Escape') setEditingPasses(false); }}
-                  autoFocus
-                  className="w-10 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-right focus:outline-none"
-                />
-              ) : (
-                <span
-                  className="text-xs text-gray-400 cursor-pointer hover:text-gray-200"
-                  title="Double-click to edit"
-                  onDoubleClick={() => { setLocalPasses(String(multiPasses ?? '')); setEditingPasses(true); }}
-                >{multiPasses !== null ? `×${multiPasses}` : 'mixed'}</span>
-              )}
-            </div>
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs text-gray-500 uppercase shrink-0">Passes</label>
+            <input
+              type="text" inputMode="numeric"
+              value={localPasses}
+              onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalPasses(v); }}
+              onBlur={commitPasses}
+              onFocus={e => e.currentTarget.select()}
+              onKeyDown={e => { if (e.key === 'Enter') commitPasses(); }}
+              placeholder={multiPasses === null ? 'mixed' : undefined}
+              className={inputCls}
+            />
           </div>
 
           {/* Z Offset */}
-          <div>
-            <div className="flex justify-between">
-              <label className="text-xs text-gray-500 uppercase">Z Offset (mm)</label>
-              {editingZOffset ? (
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={localZOffset}
-                  onChange={e => { const v = e.target.value; if (v === '' || v === '-' || /^-?\d*\.?\d*$/.test(v)) setLocalZOffset(v); }}
-                  onBlur={commitZOffset}
-                  onFocus={e => e.currentTarget.select()}
-                  onKeyDown={e => { if (e.key === 'Enter') commitZOffset(); if (e.key === 'Escape') setEditingZOffset(false); }}
-                  autoFocus
-                  className="w-14 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-right focus:outline-none"
-                />
-              ) : (
-                <span
-                  className="text-xs text-gray-400 cursor-pointer hover:text-gray-200"
-                  title="Double-click to edit"
-                  onDoubleClick={() => { setLocalZOffset(String(multiZOffset ?? 0)); setEditingZOffset(true); }}
-                >{multiZOffset !== null ? multiZOffset : 'mixed'}</span>
-              )}
-            </div>
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs text-gray-500 uppercase shrink-0">Z Offset (mm)</label>
+            <input
+              type="text" inputMode="decimal"
+              value={localZOffset}
+              onChange={e => { const v = e.target.value; if (v === '' || v === '-' || /^-?\d*\.?\d*$/.test(v)) setLocalZOffset(v); }}
+              onBlur={commitZOffset}
+              onFocus={e => e.currentTarget.select()}
+              onKeyDown={e => { if (e.key === 'Enter') commitZOffset(); }}
+              placeholder={multiZOffset === null ? 'mixed' : undefined}
+              className={inputCls}
+            />
           </div>
 
           {/* Engrave fill settings — shown when any selected op is engrave */}
@@ -279,8 +228,8 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
               {/* Pattern selector */}
               <div>
                 <label className="text-xs text-gray-500 uppercase">Pattern</label>
-                <div className="grid grid-cols-5 gap-1 mt-1">
-                  {(['lines', 'crosshatch', 'concentric', 'spiral', 'dots'] as EngravePattern[]).map(p => (
+                <div className="grid grid-cols-4 gap-1 mt-1">
+                  {(['lines', 'crosshatch', 'spiral', 'dots'] as EngravePattern[]).map(p => (
                     <button
                       key={p}
                       onClick={() => onChange({ engravePattern: p })}
@@ -296,56 +245,34 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
               </div>
 
               {/* Spacing */}
-              <div>
-                <div className="flex justify-between">
-                  <label className="text-xs text-gray-500 uppercase">Spacing (mm)</label>
-                  {editingLineInterval ? (
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={localLineInterval}
-                      onChange={e => { const v = e.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setLocalLineInterval(v); }}
-                      onBlur={commitLineInterval}
-                      onFocus={e => e.currentTarget.select()}
-                      onKeyDown={e => { if (e.key === 'Enter') commitLineInterval(); if (e.key === 'Escape') setEditingLineInterval(false); }}
-                      autoFocus
-                      className="w-14 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-right focus:outline-none"
-                    />
-                  ) : (
-                    <span
-                      className="text-xs text-gray-400 cursor-pointer hover:text-gray-200"
-                      title="Double-click to edit"
-                      onDoubleClick={() => { setLocalLineInterval(String(multiLineInterval ?? 0.1)); setEditingLineInterval(true); }}
-                    >{multiLineInterval !== null ? multiLineInterval : 'mixed'}</span>
-                  )}
-                </div>
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs text-gray-500 uppercase shrink-0">Spacing (mm)</label>
+                <input
+                  type="text" inputMode="decimal"
+                  value={localLineInterval}
+                  onChange={e => { const v = e.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setLocalLineInterval(v); }}
+                  onBlur={commitLineInterval}
+                  onFocus={e => e.currentTarget.select()}
+                  onKeyDown={e => { if (e.key === 'Enter') commitLineInterval(); }}
+                  placeholder={multiLineInterval === null ? 'mixed' : undefined}
+                  className={inputCls}
+                />
               </div>
 
               {/* Angle — only for line/crosshatch/dot patterns */}
               {patternHasAngle && (
-                <div>
-                  <div className="flex justify-between">
-                    <label className="text-xs text-gray-500 uppercase">Angle (°)</label>
-                    {editingLineAngle ? (
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={localLineAngle}
-                        onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalLineAngle(v); }}
-                        onBlur={commitLineAngle}
-                        onFocus={e => e.currentTarget.select()}
-                        onKeyDown={e => { if (e.key === 'Enter') commitLineAngle(); if (e.key === 'Escape') setEditingLineAngle(false); }}
-                        autoFocus
-                        className="w-12 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-right focus:outline-none"
-                      />
-                    ) : (
-                      <span
-                        className="text-xs text-gray-400 cursor-pointer hover:text-gray-200"
-                        title="Double-click to edit"
-                        onDoubleClick={() => { setLocalLineAngle(String(multiLineAngle ?? 0)); setEditingLineAngle(true); }}
-                      >{multiLineAngle !== null ? `${multiLineAngle}°` : 'mixed'}</span>
-                    )}
-                  </div>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs text-gray-500 uppercase shrink-0">Angle (°)</label>
+                  <input
+                    type="text" inputMode="numeric"
+                    value={localLineAngle}
+                    onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalLineAngle(v); }}
+                    onBlur={commitLineAngle}
+                    onFocus={e => e.currentTarget.select()}
+                    onKeyDown={e => { if (e.key === 'Enter') commitLineAngle(); }}
+                    placeholder={multiLineAngle === null ? 'mixed' : undefined}
+                    className={inputCls}
+                  />
                 </div>
               )}
             </>

@@ -30,7 +30,7 @@ if (!version) {
   }
 }
 
-if (!/^\d+\.\d+\.\d+/.test(version)) {
+if (!/^\d+\.\d+\.\d+$/.test(version)) {
   console.error(`"${version}" does not look like a valid semver string.`);
   process.exit(1);
 }

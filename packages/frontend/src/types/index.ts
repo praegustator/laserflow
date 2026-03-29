@@ -2,7 +2,7 @@ export type JobStatus = 'idle' | 'queued' | 'running' | 'paused' | 'completed' |
 export type OperationType = 'cut' | 'engrave';
 
 /** Fill pattern used when engraving filled shapes. */
-export type EngravePattern = 'lines' | 'crosshatch' | 'concentric' | 'spiral' | 'dots';
+export type EngravePattern = 'lines' | 'crosshatch' | 'spiral' | 'dots';
 
 export interface Operation {
   id: string;

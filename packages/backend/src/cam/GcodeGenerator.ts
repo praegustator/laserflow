@@ -261,12 +261,6 @@ function linearizePathToPolygons(d: string): Array<Array<[number, number]>> {
 
 /* ── Shared fill-pattern helpers ─────────────────────────────────────── */
 
-/** Minimum cos(half-angle) before a corner is treated as "very sharp" in insetPolygon.
- *  cos(84°) ≈ 0.09 — angles narrower than ~6° use a clamped scale factor. */
-const INSET_MIN_COS_HALF = 0.09;
-/** Fallback scale factor for very sharp corners (< ~6°) to avoid exploding offsets. */
-const INSET_SHARP_CORNER_SCALE = 11;
-
 /** Points generated per full spiral revolution. Higher = smoother curve, more G-code lines. */
 const SPIRAL_POINTS_PER_REVOLUTION = 100;
 
@@ -288,90 +282,6 @@ function pointInPolygons(x: number, y: number, polygons: Array<Array<[number, nu
     }
   }
   return inside;
-}
-
-/** Shoelace signed area (positive = CCW in screen/SVG coordinates). */
-function signedArea(pts: Array<[number, number]>): number {
-  let area = 0;
-  const n = pts.length;
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    area += pts[i][0] * pts[j][1] - pts[j][0] * pts[i][1];
-  }
-  return area / 2;
-}
-
-/**
- * Inset a polygon by `amount` using vertex bisectors.
- * Returns the new (open) polygon, or null if it degenerates.
- * Handles both CW and CCW winding by reading the signed area.
- */
-function insetPolygon(poly: Array<[number, number]>, amount: number): Array<[number, number]> | null {
-  // Strip duplicate closing point if present
-  let pts = poly;
-  if (pts.length >= 2) {
-    const last = pts[pts.length - 1];
-    if (Math.hypot(last[0] - pts[0][0], last[1] - pts[0][1]) < 1e-9) {
-      pts = pts.slice(0, -1);
-    }
-  }
-  const n = pts.length;
-  if (n < 3) return null;
-
-  const area = signedArea(pts);
-  if (Math.abs(area) < 1e-10) return null;
-
-  // CCW polygon (positive area in SVG coords): inward normal = left perpendicular of edge.
-  // CW polygon: inward normal = right perpendicular. windingSign flips accordingly.
-  const windingSign = area > 0 ? 1 : -1;
-
-  const result: Array<[number, number]> = [];
-  for (let i = 0; i < n; i++) {
-    const prev = pts[(i - 1 + n) % n];
-    const curr = pts[i];
-    const next = pts[(i + 1) % n];
-
-    const e1x = curr[0] - prev[0], e1y = curr[1] - prev[1];
-    const e2x = next[0] - curr[0], e2y = next[1] - curr[1];
-    const l1 = Math.hypot(e1x, e1y);
-    const l2 = Math.hypot(e2x, e2y);
-
-    if (l1 < 1e-10 || l2 < 1e-10) {
-      result.push([curr[0], curr[1]]);
-      continue;
-    }
-
-    // Inward unit normals (left perpendicular of edge for CCW polygon)
-    const nx1 = windingSign * (-e1y / l1);
-    const ny1 = windingSign * ( e1x / l1);
-    const nx2 = windingSign * (-e2y / l2);
-    const ny2 = windingSign * ( e2x / l2);
-
-    // Bisector of the two inward normals
-    const bx = nx1 + nx2, by = ny1 + ny2;
-    const bl = Math.hypot(bx, by);
-
-    if (bl < 1e-10) {
-      // Anti-parallel normals (collinear edges back-to-back): use one normal directly
-      result.push([curr[0] + nx1 * amount, curr[1] + ny1 * amount]);
-      continue;
-    }
-
-    // Scale bisector so perpendicular distance to each edge equals `amount`
-    const cosHalf = (nx1 * bx + ny1 * by) / bl;
-    // Clamp to avoid exploding on very sharp corners (cosHalf → 0 means corner < ~6°)
-    const scale = Math.abs(cosHalf) > INSET_MIN_COS_HALF ? amount / cosHalf : amount * INSET_SHARP_CORNER_SCALE;
-
-    result.push([curr[0] + (bx / bl) * scale, curr[1] + (by / bl) * scale]);
-  }
-
-  // Reject degenerate or sign-reversed insets
-  const newArea = signedArea(result);
-  if (Math.abs(newArea) < 1e-6) return null;
-  if (Math.sign(newArea) !== Math.sign(area)) return null;
-  if (Math.abs(newArea) > Math.abs(area) * 1.05) return null; // growing → unstable
-
-  return result;
 }
 
 /**
@@ -496,51 +406,6 @@ function crosshatchFillToGcode(
   const pass1 = hatchFillToGcode(d, feedRate, sValue, lineInterval, lineAngle, transform);
   const pass2 = hatchFillToGcode(d, feedRate, sValue, lineInterval, lineAngle + 90, transform);
   return [pass1, pass2].filter(Boolean).join('\n');
-}
-
-/* ── Concentric fill ──────────────────────────────────────────────────── */
-
-/**
- * Fill a shape with concentric inward-shrinking contours spaced by `lineInterval`.
- * Each shell is traced as a closed loop. Stops when the inset polygon degenerates.
- */
-function concentricFillToGcode(
-  d: string,
-  feedRate: number,
-  sValue: number,
-  lineInterval: number,
-  transform: PathTransform = IDENTITY_TRANSFORM,
-): string {
-  const polygons = linearizePathToPolygons(d);
-  if (polygons.length === 0) return '';
-
-  // Convert world-space lineInterval to layer space using geometric mean scale
-  const geoScale = Math.sqrt(Math.abs(transform.scaleX * transform.scaleY));
-  const layerInterval = geoScale > 0 ? lineInterval / geoScale : lineInterval;
-
-  const lines: string[] = [];
-
-  for (const poly of polygons) {
-    let current: Array<[number, number]> = poly;
-
-    while (current.length >= 3) {
-      // Emit this shell as a closed loop
-      const [fx, fy] = applyTransform(current[0][0], current[0][1], transform);
-      lines.push(`G0 X${fmt(fx)} Y${fmt(fy)} S0`);
-      for (let i = 1; i < current.length; i++) {
-        const [tx, ty] = applyTransform(current[i][0], current[i][1], transform);
-        lines.push(`G1 X${fmt(tx)} Y${fmt(ty)} F${feedRate} S${sValue}`);
-      }
-      // Close back to start
-      lines.push(`G1 X${fmt(fx)} Y${fmt(fy)} F${feedRate} S${sValue}`);
-
-      const inset = insetPolygon(current, layerInterval);
-      if (!inset) break;
-      current = inset;
-    }
-  }
-
-  return lines.join('\n');
 }
 
 /* ── Spiral fill ──────────────────────────────────────────────────────── */
@@ -891,9 +756,6 @@ export async function generateGcode(
           switch (pattern) {
             case 'crosshatch':
               fillGcode = crosshatchFillToGcode(geo.d, op.feedRate, shadeSValue, interval, angle, transform);
-              break;
-            case 'concentric':
-              fillGcode = concentricFillToGcode(geo.d, op.feedRate, shadeSValue, interval, transform);
               break;
             case 'spiral':
               fillGcode = spiralFillToGcode(geo.d, op.feedRate, shadeSValue, interval, transform);
