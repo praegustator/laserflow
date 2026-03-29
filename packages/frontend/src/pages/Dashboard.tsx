@@ -2,12 +2,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProjectStore } from '../store/projectStore';
 import { useJobStore } from '../store/jobStore';
+import { useAppSettings } from '../store/appSettingsStore';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faTrash, faTableCells, faList, faSort, faSortUp, faSortDown } from '@fortawesome/free-solid-svg-icons';
+import { faTrash, faTableCells, faList, faSort, faSortUp, faSortDown, faPencil } from '@fortawesome/free-solid-svg-icons';
 
 type SortKey = 'updatedAt' | 'name' | 'layers' | 'ops';
 type SortDir = 'asc' | 'desc';
-type ViewMode = 'card' | 'table';
 
 const SORT_LABELS: Record<SortKey, string> = {
   updatedAt: 'Last modified',
@@ -20,15 +20,19 @@ export default function Dashboard() {
   const projects = useProjectStore(s => s.projects);
   const createProject = useProjectStore(s => s.createProject);
   const deleteProject = useProjectStore(s => s.deleteProject);
+  const renameProject = useProjectStore(s => s.renameProject);
   const setActiveProjectId = useProjectStore(s => s.setActiveProjectId);
   const jobs = useJobStore(s => s.jobs);
   const fetchJobs = useJobStore(s => s.fetchJobs);
   const navigate = useNavigate();
+  const viewMode = useAppSettings(s => s.projectsViewMode);
+  const setViewMode = useAppSettings(s => s.setProjectsViewMode);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
-  const [viewMode, setViewMode] = useState<ViewMode>('card');
   const [sortKey, setSortKey] = useState<SortKey>('updatedAt');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [editingProjectName, setEditingProjectName] = useState('');
 
   useEffect(() => { void fetchJobs(); }, [fetchJobs]);
 
@@ -158,8 +162,28 @@ export default function Dashboard() {
           {sortedProjects.map(project => (
             <div key={project.id} className="bg-gray-800 rounded-lg border border-gray-700 p-4 space-y-3 hover:border-gray-600 transition-colors">
               <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <h3 className="font-semibold text-gray-100 truncate">{project.name}</h3>
+                <div className="min-w-0 flex-1">
+                  {editingProjectId === project.id ? (
+                    <input
+                      type="text"
+                      value={editingProjectName}
+                      onChange={e => setEditingProjectName(e.target.value)}
+                      onBlur={() => { if (editingProjectName.trim()) renameProject(project.id, editingProjectName.trim()); setEditingProjectId(null); }}
+                      onKeyDown={e => { if (e.key === 'Enter') { if (editingProjectName.trim()) renameProject(project.id, editingProjectName.trim()); setEditingProjectId(null); } if (e.key === 'Escape') setEditingProjectId(null); }}
+                      onClick={e => e.stopPropagation()}
+                      autoFocus
+                      className="font-semibold w-full bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 focus:outline-none text-sm"
+                    />
+                  ) : (
+                    <div className="flex items-center gap-1 min-w-0">
+                      <h3 className="font-semibold text-gray-100 truncate">{project.name}</h3>
+                      <button
+                        onClick={e => { e.stopPropagation(); setEditingProjectName(project.name); setEditingProjectId(project.id); }}
+                        className="text-gray-600 hover:text-orange-400 text-[10px] flex-shrink-0"
+                        title="Rename project"
+                      ><FontAwesomeIcon icon={faPencil} /></button>
+                    </div>
+                  )}
                   <p className="text-xs text-gray-500 mt-0.5">{new Date(project.updatedAt).toLocaleString()}</p>
                 </div>
                 {project.gcode && (
