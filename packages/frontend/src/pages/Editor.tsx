@@ -82,6 +82,111 @@ function AlignPivotPicker({ targetLabel, onConfirm, onCancel }: AlignPickerProps
   );
 }
 
+/* ─── Ruler Calibration overlay ─── */
+interface RulerCalibrationProps {
+  currentScale: number;   // current px/mm
+  onApply: (pxPerMm: number) => void;
+  onClose: () => void;
+}
+
+function RulerCalibration({ currentScale, onApply, onClose }: RulerCalibrationProps) {
+  // Default ruler length: 100 mm rendered at the current scale
+  const defaultLengthMm = 100;
+  const [lengthPx, setLengthPx] = useState(Math.round(defaultLengthMm * currentScale));
+  const [inputMm, setInputMm] = useState(String(defaultLengthMm));
+  const [dragging, setDragging] = useState(false);
+  const rulerRef = useRef<HTMLDivElement>(null);
+  const dragStartRef = useRef<{ x: number; px: number } | null>(null);
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    dragStartRef.current = { x: e.clientX, px: lengthPx };
+    setDragging(true);
+  };
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: MouseEvent) => {
+      if (!dragStartRef.current) return;
+      const delta = e.clientX - dragStartRef.current.x;
+      setLengthPx(Math.max(10, dragStartRef.current.px + delta));
+    };
+    const onUp = () => setDragging(false);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, [dragging]);
+
+  const targetMm = Math.max(1, parseFloat(inputMm) || defaultLengthMm);
+  const derivedPxPerMm = lengthPx / targetMm;
+
+  return (
+    <div className="absolute inset-0 z-30 bg-gray-950/90 flex flex-col items-center justify-center gap-6 select-none">
+      <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 shadow-2xl w-[480px] space-y-5">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-100">📐 Calibrate zoom to physical ruler</h3>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-200 text-xs"><FontAwesomeIcon icon={faXmark} /></button>
+        </div>
+
+        <p className="text-xs text-gray-400 leading-relaxed">
+          Drag the right edge of the orange bar to match a known length on your physical ruler,
+          then enter that length in mm and click <strong className="text-orange-400">Apply</strong>.
+          This sets 1 mm on screen = 1 mm in real life.
+        </p>
+
+        {/* Draggable ruler bar */}
+        <div className="relative h-10 bg-gray-800 rounded overflow-visible">
+          <div
+            ref={rulerRef}
+            className="absolute left-0 top-0 h-full bg-orange-500/30 border-r-2 border-orange-400 rounded-l flex items-center"
+            style={{ width: Math.max(10, lengthPx) }}
+          >
+            <span className="text-xs text-orange-300 px-2 truncate">{Math.round(lengthPx)} px</span>
+          </div>
+          {/* Drag handle */}
+          <div
+            className={`absolute top-0 h-full w-4 flex items-center justify-center cursor-col-resize z-10 ${dragging ? 'text-orange-300' : 'text-orange-500 hover:text-orange-300'}`}
+            style={{ left: Math.max(10, lengthPx) - 8 }}
+            onMouseDown={onMouseDown}
+          >
+            <div className="w-1 h-6 bg-current rounded-full" />
+          </div>
+        </div>
+
+        {/* Length input */}
+        <div className="flex items-center gap-3">
+          <label className="text-xs text-gray-400 flex-shrink-0">This bar measures</label>
+          <input
+            type="number"
+            min={1}
+            max={1000}
+            value={inputMm}
+            onChange={e => setInputMm(e.target.value)}
+            className="w-24 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-orange-500 text-right"
+          />
+          <label className="text-xs text-gray-400">mm on my ruler</label>
+        </div>
+
+        <p className="text-xs text-gray-500">
+          Derived scale: <span className="text-orange-400 font-mono">{derivedPxPerMm.toFixed(4)} px/mm</span>
+          {' '}({Math.round(derivedPxPerMm * 25.4)} DPI)
+        </p>
+
+        <div className="flex gap-2 pt-1">
+          <button
+            onClick={() => onApply(derivedPxPerMm)}
+            className="flex-1 py-1.5 text-xs rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold transition-colors"
+          >Apply calibration</button>
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"
+          >Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Editor() {
   const projects = useProjectStore(s => s.projects);
   const activeProjectId = useProjectStore(s => s.activeProjectId);
@@ -145,6 +250,8 @@ export default function Editor() {
   // Alignment mode state
   const [alignMode, setAlignMode] = useState(false);
   const [alignTarget, setAlignTarget] = useState<{ type: 'layer'; layerId: string; label: string } | { type: 'board'; label: string } | null>(null);
+  // Ruler calibration overlay
+  const [showRulerCalibration, setShowRulerCalibration] = useState(false);
 
   const project = projects.find(p => p.id === activeProjectId) ?? null;
 
@@ -924,7 +1031,10 @@ export default function Editor() {
                 className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded text-xs transition-colors"
                 title="Zoom in"
               ><FontAwesomeIcon icon={faMagnifyingGlassPlus} /></button>
-              <span className="text-xs text-gray-300 min-w-[3rem] text-center tabular-nums select-none">
+              <span
+                className="text-xs text-gray-300 min-w-[3rem] text-center tabular-nums select-none cursor-help"
+                title={`${currentZoom.toFixed(3)} px/mm — 100% means 1 CSS pixel = 1 mm. Use the ruler calibration (📐) to match your physical display.`}
+              >
                 {Math.round(currentZoom * 100)}%
               </span>
               <button
@@ -950,7 +1060,22 @@ export default function Editor() {
                 className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded text-xs transition-colors"
                 title="Fit entire work area"
               ><FontAwesomeIcon icon={faExpand} /></button>
+              <div className="w-px bg-gray-600 mx-0.5" />
+              <button
+                onClick={() => setShowRulerCalibration(true)}
+                className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded text-xs transition-colors"
+                title="Calibrate zoom to physical ruler"
+              >📐</button>
             </div>
+
+            {/* Ruler calibration overlay */}
+            {showRulerCalibration && (
+              <RulerCalibration
+                currentScale={currentZoom}
+                onApply={pxPerMm => { canvasRef.current?.setScale(pxPerMm); setShowRulerCalibration(false); }}
+                onClose={() => setShowRulerCalibration(false)}
+              />
+            )}
             <SvgCanvas
               ref={canvasRef}
               layers={project.layers}

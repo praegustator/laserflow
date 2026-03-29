@@ -27,6 +27,8 @@ export interface SvgCanvasHandle {
   panToLayers: (bbox: BBox) => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  /** Set an exact scale (px/mm), keeping the canvas centre fixed */
+  setScale: (pxPerMm: number) => void;
 }
 
 interface Props {
@@ -153,6 +155,16 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
       setTransform(t => {
         const el = svgRef.current;
         const newScale = Math.max(0.1, t.scale * 0.8);
+        if (!el) return { ...t, scale: newScale };
+        const { width, height } = el.getBoundingClientRect();
+        const cx = width / 2, cy = height / 2;
+        return { scale: newScale, tx: cx - (cx - t.tx) * (newScale / t.scale), ty: cy - (cy - t.ty) * (newScale / t.scale) };
+      });
+    },
+    setScale(pxPerMm: number) {
+      setTransform(t => {
+        const el = svgRef.current;
+        const newScale = Math.max(0.1, Math.min(50, pxPerMm));
         if (!el) return { ...t, scale: newScale };
         const { width, height } = el.getBoundingClientRect();
         const cx = width / 2, cy = height / 2;

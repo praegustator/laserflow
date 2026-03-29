@@ -6,7 +6,7 @@ import { useToastStore } from '../store/toastStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { api } from '../api/client';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faToggleOn, faToggleOff, faTrash, faClone, faGears, faEye } from '@fortawesome/free-solid-svg-icons';
+import { faToggleOn, faToggleOff, faTrash, faClone, faPlus } from '@fortawesome/free-solid-svg-icons';
 
 const OP_TYPE_LABELS: Record<OperationType, string> = {
   cut: '✂ Cut',
@@ -245,6 +245,8 @@ interface OperationRowProps {
 function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRename, layers, onAssignLayer, onUnassignLayer, onDragStart, onDragOver, onDrop, isDragOver, isSelected, onSelect, isLayerHighlighted }: OperationRowProps) {
   const [editingLabel, setEditingLabel] = useState(false);
   const [localLabel, setLocalLabel] = useState(op.label ?? '');
+  const [assignOpen, setAssignOpen] = useState(false);
+  const assignRef = useRef<HTMLDivElement>(null);
 
   const commitLabel = () => {
     const trimmed = localLabel.trim();
@@ -252,16 +254,30 @@ function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRen
     setEditingLabel(false);
   };
 
+  // Close assign popover when clicking outside
+  useEffect(() => {
+    if (!assignOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (assignRef.current && !assignRef.current.contains(e.target as Node)) {
+        setAssignOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [assignOpen]);
+
+  const unassignedLayers = layers.filter(l => !op.layerIds.includes(l.id));
+
   return (
     <div
-      className={`border rounded-lg overflow-hidden transition-colors ${op.enabled ? 'border-gray-700' : 'border-gray-800 opacity-60'} ${isDragOver ? 'border-orange-400 border-dashed' : ''} ${isSelected ? 'ring-1 ring-orange-500' : ''}`}
+      className={`border rounded-lg overflow-visible transition-colors ${op.enabled ? 'border-gray-700' : 'border-gray-800 opacity-60'} ${isDragOver ? 'border-orange-400 border-dashed' : ''} ${isSelected ? 'ring-1 ring-orange-500' : ''}`}
       onClick={onSelect}
       onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOver(op.id); }}
       onDrop={e => { e.preventDefault(); onDrop(); }}
     >
-      {/* Header — drag handle is restricted to this element only */}
+      {/* Header row */}
       <div
-        className={`flex items-center gap-1 px-2 py-2 ${isLayerHighlighted ? 'bg-blue-900/25' : 'bg-gray-800'} cursor-grab active:cursor-grabbing`}
+        className={`flex items-center gap-1 px-2 py-1.5 ${isLayerHighlighted ? 'bg-blue-900/25' : 'bg-gray-800'} cursor-grab active:cursor-grabbing`}
         draggable
         onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; onDragStart(op.id); }}
         onDragEnd={() => onDrop()}
@@ -269,78 +285,86 @@ function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRen
         <span className="text-xs text-gray-600 select-none mr-0.5">⠿</span>
         <span className="text-xs text-gray-500 select-none w-5 text-center flex-shrink-0">{index}</span>
         <button
-          onClick={onToggleEnabled}
+          onClick={e => { e.stopPropagation(); onToggleEnabled(); }}
           className={`text-xs w-6 text-center flex-shrink-0 ${op.enabled ? 'text-orange-400' : 'text-gray-600'}`}
           title={op.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable'}
         ><FontAwesomeIcon icon={op.enabled ? faToggleOn : faToggleOff} /></button>
 
-        <div className="flex-1 flex items-center gap-2 min-w-0">
-          <span className={`text-sm font-semibold whitespace-nowrap ${OP_COLORS[op.type]}`}>
-            {OP_TYPE_LABELS[op.type]}
-          </span>
-          {editingLabel ? (
-            <input
-              type="text"
-              value={localLabel}
-              onChange={e => setLocalLabel(e.target.value)}
-              onBlur={commitLabel}
-              onKeyDown={e => { if (e.key === 'Enter') commitLabel(); if (e.key === 'Escape') { setEditingLabel(false); setLocalLabel(op.label ?? ''); } }}
-              onClick={e => e.stopPropagation()}
-              autoFocus
-              className="flex-1 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 focus:outline-none min-w-0"
-            />
-          ) : (
-            <span
-              className={`text-xs truncate ${op.label ? 'text-gray-500' : 'text-gray-700 italic'}`}
-              title="Double-click to rename"
-              onDoubleClick={e => { e.stopPropagation(); setLocalLabel(op.label ?? ''); setEditingLabel(true); }}
-            >{op.label ? `(${op.label})` : '(unnamed)'}</span>
-          )}
+        <span className={`text-xs font-semibold whitespace-nowrap flex-shrink-0 ${OP_COLORS[op.type]}`}>
+          {OP_TYPE_LABELS[op.type]}
+        </span>
+
+        {editingLabel ? (
+          <input
+            type="text"
+            value={localLabel}
+            onChange={e => setLocalLabel(e.target.value)}
+            onBlur={commitLabel}
+            onKeyDown={e => { if (e.key === 'Enter') commitLabel(); if (e.key === 'Escape') { setEditingLabel(false); setLocalLabel(op.label ?? ''); } }}
+            onClick={e => e.stopPropagation()}
+            autoFocus
+            className="flex-1 min-w-0 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 focus:outline-none"
+          />
+        ) : (
+          <span
+            className="text-xs text-gray-600 italic truncate max-w-[60px]"
+            title="Double-click to rename"
+            onDoubleClick={e => { e.stopPropagation(); setLocalLabel(op.label ?? ''); setEditingLabel(true); }}
+          >{op.label ? `(${op.label})` : ''}</span>
+        )}
+
+        {/* Assigned layer chips */}
+        <div className="flex flex-wrap gap-0.5 flex-1 min-w-0 items-center" onClick={e => e.stopPropagation()}>
           {op.layerIds.length === 0 && op.enabled && (
-            <span className="text-xs text-yellow-500 ml-1 flex-shrink-0" title="No layers assigned">⚠</span>
+            <span className="text-xs text-yellow-500" title="No layers assigned">⚠</span>
           )}
-          <span className="text-xs text-gray-500 ml-auto flex-shrink-0">
-            {op.feedRate}mm/min · {op.power}% · ×{op.passes}
-          </span>
+          {op.layerIds.map(lid => {
+            const layer = layers.find(l => l.id === lid);
+            return (
+              <span
+                key={lid}
+                className="inline-flex items-center gap-0.5 bg-gray-700 rounded px-1 py-0 text-xs text-gray-300 leading-4"
+              >
+                <span className="truncate max-w-[56px]" title={layer?.name ?? lid}>{layer?.name ?? lid}</span>
+                <button
+                  onClick={() => onUnassignLayer(lid)}
+                  className="text-gray-500 hover:text-red-400 leading-none ml-0.5"
+                  title="Remove"
+                >×</button>
+              </span>
+            );
+          })}
+
+          {/* + assign button with popover */}
+          {unassignedLayers.length > 0 && (
+            <div className="relative" ref={assignRef}>
+              <button
+                onClick={e => { e.stopPropagation(); setAssignOpen(o => !o); }}
+                className="inline-flex items-center justify-center w-4 h-4 rounded bg-gray-700 hover:bg-orange-600 text-gray-400 hover:text-white text-xs leading-none transition-colors"
+                title="Assign layer"
+              ><FontAwesomeIcon icon={faPlus} className="text-[10px]" /></button>
+              {assignOpen && (
+                <div className="absolute left-0 top-full mt-1 z-50 bg-gray-800 border border-gray-600 rounded-lg shadow-xl min-w-[140px] py-1" onClick={e => e.stopPropagation()}>
+                  {unassignedLayers.map(l => (
+                    <button
+                      key={l.id}
+                      onClick={() => { onAssignLayer(l.id); setAssignOpen(false); }}
+                      className="w-full text-left px-3 py-1 text-xs text-gray-200 hover:bg-gray-700 truncate"
+                    >{l.name}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        <div className="flex gap-0.5 flex-shrink-0">
+        <span className="text-xs text-gray-600 flex-shrink-0 hidden xl:block">
+          {op.feedRate}mm/min · {op.power}% · ×{op.passes}
+        </span>
+
+        <div className="flex gap-0.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
           <button onClick={onDuplicate} className="text-gray-500 hover:text-gray-200 text-xs" title="Duplicate"><FontAwesomeIcon icon={faClone} /></button>
           <button onClick={onRemove} className="text-gray-500 hover:text-red-400 text-xs" title="Remove"><FontAwesomeIcon icon={faTrash} /></button>
-        </div>
-      </div>
-
-      {/* Body — assigned layers always visible */}
-      <div className="px-3 py-3 bg-gray-900 space-y-3">
-        <div>
-          <label className="text-xs text-gray-500 uppercase">Assigned Layers</label>
-          <div className="mt-1 space-y-1">
-            {op.layerIds.length === 0 && (
-              <p className="text-xs text-yellow-500 italic">⚠ No layers assigned — operation inactive</p>
-            )}
-            {op.layerIds.map(lid => {
-              const layer = layers.find(l => l.id === lid);
-              return (
-                <div key={lid} className="flex items-center gap-2 text-xs">
-                  <span className="text-gray-300 truncate flex-1">{layer?.name ?? lid}</span>
-                  <button onClick={() => onUnassignLayer(lid)} className="text-gray-500 hover:text-red-400">✕</button>
-                </div>
-              );
-            })}
-          </div>
-          {/* Add layer dropdown */}
-          {layers.filter(l => !op.layerIds.includes(l.id)).length > 0 && (
-            <select
-              value=""
-              onChange={e => { if (e.target.value) onAssignLayer(e.target.value); }}
-              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-orange-500"
-            >
-              <option value="">+ Assign layer…</option>
-              {layers.filter(l => !op.layerIds.includes(l.id)).map(l => (
-                <option key={l.id} value={l.id}>{l.name}</option>
-              ))}
-            </select>
-          )}
         </div>
       </div>
     </div>
