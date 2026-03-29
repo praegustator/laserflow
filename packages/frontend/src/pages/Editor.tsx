@@ -42,6 +42,7 @@ export default function Editor() {
   const originPosition = useAppSettings(s => s.originPosition);
   const workAreaHeight = useAppSettings(s => s.workAreaHeight);
   const autoZoomOnLayerSelect = useAppSettings(s => s.autoZoomOnLayerSelect);
+  const autoPanOnLayerSelect = useAppSettings(s => s.autoPanOnLayerSelect);
   const addToast = useToastStore(s => s.addToast);
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -71,6 +72,8 @@ export default function Editor() {
   const transformDragRef = useRef<{ startY: number; startH: number } | null>(null);
   // Preview delta for relative transforms
   const [transformPreview, setTransformPreview] = useState<TransformPreview>({ deltaX: 0, deltaY: 0, deltaRotation: 0 });
+  // Current canvas zoom level (scale factor, e.g. 1.5 = 150%)
+  const [currentZoom, setCurrentZoom] = useState(1.5);
 
   const project = projects.find(p => p.id === activeProjectId) ?? null;
 
@@ -79,18 +82,21 @@ export default function Editor() {
   const projectRef = useRef(project);
   projectRef.current = project;
 
-  // Auto-zoom canvas to fit selected layer(s) when selection changes
+  // Auto-zoom/pan canvas to fit selected layer(s) when selection changes
   useEffect(() => {
-    if (!autoZoomOnLayerSelect || !canvasRef.current || !projectRef.current || selectedLayerIds.size === 0) return;
+    if (!canvasRef.current || !projectRef.current || selectedLayerIds.size === 0) return;
     const selectedLayers = projectRef.current.layers.filter(l => selectedLayerIds.has(l.id) && l.visible);
     if (selectedLayers.length === 0) return;
     const bbox = selectedLayers.length === 1
       ? computeLayerWorldBBox(selectedLayers[0])
       : computeMultiLayerWorldBBox(selectedLayers);
-    if (bbox && bbox.width > 0 && bbox.height > 0) {
+    if (!bbox || bbox.width === 0 || bbox.height === 0) return;
+    if (autoZoomOnLayerSelect) {
       canvasRef.current.fitLayers(bbox);
+    } else if (autoPanOnLayerSelect) {
+      canvasRef.current.panToLayers(bbox);
     }
-  }, [selectedLayerIds, autoZoomOnLayerSelect]);
+  }, [selectedLayerIds, autoZoomOnLayerSelect, autoPanOnLayerSelect]);
 
   const handleFiles = useCallback(async (files: FileList | File[]) => {
     for (const file of Array.from(files)) {
@@ -454,7 +460,7 @@ export default function Editor() {
                     }
                     setSelectedShapeIds(new Set());
                   }}
-                  className={`rounded-lg border p-2 cursor-pointer transition-colors ${selectedLayerIds.has(layer.id) ? 'border-orange-500 bg-gray-800' : opHighlightedLayerIds.has(layer.id) ? 'border-blue-500/60 bg-gray-800/50' : 'border-gray-700 hover:border-gray-600'} ${dragOverLayerId === layer.id ? 'border-blue-400 border-dashed' : ''}`}
+                  className={`rounded-lg border p-2 cursor-pointer transition-colors ${selectedLayerIds.has(layer.id) ? 'border-orange-500 bg-gray-800' : opHighlightedLayerIds.has(layer.id) ? 'border-gray-700 bg-blue-900/20' : 'border-gray-700 hover:border-gray-600'} ${dragOverLayerId === layer.id ? 'border-blue-400 border-dashed' : ''}`}
                 >
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-gray-600 cursor-grab active:cursor-grabbing select-none mr-0.5" title="Drag to reorder">⠿</span>
@@ -732,12 +738,15 @@ export default function Editor() {
           {/* Canvas */}
           <Panel defaultSize="53%" minSize="300px" className="min-w-0 min-h-0 relative">
             {/* Navigation toolbar */}
-            <div className="absolute top-2 right-2 z-10 flex gap-1 bg-gray-900/80 backdrop-blur-sm border border-gray-700 rounded-lg p-1">
+            <div className="absolute top-2 right-2 z-10 flex gap-1 items-center bg-gray-900/80 backdrop-blur-sm border border-gray-700 rounded-lg p-1">
               <button
                 onClick={() => canvasRef.current?.zoomIn()}
                 className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded text-xs transition-colors"
                 title="Zoom in"
               ><FontAwesomeIcon icon={faMagnifyingGlassPlus} /></button>
+              <span className="text-xs text-gray-300 min-w-[3rem] text-center tabular-nums select-none">
+                {Math.round(currentZoom * 100)}%
+              </span>
               <button
                 onClick={() => canvasRef.current?.zoomOut()}
                 className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded text-xs transition-colors"
@@ -773,6 +782,7 @@ export default function Editor() {
               onUpdateLayer={(id, partial) => updateLayerTransform(id, partial)}
               originPosition={originPosition}
               transformPreview={transformPreview}
+              onZoomChange={setCurrentZoom}
             />
           </Panel>
 

@@ -24,6 +24,7 @@ export interface BBox {
 export interface SvgCanvasHandle {
   fitAll: () => void;
   fitLayers: (bbox: BBox) => void;
+  panToLayers: (bbox: BBox) => void;
   zoomIn: () => void;
   zoomOut: () => void;
 }
@@ -40,6 +41,8 @@ interface Props {
   machineProfile?: MachineProfile | null;
   /** When set, renders a ghost preview of selected layers shifted by this delta */
   transformPreview?: TransformPreview;
+  /** Called whenever the canvas zoom scale changes */
+  onZoomChange?: (scale: number) => void;
 }
 
 const OP_COLORS: Record<string, string> = {
@@ -50,12 +53,20 @@ const OP_COLORS: Record<string, string> = {
 
 const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];
 
-const GRID_SPACING = 10; // mm
+/**
+ * Pick a "nice" grid step size in millimetres that targets ~50 screen pixels
+ * between adjacent grid lines at the given canvas zoom `scale` (px/mm).
+ */
+function computeGridStep(scale: number): number {
+  const NICE_STEPS = [0.5, 1, 2, 5, 10, 25, 50, 100];
+  const rawStep = 50 / scale; // target ~50 screen px between lines
+  return NICE_STEPS.find(s => s >= rawStep) ?? 100;
+}
 
 /** Degrees of rotation per pixel of horizontal mouse drag */
 const ROTATE_SENSITIVITY = 0.5;
 
-export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, operations, selectedLayerIds, selectedShapeIds, onSelectLayer, onSelectShape, onUpdateLayer, originPosition, machineProfile, transformPreview }, ref) {
+export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, operations, selectedLayerIds, selectedShapeIds, onSelectLayer, onSelectShape, onUpdateLayer, originPosition, machineProfile, transformPreview, onZoomChange }, ref) {
   const settingsWorkW = useAppSettings(s => s.workAreaWidth);
   const settingsWorkH = useAppSettings(s => s.workAreaHeight);
   const workW = machineProfile?.workArea.x ?? settingsWorkW;
@@ -87,6 +98,10 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
     });
   }, [workW, workH]);
 
+  useEffect(() => {
+    onZoomChange?.(transform.scale);
+  }, [transform.scale, onZoomChange]);
+
   useImperativeHandle(ref, () => ({
     fitAll() {
       const el = svgRef.current;
@@ -112,6 +127,18 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
         ty: (height - bbox.height * scale) / 2 - bbox.minY * scale,
         scale,
       });
+    },
+    panToLayers(bbox: BBox) {
+      const el = svgRef.current;
+      if (!el || bbox.width === 0 || bbox.height === 0) return;
+      const { width, height } = el.getBoundingClientRect();
+      const centerX = (bbox.minX + bbox.maxX) / 2;
+      const centerY = (bbox.minY + bbox.maxY) / 2;
+      setTransform(t => ({
+        ...t,
+        tx: width / 2 - centerX * t.scale,
+        ty: height / 2 - centerY * t.scale,
+      }));
     },
     zoomIn() {
       setTransform(t => {
@@ -209,20 +236,37 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
     return LAYER_COLORS[layerIdx % LAYER_COLORS.length];
   };
 
-  // Grid lines
-  const gridLines: React.ReactNode[] = [];
-  for (let x = 0; x <= workW; x += GRID_SPACING) {
-    gridLines.push(
-      <line key={`gx${x}`} x1={x} y1={0} x2={x} y2={workH} stroke="#374151" strokeWidth={x % 50 === 0 ? 0.4 : 0.2} />,
-    );
-  }
-  for (let y = 0; y <= workH; y += GRID_SPACING) {
-    gridLines.push(
-      <line key={`gy${y}`} x1={0} y1={y} x2={workW} y2={y} stroke="#374151" strokeWidth={y % 50 === 0 ? 0.4 : 0.2} />,
-    );
-  }
-
   const { tx, ty, scale } = transform;
+
+  // Adaptive grid lines — granularity changes with zoom, thickness stays constant
+  const gridStep = computeGridStep(scale);
+  const majorMultiple = 5; // major line every 5 minor steps
+  const gridLines: React.ReactNode[] = [];
+  const GRID_EPSILON = 0.001; // small tolerance for floating-point edge inclusion
+  let xi = 0;
+  while (xi * gridStep <= workW + GRID_EPSILON) {
+    const x = xi * gridStep;
+    const isMajor = xi % majorMultiple === 0;
+    gridLines.push(
+      <line key={`gx${xi}`} x1={x} y1={0} x2={x} y2={workH}
+        stroke="#374151" strokeWidth={isMajor ? 0.6 : 0.3}
+        vectorEffect="non-scaling-stroke"
+      />,
+    );
+    xi++;
+  }
+  let yi = 0;
+  while (yi * gridStep <= workH + GRID_EPSILON) {
+    const y = yi * gridStep;
+    const isMajor = yi % majorMultiple === 0;
+    gridLines.push(
+      <line key={`gy${yi}`} x1={0} y1={y} x2={workW} y2={y}
+        stroke="#374151" strokeWidth={isMajor ? 0.6 : 0.3}
+        vectorEffect="non-scaling-stroke"
+      />,
+    );
+    yi++;
+  }
 
   // Origin position only affects where the origin marker is drawn.
   // Shapes always render in native SVG coordinates (Y down) so they are never upside-down.
@@ -279,11 +323,18 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
             ];
 
             // Inverse scale factor so bounding box / pivot stay constant screen size
-            const invSx = 1 / Math.max(Math.abs(sxm), 0.001);
+            const invSx = 1 / Math.max(Math.abs(sxm), 0.001); // 0.001: epsilon to avoid division by zero
             const invSy = 1 / Math.max(Math.abs(sym), 0.001);
-            // Cross-hair arm length in shape-local units (constant visual size)
-            const armX = 2 * invSx;
-            const armY = 2 * invSy;
+            // Named constants for fixed screen-space sizes of the pivot indicator
+            const PIVOT_RADIUS_PX = 5;
+            const PIVOT_ARM_LENGTH_PX = 10;
+            // Convert to layer pre-scale coordinates (cancelled by invS*, clamped by /scale)
+            const pivotRx = PIVOT_RADIUS_PX * invSx / scale;
+            const pivotRy = PIVOT_RADIUS_PX * invSy / scale;
+            const armX = PIVOT_ARM_LENGTH_PX * invSx / scale;
+            const armY = PIVOT_ARM_LENGTH_PX * invSy / scale;
+            // Bounding box dash array: scale-independent (6px dash, 3px gap)
+            const bboxDash = `${6 / scale} ${3 / scale}`;
 
             return (
               <g
@@ -387,12 +438,12 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
                       fill="none"
                       stroke={color}
                       strokeWidth={0.3}
-                      strokeDasharray="2 1.5"
+                      strokeDasharray={bboxDash}
                       opacity={0.5}
                       vectorEffect="non-scaling-stroke"
                     />
-                    {/* Pivot point — fixed visual size regardless of layer scale */}
-                    <ellipse cx={pivotX} cy={pivotY} rx={1.2 * invSx} ry={1.2 * invSy} fill={color} opacity={0.7} />
+                    {/* Pivot point — fixed visual size regardless of zoom or layer scale */}
+                    <ellipse cx={pivotX} cy={pivotY} rx={pivotRx} ry={pivotRy} fill={color} opacity={0.7} />
                     <line x1={pivotX - armX} y1={pivotY} x2={pivotX + armX} y2={pivotY} stroke={color} strokeWidth={0.3} opacity={0.7} vectorEffect="non-scaling-stroke" />
                     <line x1={pivotX} y1={pivotY - armY} x2={pivotX} y2={pivotY + armY} stroke={color} strokeWidth={0.3} opacity={0.7} vectorEffect="non-scaling-stroke" />
                   </>
@@ -416,7 +467,7 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
                 fill="none"
                 stroke="#facc15"
                 strokeWidth={0.4}
-                strokeDasharray="4 2"
+                strokeDasharray={`${8 / scale} ${4 / scale}`}
                 opacity={0.6}
                 vectorEffect="non-scaling-stroke"
                 style={{ pointerEvents: 'none' }}
@@ -456,36 +507,38 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
             })
           )}
 
-          {/* Origin cross and axis direction arrows */}
-          {(() => {
-            const ox = 0;
-            const oy = originPosition === 'bottom-left' ? workH : 0;
-            // Arrow length in work-area mm
-            const arrLen = 15;
-            // Y arrow direction: for bottom-left, +Y goes up (SVG negative), for top-left +Y goes down (SVG positive)
-            const yDir = originPosition === 'bottom-left' ? -1 : 1;
-            const ah = 2; // arrowhead size
-            return (
-              <>
-                <circle cx={ox} cy={oy} r={1} fill="#f97316" />
-                <line x1={ox - 3} y1={oy} x2={ox + 3} y2={oy} stroke="#f97316" strokeWidth={0.3} />
-                <line x1={ox} y1={oy - 3} x2={ox} y2={oy + 3} stroke="#f97316" strokeWidth={0.3} />
-                {/* X axis arrow — always goes right */}
-                <line x1={ox} y1={oy} x2={ox + arrLen} y2={oy} stroke="#f97316" strokeWidth={0.5} opacity={0.7} />
-                <polygon points={`${ox + arrLen},${oy} ${ox + arrLen - ah},${oy - ah * 0.6} ${ox + arrLen - ah},${oy + ah * 0.6}`} fill="#f97316" opacity={0.7} />
-                <text x={ox + arrLen + 1.5} y={oy + 1.2} fill="#f97316" fontSize={4} opacity={0.8}>X</text>
-                {/* Y axis arrow */}
-                <line x1={ox} y1={oy} x2={ox} y2={oy + yDir * arrLen} stroke="#f97316" strokeWidth={0.5} opacity={0.7} />
-                <polygon points={`${ox},${oy + yDir * arrLen} ${ox - ah * 0.6},${oy + yDir * (arrLen - ah)} ${ox + ah * 0.6},${oy + yDir * (arrLen - ah)}`} fill="#f97316" opacity={0.7} />
-                <text x={ox + 1.5} y={oy + yDir * (arrLen + 4)} fill="#f97316" fontSize={4} opacity={0.8}>Y</text>
-              </>
-            );
-          })()}
+          {/* Origin cross and axis direction arrows — REMOVED from here; rendered in screen space below */}
         </g>
       </g>
-      {/* Scale indicator */}
+
+      {/* Origin cross and axis direction arrows — fixed screen size, not affected by zoom */}
+      {(() => {
+        const oy = originPosition === 'bottom-left' ? workH : 0;
+        const oxPx = tx; // ox=0 in work coords → tx + 0*scale = tx
+        const oyPx = ty + oy * scale;
+        const ARROW_LEN = 50; // screen pixels
+        const ARROWHEAD_SIZE = 7; // arrowhead tip length in pixels
+        const yDir = originPosition === 'bottom-left' ? -1 : 1;
+        return (
+          <>
+            <circle cx={oxPx} cy={oyPx} r={4} fill="#f97316" />
+            <line x1={oxPx - 6} y1={oyPx} x2={oxPx + 6} y2={oyPx} stroke="#f97316" strokeWidth={1} />
+            <line x1={oxPx} y1={oyPx - 6} x2={oxPx} y2={oyPx + 6} stroke="#f97316" strokeWidth={1} />
+            {/* X axis arrow — always points right */}
+            <line x1={oxPx} y1={oyPx} x2={oxPx + ARROW_LEN} y2={oyPx} stroke="#f97316" strokeWidth={1.5} opacity={0.8} />
+            <polygon points={`${oxPx + ARROW_LEN},${oyPx} ${oxPx + ARROW_LEN - ARROWHEAD_SIZE},${oyPx - ARROWHEAD_SIZE * 0.5} ${oxPx + ARROW_LEN - ARROWHEAD_SIZE},${oyPx + ARROWHEAD_SIZE * 0.5}`} fill="#f97316" opacity={0.8} />
+            <text x={oxPx + ARROW_LEN + 4} y={oyPx + 4} fill="#f97316" fontSize={12} fontFamily="monospace" opacity={0.9}>X</text>
+            {/* Y axis arrow */}
+            <line x1={oxPx} y1={oyPx} x2={oxPx} y2={oyPx + yDir * ARROW_LEN} stroke="#f97316" strokeWidth={1.5} opacity={0.8} />
+            <polygon points={`${oxPx},${oyPx + yDir * ARROW_LEN} ${oxPx - ARROWHEAD_SIZE * 0.5},${oyPx + yDir * (ARROW_LEN - ARROWHEAD_SIZE)} ${oxPx + ARROWHEAD_SIZE * 0.5},${oyPx + yDir * (ARROW_LEN - ARROWHEAD_SIZE)}`} fill="#f97316" opacity={0.8} />
+            <text x={oxPx + 4} y={oyPx + yDir * (ARROW_LEN + 4)} fill="#f97316" fontSize={12} fontFamily="monospace" opacity={0.9}>Y</text>
+          </>
+        );
+      })()}
+
+      {/* Canvas info — work area size, grid spacing, origin */}
       <text x={8} y={16} fill="#6b7280" fontSize={10}>
-        {workW}×{workH} mm | {scale.toFixed(2)}× | origin: {originPosition}
+        {workW}×{workH} mm | grid: {gridStep}mm | origin: {originPosition}
       </text>
     </svg>
   );
