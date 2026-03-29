@@ -178,9 +178,9 @@ function JobCard({
             className="flex-1 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0.5 text-gray-100 focus:outline-none font-medium"
           />
         ) : (
-          <>
+          <div className="flex items-center gap-0.5 flex-1 min-w-0">
             <h3
-              className="font-medium text-gray-200 flex-1 truncate text-xs cursor-text"
+              className="font-medium text-gray-200 truncate text-xs cursor-text"
               onDoubleClick={handleNameDoubleClick}
               title="Double-click to rename"
             >{job.name}</h3>
@@ -189,7 +189,7 @@ function JobCard({
               className="text-gray-600 hover:text-orange-400 text-[10px] flex-shrink-0"
               title="Rename job"
             ><FontAwesomeIcon icon={faPencil} /></button>
-          </>
+          </div>
         )}
         <span className={`text-[10px] font-semibold ${st.color}`}>{st.label}</span>
       </div>
