@@ -21,6 +21,7 @@ interface ProjectStore {
 
   // File import
   importSvgFile: (file: File) => Promise<void>;
+  importImageFile: (file: File) => Promise<void>;
 
   // Layer management
   addLayer: (name: string) => void;
@@ -169,6 +170,89 @@ export const useProjectStore = create<ProjectStore>()(
           id: layerId,
           name: file.name.replace(/\.svg$/i, ''),
           shapes: [...shapes],
+          visible: true,
+          offsetX,
+          offsetY,
+          scaleX: 1,
+          scaleY: 1,
+          rotation: 0,
+          mirrorX: false,
+          mirrorY: false,
+          pivot: 'tl',
+        };
+
+        set(s => ({
+          projects: updateProject(s.projects, activeProjectId, p => ({
+            ...p,
+            files: [...p.files, projectFile],
+            layers: [...p.layers, layer],
+            gcodeUpToDate: false,
+          })),
+        }));
+      },
+
+      importImageFile: async (file: File) => {
+        const { activeProjectId } = get();
+        if (!activeProjectId) return;
+
+        // Read file as data URL
+        const dataUrl: string = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error('Failed to read image file'));
+          reader.readAsDataURL(file);
+        });
+
+        // Get image dimensions
+        const { width: imgW, height: imgH } = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+          img.onerror = () => reject(new Error('Failed to decode image'));
+          img.src = dataUrl;
+        });
+
+        if (imgW === 0 || imgH === 0) throw new Error('Image has zero dimensions');
+
+        // Convert pixels to mm: default 10 pixels per mm (254 DPI).
+        // This aligns well with the default engraveLineInterval of 0.1mm.
+        const PX_PER_MM = 10;
+        const widthMm = imgW / PX_PER_MM;
+        const heightMm = imgH / PX_PER_MM;
+
+        const fileId = uid();
+        const baseName = file.name.replace(/\.[^.]+$/, '');
+
+        // Create a rectangle path matching the image dimensions
+        const rectPath = `M 0 0 L ${widthMm} 0 L ${widthMm} ${heightMm} L 0 ${heightMm} Z`;
+
+        const shape: Shape = {
+          id: `${fileId}-image-0`,
+          name: baseName,
+          d: rectPath,
+          sourceFileId: fileId,
+          imageDataUrl: dataUrl,
+        };
+
+        const projectFile: ProjectFile = {
+          id: fileId,
+          name: baseName,
+          sourceSvg: '', // no SVG content for raster images
+          shapes: [shape],
+        };
+
+        // Position layer based on origin setting
+        const { originPosition, workAreaHeight } = useAppSettings.getState();
+        const offsetX = 0;
+        let offsetY = 0;
+        if (originPosition === 'bottom-left') {
+          offsetY = workAreaHeight - heightMm;
+        }
+
+        const layerId = uid();
+        const layer: Layer = {
+          id: layerId,
+          name: baseName,
+          shapes: [shape],
           visible: true,
           offsetX,
           offsetY,
@@ -860,7 +944,7 @@ export const useProjectStore = create<ProjectStore>()(
               mirrorY: layer.mirrorY ?? false,
             };
             for (const shape of layer.shapes) {
-              geometry.push({ d: shape.d, layerId, fill: shape.fill });
+              geometry.push({ d: shape.d, layerId, fill: shape.fill, imageDataUrl: shape.imageDataUrl });
             }
           }
         }

@@ -349,6 +349,50 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
                   // When a layer is selected (single or multi), give its shapes a brighter stroke
                   const strokeColor = isShapeSelected ? '#facc15' : isSelected ? '#ffffff' : color;
                   const sw = isShapeSelected ? 0.8 : isSelected ? 0.6 : 0.4;
+
+                  // Raster image shapes: render <image> element with outline rectangle
+                  if (shape.imageDataUrl) {
+                    const shapeBbox = computeShapesBoundingBox([shape]);
+                    const ix = shapeBbox?.minX ?? 0;
+                    const iy = shapeBbox?.minY ?? 0;
+                    const iw = shapeBbox?.width ?? 0;
+                    const ih = shapeBbox?.height ?? 0;
+                    return (
+                      <g key={shape.id}>
+                        <image
+                          href={shape.imageDataUrl}
+                          x={ix}
+                          y={iy}
+                          width={iw}
+                          height={ih}
+                          preserveAspectRatio="none"
+                          opacity={0.85}
+                          style={{ pointerEvents: 'none' }}
+                        />
+                        {/* Outline rectangle for selection */}
+                        <rect
+                          x={ix}
+                          y={iy}
+                          width={iw}
+                          height={ih}
+                          fill="none"
+                          stroke={strokeColor}
+                          strokeWidth={sw}
+                          opacity={0.9}
+                          vectorEffect="non-scaling-stroke"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onSelectShape) {
+                              onSelectShape(shape.id, layer.id, e);
+                            } else {
+                              onSelectLayer(layer.id);
+                            }
+                          }}
+                        />
+                      </g>
+                    );
+                  }
+
                   return (
                     <g key={shape.id}>
                       {/* Selection glow for shapes in selected layers */}

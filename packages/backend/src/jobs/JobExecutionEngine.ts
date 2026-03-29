@@ -112,16 +112,28 @@ export class JobExecutionEngine extends EventEmitter {
 
   private getProgress(): JobProgress {
     const elapsed = Date.now() - this.startTime;
+    // Count only non-empty, non-comment lines for both the total and the
+    // "done" estimate.  Using all lines (including blanks) as the denominator
+    // would make the percentage jump quickly at the start (blanks are skipped
+    // instantly) and stall near the end (remaining blank lines are never sent
+    // to GRBL), producing a wildly inflated ETA for raster jobs with many
+    // inter-row blank lines.
     const total = this.lines.filter((l) => l && !l.startsWith(';') && l.trim()).length;
-    const done = Math.min(this.currentLine, total);
-    const rate = elapsed > 0 ? done / elapsed : 0;
+    // Count how many actionable lines we have processed so far.  We scan
+    // through lines[0..currentLine) and count non-empty, non-comment ones.
+    let done = 0;
+    for (let i = 0; i < Math.min(this.currentLine, this.lines.length); i++) {
+      const l = this.lines[i];
+      if (l && !l.startsWith(';') && l.trim()) done++;
+    }
+    const rate = elapsed > 0 && done > 0 ? done / elapsed : 0;
     const remaining = rate > 0 ? (total - done) / rate : 0;
 
     return {
       jobId: this.currentJob?.id ?? '',
       state: 'running' as JobStatus,
-      currentLine: this.currentLine,
-      totalLines: this.lines.length,
+      currentLine: done,
+      totalLines: total,
       elapsed,
       eta: remaining,
     };
