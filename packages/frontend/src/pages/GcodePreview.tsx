@@ -11,11 +11,13 @@ interface GMove {
   x: number;
   y: number;
   lineNum: number;
+  /** Normalised laser power 0–1 (from S parameter). Only set for G1 cut moves. */
+  power?: number;
 }
 
-function parseGcode(gcode: string): GMove[] {
+function parseGcode(gcode: string, maxS: number = 1000): GMove[] {
   const moves: GMove[] = [];
-  let x = 0, y = 0;
+  let x = 0, y = 0, currentS = 0;
   const lines = gcode.split('\n');
   lines.forEach((line, lineNum) => {
     const trimmed = line.trim();
@@ -25,14 +27,20 @@ function parseGcode(gcode: string): GMove[] {
     if (!isG0 && !isG1) return;
     const xMatch = trimmed.match(/X(-?[\d.]+)/);
     const yMatch = trimmed.match(/Y(-?[\d.]+)/);
+    const sMatch = trimmed.match(/S(-?[\d.]+)/);
     const newX = xMatch ? parseFloat(xMatch[1]) : NaN;
     const newY = yMatch ? parseFloat(yMatch[1]) : NaN;
+    if (sMatch) currentS = parseFloat(sMatch[1]);
     // Only update coordinates when they are explicitly present in the command;
     // if neither X nor Y appears on a G0/G1 line, skip it (no movement).
     if (!isNaN(newX)) x = newX;
     if (!isNaN(newY)) y = newY;
     if (isNaN(newX) && isNaN(newY)) return;
-    moves.push({ type: isG0 ? 'rapid' : 'cut', x, y, lineNum });
+    const move: GMove = { type: isG0 ? 'rapid' : 'cut', x, y, lineNum };
+    if (!isG0 && currentS > 0) {
+      move.power = Math.min(1, Math.max(0, currentS / maxS));
+    }
+    moves.push(move);
   });
   return moves;
 }
@@ -125,7 +133,22 @@ export default function GcodePreview() {
     if (gc) setGcode(gc);
   }, [activeProject, activeJob]);
 
-  const moves = useMemo(() => parseGcode(gcode), [gcode]);
+  const moves = useMemo(() => {
+    // Determine the maximum S value in the G-code so power values can be
+    // normalised to [0, 1]. We scan all G1 lines for S parameters.
+    let maxS = 0;
+    for (const line of gcode.split('\n')) {
+      const t = line.trim();
+      if ((t.startsWith('G1 ') || t.startsWith('G1\t')) ) {
+        const m = t.match(/S([\d.]+)/);
+        if (m) {
+          const s = parseFloat(m[1]);
+          if (s > maxS) maxS = s;
+        }
+      }
+    }
+    return parseGcode(gcode, maxS > 0 ? maxS : 1000);
+  }, [gcode]);
   const totalMoves = moves.length;
   const currentIdx = Math.min(Math.floor(sliderPos * totalMoves), totalMoves);
 
@@ -249,18 +272,38 @@ export default function GcodePreview() {
     return lines;
   }, [bounds.minX, bounds.minY, bounds.maxX, bounds.maxY, vbW, vbH, originFlip]);
 
-  // Build SVG path data for visible moves (apply Y flip)
+  // Build SVG path data for visible moves (apply Y flip).
+  // Cut segments are grouped by their normalised power value so they can be
+  // rendered with a per-power colour (bright = high power, dim = low power).
   const visibleMoves = moves.slice(0, currentIdx);
   const rapidSegments: string[] = [];
-  const cutSegments: string[] = [];
+  /** Map from power bucket (0-20 integer buckets) to path-data string. */
+  const cutSegmentsByPower = new Map<number, string[]>();
   let prevX = 0, prevY = fy(0);
   for (const m of visibleMoves) {
     const displayY = fy(m.y);
     const seg = `M${prevX},${prevY} L${m.x},${displayY}`;
-    if (m.type === 'rapid') rapidSegments.push(seg);
-    else cutSegments.push(seg);
+    if (m.type === 'rapid') {
+      rapidSegments.push(seg);
+    } else {
+      // Round power to 20 discrete buckets so similar values share the same
+      // SVG element (avoids creating thousands of individual paths).
+      const bucket = Math.round((m.power ?? 1) * 20);
+      const arr = cutSegmentsByPower.get(bucket) ?? [];
+      arr.push(seg);
+      cutSegmentsByPower.set(bucket, arr);
+    }
     prevX = m.x;
     prevY = displayY;
+  }
+
+  /** Convert normalised power 0–1 to an orange colour string.
+   *  Full power → bright #f97316, near-zero → dark #7c2d12. */
+  function powerToColor(power: number): string {
+    // Interpolate between dark-orange (low) and bright-orange (high).
+    // Use HSL: hue fixed at ~22° (orange), saturation ~90%, lightness 20-55%.
+    const l = Math.round(20 + power * 35);
+    return `hsl(22,90%,${l}%)`;
   }
 
   const handleExport = () => {
@@ -389,9 +432,15 @@ export default function GcodePreview() {
                       {rapidSegments.map((d, i) => (
                         <path key={`r${i}`} d={d} fill="none" stroke="#4b5563" strokeWidth={vbW * 0.002} strokeDasharray={`${vbW * 0.01},${vbW * 0.005}`} />
                       ))}
-                      {/* Cut moves */}
-                      {cutSegments.map((d, i) => (
-                        <path key={`c${i}`} d={d} fill="none" stroke="#f97316" strokeWidth={vbW * 0.002} />
+                      {/* Cut moves — coloured by laser power (bright = high power, dim = low) */}
+                      {Array.from(cutSegmentsByPower.entries()).map(([bucket, segs]) => (
+                        <path
+                          key={`c${bucket}`}
+                          d={segs.join(' ')}
+                          fill="none"
+                          stroke={powerToColor(bucket / 20)}
+                          strokeWidth={vbW * 0.002}
+                        />
                       ))}
                       {/* Current position dot */}
                       {visibleMoves.length > 0 && (

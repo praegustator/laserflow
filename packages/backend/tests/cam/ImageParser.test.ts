@@ -73,4 +73,42 @@ describe('ImageParser', () => {
     expect(image.pixels[1]).toBeLessThan(80);
     expect(image.pixels[0]).toBeGreaterThan(image.pixels[1]); // red brighter than blue
   });
+
+  it('treats fully-transparent pixels as white (no engraving power)', async () => {
+    // Create a 2×1 RGBA image: one fully-transparent black pixel, one opaque black pixel.
+    // Transparent pixel should become white (255) after alpha compositing over white background.
+    // Opaque black pixel should remain black (0).
+    const rgbaPixels = Buffer.from([
+      0, 0, 0, 0,   // transparent black → should become white
+      0, 0, 0, 255, // opaque black → should stay black (0)
+    ]);
+    const buf = await sharp(rgbaPixels, { raw: { width: 2, height: 1, channels: 4 } })
+      .png()
+      .toBuffer();
+    const dataUrl = 'data:image/png;base64,' + buf.toString('base64');
+
+    const image = await decodeImageDataUrl(dataUrl);
+    expect(image.width).toBe(2);
+    expect(image.height).toBe(1);
+    // Transparent pixel → white (high value → near 255)
+    expect(image.pixels[0]).toBeGreaterThan(200);
+    // Opaque black pixel → black (low value → near 0)
+    expect(image.pixels[1]).toBeLessThan(20);
+  });
+
+  it('treats semi-transparent pixels proportionally', async () => {
+    // A 50% transparent black pixel should produce ~127 (mid-gray) when composited over white.
+    const rgbaPixels = Buffer.from([
+      0, 0, 0, 128, // 50% transparent black → ~mid-gray over white
+    ]);
+    const buf = await sharp(rgbaPixels, { raw: { width: 1, height: 1, channels: 4 } })
+      .png()
+      .toBuffer();
+    const dataUrl = 'data:image/png;base64,' + buf.toString('base64');
+
+    const image = await decodeImageDataUrl(dataUrl);
+    // Result should be approximately mid-gray (not black, not white)
+    expect(image.pixels[0]).toBeGreaterThan(100);
+    expect(image.pixels[0]).toBeLessThan(160);
+  });
 });
