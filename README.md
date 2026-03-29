@@ -29,16 +29,11 @@ The script will: detect / install **Node.js 20** –> clone repo –> `npm insta
 
 ## Manual Installation
 
-**Prerequisites**
-
-You will need Node.js (recommended version 20 LTS) and `git` for cloning.
-
-**Steps**
+App requires Node.js (18+ LTS).
 
 ```sh
 git clone https://github.com/praegustator/laserflow.git
 cd laserflow
-
 npm install
 ```
 
@@ -63,7 +58,7 @@ Open [http://localhost:5173](http://localhost:5173) in your browser. The fronten
 ### Production Build
 
 ```sh
-# Build both packages
+# Build both packages from the main directory
 npm run build
 
 # Start the backend (serves compiled output)
@@ -75,8 +70,6 @@ npm run start --workspace=packages/backend
 ```
 
 ### Docker
-
-The simplest way to run LaserFlow in production:
 
 ```sh
 # Start backend (port 3001) + frontend (port 8080)
