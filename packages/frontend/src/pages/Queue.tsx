@@ -428,6 +428,8 @@ export default function Queue() {
     .filter(j => j.status === 'completed' || j.status === 'canceled' || j.status === 'error')
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
+  const visibleJobsCount = queuedJobs.length + runningJobs.length + finishedJobs.length;
+
   /** Trace the bounding-box frame of a job's G-code with laser off. */
   const handleTraceFrame = useCallback(async (job: Job) => {
     if (!job.gcode) {
@@ -480,7 +482,7 @@ export default function Queue() {
         <div className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-4 py-2 flex items-center gap-3 flex-wrap">
           <h1 className="text-sm font-semibold text-gray-300 uppercase tracking-widest">Job Queue</h1>
           <span className="text-xs text-gray-500">
-            {queuedJobs.length + runningJobs.length + finishedJobs.length} job{(queuedJobs.length + runningJobs.length + finishedJobs.length) !== 1 ? 's' : ''}
+            {visibleJobsCount} job{visibleJobsCount !== 1 ? 's' : ''}
           </span>
 
           <div className="flex-1" />
@@ -507,7 +509,7 @@ export default function Queue() {
           <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">
             Loading jobs…
           </div>
-        ) : (queuedJobs.length + runningJobs.length + finishedJobs.length) === 0 ? (
+        ) : visibleJobsCount === 0 ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <div className="text-5xl mb-4">📭</div>

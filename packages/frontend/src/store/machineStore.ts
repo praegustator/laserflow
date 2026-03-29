@@ -32,6 +32,9 @@ interface MachineStore {
 
 let _entryCounter = 0;
 let _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let _reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 10;
+const RECONNECT_BASE_DELAY_MS = 3000;
 
 export const useMachineStore = create<MachineStore>((set, get) => ({
   backendConnected: false,
@@ -73,6 +76,7 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
       await api.post('/api/connect', { port: selectedPort, baudRate });
       // Remember this port for future auto-reconnects
       localStorage.setItem(LAST_PORT_KEY, selectedPort);
+      _reconnectAttempts = 0;
       set({ connectionStatus: 'connected', shouldAutoReconnect: true });
     } catch (err) {
       set({ connectionStatus: 'disconnected' });
@@ -86,6 +90,7 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
       clearTimeout(_reconnectTimer);
       _reconnectTimer = null;
     }
+    _reconnectAttempts = 0;
     set({ shouldAutoReconnect: false });
     await api.post('/api/disconnect');
     set({
@@ -98,17 +103,23 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
     set({ connectionStatus: 'disconnected', machineState: null });
     const { shouldAutoReconnect, selectedPort } = get();
     if (!shouldAutoReconnect || !selectedPort) return;
-    // Schedule reconnect attempt after 3 s
+    if (_reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      // Give up after max attempts; port polling will take over when the device reappears
+      _reconnectAttempts = 0;
+      return;
+    }
+    // Exponential backoff capped at 30 s
+    const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** _reconnectAttempts, 30000);
+    _reconnectAttempts += 1;
     if (_reconnectTimer !== null) clearTimeout(_reconnectTimer);
     _reconnectTimer = setTimeout(() => {
       _reconnectTimer = null;
       if (get().connectionStatus === 'disconnected' && get().shouldAutoReconnect) {
         void get().connect().catch(() => {
-          // If reconnect fails, schedule another attempt
           get().handleUnexpectedDisconnect();
         });
       }
-    }, 3000);
+    }, delay);
   },
 
   sendCommand: async (command: string) => {

@@ -23,11 +23,13 @@ export default function Console() {
 
   useEffect(() => {
     void fetchPorts();
-    // Poll the port list every 3 seconds so a newly plugged-in device is
-    // detected quickly and auto-connected if it matches the last used port.
+    // Poll the port list every 3 seconds while disconnected so a newly
+    // plugged-in device is detected and auto-connected if it matches the
+    // last used port. Stop polling once connected to avoid unnecessary calls.
+    if (connectionStatus === 'connected') return;
     const interval = setInterval(() => { void fetchPorts(); }, 3000);
     return () => clearInterval(interval);
-  }, [fetchPorts]);
+  }, [fetchPorts, connectionStatus]);
 
   const handleConnect = async () => {
     setError(null);
