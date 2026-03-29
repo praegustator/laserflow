@@ -20,13 +20,220 @@ const OP_COLORS: Record<OperationType, string> = {
   ignore: 'text-gray-500',
 };
 
+/* ─── Helper: compute shared value across operations (null = mixed) ─── */
+function sharedValue<T>(ops: Operation[], accessor: (op: Operation) => T): T | null {
+  if (ops.length === 0) return null;
+  const first = accessor(ops[0]);
+  return ops.every(o => accessor(o) === first) ? first : null;
+}
+
+/* ─── Operation Parameters Panel (shown when 1+ operations are selected) ─── */
+interface OperationParamsPanelProps {
+  selectedOps: Operation[];
+  presets: MaterialPreset[];
+  onChange: (partial: Partial<Operation>) => void;
+}
+
+function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParamsPanelProps) {
+  const [editingPower, setEditingPower] = useState(false);
+  const [localPower, setLocalPower] = useState('');
+
+  const multiType = sharedValue(selectedOps, o => o.type);
+  const multiFeedRate = sharedValue(selectedOps, o => o.feedRate);
+  const multiPower = sharedValue(selectedOps, o => o.power);
+  const multiPasses = sharedValue(selectedOps, o => o.passes);
+  const multiZOffset = sharedValue(selectedOps, o => o.zOffset ?? 0);
+  const multiLineInterval = sharedValue(selectedOps, o => o.engraveLineInterval ?? 0.1);
+  const multiLineAngle = sharedValue(selectedOps, o => o.engraveLineAngle ?? 0);
+
+  const isAllIgnore = multiType === 'ignore';
+  const anyEngrave = selectedOps.some(o => o.type === 'engrave');
+
+  const commitPower = () => {
+    const val = Math.max(0, Math.min(100, Math.round(Number(localPower) || 0)));
+    onChange({ power: val });
+    setLocalPower(String(val));
+    setEditingPower(false);
+  };
+
+  const label = selectedOps.length === 1
+    ? selectedOps[0].label || selectedOps[0].type
+    : `${selectedOps.length} operations`;
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+        Parameters — {label}
+      </p>
+
+      {/* Type */}
+      <div>
+        <label className="text-xs text-gray-500 uppercase">Type</label>
+        <div className="flex gap-1 mt-1">
+          {(['cut', 'engrave', 'ignore'] as OperationType[]).map(t => (
+            <button
+              key={t}
+              onClick={() => onChange({ type: t })}
+              className={`flex-1 py-1 text-xs rounded font-semibold transition-colors ${
+                multiType === t
+                  ? 'bg-orange-500 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >{t}</button>
+          ))}
+        </div>
+      </div>
+
+      {!isAllIgnore && (
+        <>
+          {/* Material preset quick-apply */}
+          {presets.length > 0 && (
+            <div>
+              <label className="text-xs text-gray-500 uppercase">Material Preset</label>
+              <select
+                value=""
+                onChange={e => {
+                  const preset = presets.find(p => p.id === e.target.value);
+                  if (!preset) return;
+                  // Apply cut or engrave preset depending on majority type
+                  const useEngrave = multiType === 'engrave';
+                  const settings = useEngrave ? preset.engrave : preset.cutThin;
+                  onChange({ feedRate: settings.feedRate, power: settings.power, label: preset.name });
+                }}
+                className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+              >
+                <option value="">— Apply preset —</option>
+                {presets.map(p => (
+                  <option key={p.id} value={p.id}>{p.name} ({p.thickness}mm)</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Feed rate */}
+          <div>
+            <label className="text-xs text-gray-500 uppercase">Feed Rate (mm/min)</label>
+            <input
+              type="number"
+              value={multiFeedRate ?? ''}
+              placeholder={multiFeedRate === null ? 'mixed' : undefined}
+              min={1}
+              max={10000}
+              onChange={e => { if (e.target.value) onChange({ feedRate: Number(e.target.value) }); }}
+              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+            />
+          </div>
+
+          {/* Power */}
+          <div>
+            <div className="flex justify-between">
+              <label className="text-xs text-gray-500 uppercase">Power (%)</label>
+              {editingPower ? (
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={localPower}
+                  onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalPower(v); }}
+                  onBlur={commitPower}
+                  onFocus={e => e.currentTarget.select()}
+                  onKeyDown={e => { if (e.key === 'Enter') commitPower(); if (e.key === 'Escape') setEditingPower(false); }}
+                  autoFocus
+                  className="w-14 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-right focus:outline-none"
+                />
+              ) : (
+                <span
+                  className="text-xs text-gray-400 cursor-pointer hover:text-gray-200"
+                  title="Double-click to enter power value"
+                  onDoubleClick={() => { setLocalPower(String(multiPower ?? '')); setEditingPower(true); }}
+                >{multiPower !== null ? `${multiPower}%` : 'mixed'}</span>
+              )}
+            </div>
+            <input
+              type="range"
+              value={multiPower ?? 50}
+              min={0}
+              max={100}
+              onChange={e => onChange({ power: Number(e.target.value) })}
+              className={`w-full accent-orange-500 ${multiPower === null ? 'opacity-40' : ''}`}
+            />
+          </div>
+
+          {/* Passes */}
+          <div>
+            <label className="text-xs text-gray-500 uppercase">Passes</label>
+            <input
+              type="number"
+              value={multiPasses ?? ''}
+              placeholder={multiPasses === null ? 'mixed' : undefined}
+              min={1}
+              max={20}
+              onChange={e => { if (e.target.value) onChange({ passes: Number(e.target.value) }); }}
+              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+            />
+          </div>
+
+          {/* Z Offset */}
+          <div>
+            <label className="text-xs text-gray-500 uppercase">Z Offset (mm)</label>
+            <input
+              type="number"
+              value={multiZOffset ?? ''}
+              placeholder={multiZOffset === null ? 'mixed' : undefined}
+              step={0.1}
+              onChange={e => { if (e.target.value !== '') onChange({ zOffset: Number(e.target.value) }); }}
+              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+            />
+          </div>
+
+          {/* Engrave fill settings — shown when any selected op is engrave */}
+          {anyEngrave && (
+            <>
+              <div className="pt-1 border-t border-gray-800">
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Fill Engrave Settings</p>
+                <p className="text-xs text-gray-600 mb-2">Controls hatch-fill for shapes with a fill colour.</p>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 uppercase">Line Interval (mm)</label>
+                <input
+                  type="number"
+                  value={multiLineInterval ?? ''}
+                  placeholder={multiLineInterval === null ? 'mixed' : undefined}
+                  min={0.01}
+                  max={10}
+                  step={0.01}
+                  onChange={e => { if (e.target.value) onChange({ engraveLineInterval: Number(e.target.value) }); }}
+                  className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 uppercase">Line Angle (°)</label>
+                <input
+                  type="number"
+                  value={multiLineAngle ?? ''}
+                  placeholder={multiLineAngle === null ? 'mixed' : undefined}
+                  min={0}
+                  max={359}
+                  step={1}
+                  onChange={e => { if (e.target.value !== '') onChange({ engraveLineAngle: Number(e.target.value) }); }}
+                  className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+                />
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ─── Operation Row (compact: header + assigned layers only) ─── */
+
 interface OperationRowProps {
   op: Operation;
-  onChange: (updated: Partial<Operation>) => void;
   onRemove: () => void;
   onToggleEnabled: () => void;
   onDuplicate: () => void;
-  presets: MaterialPreset[];
+  onRename: (label: string | undefined) => void;
   layers: Layer[];
   onAssignLayer: (layerId: string) => void;
   onUnassignLayer: (layerId: string) => void;
@@ -41,23 +248,14 @@ interface OperationRowProps {
   isLayerHighlighted: boolean;
 }
 
-function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, presets, layers, onAssignLayer, onUnassignLayer, onDragStart, onDragOver, onDrop, isDragOver, expanded, onToggleExpanded, isSelected, onSelect, isLayerHighlighted }: OperationRowProps) {
+function OperationRow({ op, onRemove, onToggleEnabled, onDuplicate, onRename, layers, onAssignLayer, onUnassignLayer, onDragStart, onDragOver, onDrop, isDragOver, expanded, onToggleExpanded, isSelected, onSelect, isLayerHighlighted }: OperationRowProps) {
   const [editingLabel, setEditingLabel] = useState(false);
   const [localLabel, setLocalLabel] = useState(op.label ?? '');
-  const [editingPower, setEditingPower] = useState(false);
-  const [localPower, setLocalPower] = useState(String(op.power));
 
   const commitLabel = () => {
     const trimmed = localLabel.trim();
-    onChange({ label: trimmed || undefined });
+    onRename(trimmed || undefined);
     setEditingLabel(false);
-  };
-
-  const commitPower = () => {
-    const val = Math.max(0, Math.min(100, Math.round(Number(localPower) || 0)));
-    onChange({ power: val });
-    setLocalPower(String(val));
-    setEditingPower(false);
   };
 
   return (
@@ -121,10 +319,9 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
         </div>
       </div>
 
-      {/* Body */}
+      {/* Body — assigned layers only */}
       {expanded && (
         <div className="px-3 py-3 bg-gray-900 space-y-3">
-          {/* Assigned layers */}
           <div>
             <label className="text-xs text-gray-500 uppercase">Assigned Layers</label>
             <div className="mt-1 space-y-1">
@@ -155,156 +352,6 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
               </select>
             )}
           </div>
-
-          {/* Type */}
-          <div>
-            <label className="text-xs text-gray-500 uppercase">Type</label>
-            <div className="flex gap-1 mt-1">
-              {(['cut', 'engrave', 'ignore'] as OperationType[]).map(t => (
-                <button
-                  key={t}
-                  onClick={() => onChange({ type: t })}
-                  className={`flex-1 py-1 text-xs rounded font-semibold transition-colors ${
-                    op.type === t
-                      ? 'bg-orange-500 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                >{t}</button>
-              ))}
-            </div>
-          </div>
-
-          {op.type !== 'ignore' && (
-            <>
-              {/* Material preset quick-apply */}
-              {presets.length > 0 && (
-                <div>
-                  <label className="text-xs text-gray-500 uppercase">Material Preset</label>
-                  <select
-                    value=""
-                    onChange={e => {
-                      const preset = presets.find(p => p.id === e.target.value);
-                      if (!preset) return;
-                      const settings = op.type === 'engrave' ? preset.engrave : preset.cutThin;
-                      onChange({ feedRate: settings.feedRate, power: settings.power, label: preset.name });
-                    }}
-                    className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
-                  >
-                    <option value="">— Apply preset —</option>
-                    {presets.map(p => (
-                      <option key={p.id} value={p.id}>{p.name} ({p.thickness}mm)</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Feed rate */}
-              <div>
-                <label className="text-xs text-gray-500 uppercase">Feed Rate (mm/min)</label>
-                <input
-                  type="number"
-                  value={op.feedRate}
-                  min={1}
-                  max={10000}
-                  onChange={e => onChange({ feedRate: Number(e.target.value) })}
-                  className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
-                />
-              </div>
-
-              {/* Power */}
-              <div>
-                <div className="flex justify-between">
-                  <label className="text-xs text-gray-500 uppercase">Power (%)</label>
-                  {editingPower ? (
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={localPower}
-                      onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalPower(v); }}
-                      onBlur={commitPower}
-                      onFocus={e => e.currentTarget.select()}
-                      onKeyDown={e => { if (e.key === 'Enter') commitPower(); if (e.key === 'Escape') { setEditingPower(false); setLocalPower(String(op.power)); } }}
-                      autoFocus
-                      className="w-14 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-right focus:outline-none"
-                    />
-                  ) : (
-                    <span
-                      className="text-xs text-gray-400 cursor-pointer hover:text-gray-200"
-                      title="Double-click to enter power value"
-                      onDoubleClick={() => { setLocalPower(String(op.power)); setEditingPower(true); }}
-                    >{op.power}%</span>
-                  )}
-                </div>
-                <input
-                  type="range"
-                  value={op.power}
-                  min={0}
-                  max={100}
-                  onChange={e => onChange({ power: Number(e.target.value) })}
-                  className="w-full accent-orange-500"
-                />
-              </div>
-
-              {/* Passes */}
-              <div>
-                <label className="text-xs text-gray-500 uppercase">Passes</label>
-                <input
-                  type="number"
-                  value={op.passes}
-                  min={1}
-                  max={20}
-                  onChange={e => onChange({ passes: Number(e.target.value) })}
-                  className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
-                />
-              </div>
-
-              {/* Z offset */}
-              <div>
-                <label className="text-xs text-gray-500 uppercase">Z Offset (mm)</label>
-                <input
-                  type="number"
-                  value={op.zOffset ?? 0}
-                  step={0.1}
-                  onChange={e => onChange({ zOffset: Number(e.target.value) })}
-                  className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
-                />
-              </div>
-
-              {/* Engrave fill settings — only shown for engrave operations */}
-              {op.type === 'engrave' && (
-                <>
-                  <div className="pt-1 border-t border-gray-800">
-                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Fill Engrave Settings</p>
-                    <p className="text-xs text-gray-600 mb-2">Controls hatch-fill for shapes with a fill colour.</p>
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 uppercase">Line Interval (mm)</label>
-                    <input
-                      type="number"
-                      value={op.engraveLineInterval ?? 0.1}
-                      min={0.01}
-                      max={10}
-                      step={0.01}
-                      onChange={e => onChange({ engraveLineInterval: Number(e.target.value) })}
-                      className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 uppercase">Line Angle (°)</label>
-                    <input
-                      type="number"
-                      value={op.engraveLineAngle ?? 0}
-                      min={0}
-                      max={359}
-                      step={1}
-                      onChange={e => onChange({ engraveLineAngle: Number(e.target.value) })}
-                      className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
-                    />
-                  </div>
-                </>
-              )}
-            </>
-          )}
         </div>
       )}
     </div>
@@ -420,20 +467,8 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
   const hasEnabledOps = operations.some(o => o.enabled);
   const gcodeUpToDate = project.gcodeUpToDate === true && !!project.gcode;
 
-  // Multi-select parameter panel: compute shared values
+  // Selected operations for the params panel (shown when 1+ ops selected)
   const selectedOps = operations.filter(o => selectedOpIds.has(o.id));
-  const multiType = selectedOps.length >= 2
-    ? (selectedOps.every(o => o.type === selectedOps[0].type) ? selectedOps[0].type : null)
-    : null;
-  const multiFeedRate = selectedOps.length >= 2
-    ? (selectedOps.every(o => o.feedRate === selectedOps[0].feedRate) ? selectedOps[0].feedRate : null)
-    : null;
-  const multiPower = selectedOps.length >= 2
-    ? (selectedOps.every(o => o.power === selectedOps[0].power) ? selectedOps[0].power : null)
-    : null;
-  const multiPasses = selectedOps.length >= 2
-    ? (selectedOps.every(o => o.passes === selectedOps[0].passes) ? selectedOps[0].passes : null)
-    : null;
 
   const applyToSelected = (partial: Partial<Operation>) => {
     for (const id of selectedOpIds) {
@@ -461,7 +496,6 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
             <OperationRow
               key={op.id}
               op={op}
-              onChange={partial => updateOperation(op.id, partial)}
               onRemove={() => removeOperation(op.id)}
               onToggleEnabled={() => toggleOperationEnabled(op.id)}
               onDuplicate={() => {
@@ -472,7 +506,7 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
                   setSelectedOpIds(new Set([newId]));
                 }
               }}
-              presets={presets}
+              onRename={label => updateOperation(op.id, { label })}
               layers={layers}
               onAssignLayer={layerId => assignLayerToOperation(op.id, layerId)}
               onUnassignLayer={layerId => unassignLayerFromOperation(op.id, layerId)}
@@ -491,72 +525,14 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
         )}
       </div>
 
-      {/* Multi-select parameter panel */}
-      {selectedOps.length >= 2 && (
-        <div className="px-3 py-3 border-t border-gray-700 bg-gray-900 space-y-2">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">
-            Bulk Edit — {selectedOps.length} operations
-          </p>
-
-          {/* Type */}
-          <div>
-            <label className="text-xs text-gray-500 uppercase">Type</label>
-            <div className="flex gap-1 mt-1">
-              {(['cut', 'engrave', 'ignore'] as OperationType[]).map(t => (
-                <button
-                  key={t}
-                  onClick={() => applyToSelected({ type: t })}
-                  className={`flex-1 py-1 text-xs rounded font-semibold transition-colors ${
-                    multiType === t
-                      ? 'bg-orange-500 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                >{t}</button>
-              ))}
-            </div>
-          </div>
-
-          {/* Feed rate */}
-          <div>
-            <label className="text-xs text-gray-500 uppercase">Feed Rate (mm/min)</label>
-            <input
-              type="number"
-              value={multiFeedRate ?? ''}
-              placeholder={multiFeedRate === null ? 'mixed' : undefined}
-              min={1}
-              max={10000}
-              onChange={e => { if (e.target.value) applyToSelected({ feedRate: Number(e.target.value) }); }}
-              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
-            />
-          </div>
-
-          {/* Power */}
-          <div>
-            <label className="text-xs text-gray-500 uppercase">Power (%)</label>
-            <input
-              type="range"
-              value={multiPower ?? 50}
-              min={0}
-              max={100}
-              onChange={e => applyToSelected({ power: Number(e.target.value) })}
-              className={`w-full accent-orange-500 ${multiPower === null ? 'opacity-40' : ''}`}
-            />
-            <span className="text-xs text-gray-400">{multiPower !== null ? `${multiPower}%` : 'mixed — drag to set all'}</span>
-          </div>
-
-          {/* Passes */}
-          <div>
-            <label className="text-xs text-gray-500 uppercase">Passes</label>
-            <input
-              type="number"
-              value={multiPasses ?? ''}
-              placeholder={multiPasses === null ? 'mixed' : undefined}
-              min={1}
-              max={20}
-              onChange={e => { if (e.target.value) applyToSelected({ passes: Number(e.target.value) }); }}
-              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
-            />
-          </div>
+      {/* Separate parameters panel — shown when 1+ operations are selected */}
+      {selectedOps.length >= 1 && (
+        <div className="flex-shrink-0 border-t border-gray-700 bg-gray-900 px-3 py-3 overflow-y-auto" style={{ maxHeight: '50%' }}>
+          <OperationParamsPanel
+            selectedOps={selectedOps}
+            presets={presets}
+            onChange={applyToSelected}
+          />
         </div>
       )}
 
