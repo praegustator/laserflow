@@ -20,18 +20,26 @@ const IDENTITY_TRANSFORM: PathTransform = { offsetX: 0, offsetY: 0, scaleX: 1, s
  */
 export function fillBrightness(fill: string | undefined): number | null {
   if (!fill) return null;
-  const hex = fill.trim();
+  const s = fill.trim();
   let r: number, g: number, b: number;
-  if (/^#[0-9a-f]{6}$/i.test(hex)) {
-    r = parseInt(hex.slice(1, 3), 16);
-    g = parseInt(hex.slice(3, 5), 16);
-    b = parseInt(hex.slice(5, 7), 16);
-  } else if (/^#[0-9a-f]{3}$/i.test(hex)) {
-    r = parseInt(hex[1] + hex[1], 16);
-    g = parseInt(hex[2] + hex[2], 16);
-    b = parseInt(hex[3] + hex[3], 16);
+  if (/^#[0-9a-f]{6}$/i.test(s)) {
+    r = parseInt(s.slice(1, 3), 16);
+    g = parseInt(s.slice(3, 5), 16);
+    b = parseInt(s.slice(5, 7), 16);
+  } else if (/^#[0-9a-f]{3}$/i.test(s)) {
+    r = parseInt(s[1] + s[1], 16);
+    g = parseInt(s[2] + s[2], 16);
+    b = parseInt(s[3] + s[3], 16);
   } else {
-    return null;
+    // Try rgb(r, g, b) / rgb(r g b) functional notation
+    const rgbMatch = s.match(/^rgb\(\s*(\d{1,3})\s*[,\s]\s*(\d{1,3})\s*[,\s]\s*(\d{1,3})\s*\)$/i);
+    if (rgbMatch) {
+      r = parseInt(rgbMatch[1], 10);
+      g = parseInt(rgbMatch[2], 10);
+      b = parseInt(rgbMatch[3], 10);
+    } else {
+      return null;
+    }
   }
   // ITU-R BT.601 luma
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255;

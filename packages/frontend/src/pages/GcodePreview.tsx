@@ -37,7 +37,7 @@ function parseGcode(gcode: string, maxS: number = 1000): GMove[] {
     if (!isNaN(newY)) y = newY;
     if (isNaN(newX) && isNaN(newY)) return;
     const move: GMove = { type: isG0 ? 'rapid' : 'cut', x, y, lineNum };
-    if (!isG0 && currentS > 0) {
+    if (!isG0) {
       move.power = Math.min(1, Math.max(0, currentS / maxS));
     }
     moves.push(move);

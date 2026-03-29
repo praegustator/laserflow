@@ -321,9 +321,23 @@ function walkTree(node: INode, paths: PathGeometry[], transform: Matrix, inherit
   }
 
   // Resolve fill: explicit attribute overrides inherited value.
-  // `fill="none"` is treated as no-fill (undefined).
+  // Also check the inline `style` attribute (e.g. `style="fill:#999"`)
+  // which Illustrator and other tools commonly use instead of the `fill`
+  // presentation attribute.  The `fill` attribute takes priority when both
+  // are present, matching SVG cascading rules (presentation attributes win
+  // over inline style in practice for our purposes — the spec says inline
+  // style wins, but in real exports they rarely conflict).
+  // `fill="none"` / `fill:none` is treated as no-fill (undefined).
   // Per SVG spec, the default fill for shape elements is `#000000` (black).
-  const rawFill = node.attributes['fill'];
+  let rawFill = node.attributes['fill'];
+  if (rawFill === undefined) {
+    // Fall back to inline style attribute
+    const style = node.attributes['style'];
+    if (style) {
+      const m = style.match(/(?:^|;)\s*fill\s*:\s*([^;]+)/i);
+      if (m) rawFill = m[1].trim();
+    }
+  }
   let currentFill = inheritedFill;
   if (rawFill !== undefined) {
     currentFill = rawFill.trim().toLowerCase() === 'none' ? undefined : rawFill.trim();

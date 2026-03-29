@@ -535,6 +535,17 @@ describe('fillBrightness', () => {
     expect(fillBrightness(undefined)).toBeNull();
     expect(fillBrightness('')).toBeNull();
   });
+
+  it('handles rgb() colour format', () => {
+    expect(fillBrightness('rgb(0,0,0)')).toBeCloseTo(0);
+    expect(fillBrightness('rgb(255,255,255)')).toBeCloseTo(1);
+    expect(fillBrightness('rgb(153,153,153)')).toBeCloseTo(0.6, 1);
+  });
+
+  it('handles rgb() with spaces', () => {
+    expect(fillBrightness('rgb( 0 , 0 , 0 )')).toBeCloseTo(0);
+    expect(fillBrightness('rgb(255, 255, 255)')).toBeCloseTo(1);
+  });
 });
 
 describe('raster image engraving', () => {
