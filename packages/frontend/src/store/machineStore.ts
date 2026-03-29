@@ -25,6 +25,7 @@ interface MachineStore {
   handleUnexpectedDisconnect: () => void;
   sendCommand: (command: string) => Promise<void>;
   addConsoleEntry: (entry: Omit<ConsoleEntry, 'id' | 'timestamp'>) => void;
+  clearConsoleLog: () => void;
   setMachineState: (state: Partial<MachineState>) => void;
   setSelectedPort: (port: string) => void;
   setBaudRate: (rate: number) => void;
@@ -134,6 +135,8 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
       consoleLog: [...s.consoleLog.slice(-499), newEntry],
     }));
   },
+
+  clearConsoleLog: () => set({ consoleLog: [] }),
 
   setMachineState: (partial) => {
     set((s) => {

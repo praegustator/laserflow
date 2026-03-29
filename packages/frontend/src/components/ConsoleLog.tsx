@@ -3,6 +3,8 @@ import { useMachineStore } from '../store/machineStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import type { ConsoleEntry } from '../types';
 import { grblErrorDescription } from '../utils/grblCodes';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faArrowsDownToLine, faTrash } from '@fortawesome/free-solid-svg-icons';
 
 function EntryRow({ entry }: { entry: ConsoleEntry }) {
   const time = new Date(entry.timestamp).toLocaleTimeString('en-US', {
@@ -44,7 +46,9 @@ type DirectionFilter = 'all' | 'in' | 'out';
 
 export default function ConsoleLog() {
   const consoleLog = useMachineStore((s) => s.consoleLog);
+  const clearConsoleLog = useMachineStore((s) => s.clearConsoleLog);
   const autoScrollConsole = useAppSettings((s) => s.autoScrollConsole);
+  const setAutoScrollConsole = useAppSettings((s) => s.setAutoScrollConsole);
   const containerRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
 
@@ -57,6 +61,12 @@ export default function ConsoleLog() {
     return true;
   });
 
+  /** Scroll container to the very bottom */
+  const scrollToBottom = () => {
+    const el = containerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  };
+
   // Track if user is near the bottom
   const handleScroll = () => {
     const el = containerRef.current;
@@ -66,13 +76,15 @@ export default function ConsoleLog() {
 
   useEffect(() => {
     if (!autoScrollConsole) return;
-    if (isAtBottomRef.current) {
-      const el = containerRef.current;
-      if (el) {
-        el.scrollTop = el.scrollHeight;
-      }
-    }
+    if (isAtBottomRef.current) scrollToBottom();
   }, [consoleLog, autoScrollConsole]);
+
+  const handleToggleAutoScroll = () => {
+    const next = !autoScrollConsole;
+    setAutoScrollConsole(next);
+    // Immediately jump to bottom when enabling
+    if (next) scrollToBottom();
+  };
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -102,6 +114,28 @@ export default function ConsoleLog() {
           ))}
         </div>
         <span className="text-xs text-gray-600">{filteredLog.length}/{consoleLog.length}</span>
+        {/* Auto-scroll toggle */}
+        <button
+          onClick={handleToggleAutoScroll}
+          title={autoScrollConsole ? 'Auto-scroll on — click to disable' : 'Auto-scroll off — click to enable'}
+          className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${
+            autoScrollConsole
+              ? 'bg-orange-500 text-white'
+              : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+          }`}
+        >
+          <FontAwesomeIcon icon={faArrowsDownToLine} />
+          <span>Auto</span>
+        </button>
+        {/* Clear all */}
+        <button
+          onClick={clearConsoleLog}
+          title="Clear all console output"
+          className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-gray-700 text-gray-400 hover:bg-red-900/60 hover:text-red-300 transition-colors"
+        >
+          <FontAwesomeIcon icon={faTrash} />
+          <span>Clear</span>
+        </button>
       </div>
 
       {/* Log entries */}

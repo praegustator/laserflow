@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 export type OriginPosition = 'bottom-left' | 'top-left';
+export type ProjectsViewMode = 'card' | 'table';
 
 interface AppSettings {
   backendUrl: string;
@@ -15,6 +16,8 @@ interface AppSettings {
   autoPanOnLayerSelect: boolean;
   /** Calibrated display scale (px per mm). When set, zoom % is shown relative to this value so that 100 % = real physical size. */
   calibratedPxPerMm: number | null;
+  /** Last used view mode on the Projects page ('card' or 'table'). */
+  projectsViewMode: ProjectsViewMode;
   setBackendUrl: (url: string) => void;
   setOriginPosition: (pos: OriginPosition) => void;
   setWorkAreaWidth: (w: number) => void;
@@ -25,6 +28,7 @@ interface AppSettings {
   setAutoZoomOnLayerSelect: (v: boolean) => void;
   setAutoPanOnLayerSelect: (v: boolean) => void;
   setCalibratedPxPerMm: (v: number | null) => void;
+  setProjectsViewMode: (v: ProjectsViewMode) => void;
 }
 
 export const useAppSettings = create<AppSettings>()(
@@ -40,6 +44,7 @@ export const useAppSettings = create<AppSettings>()(
       autoZoomOnLayerSelect: false,
       autoPanOnLayerSelect: true,
       calibratedPxPerMm: null,
+      projectsViewMode: 'card',
       setBackendUrl: (url) => set({ backendUrl: url }),
       setOriginPosition: (pos) => set({ originPosition: pos }),
       setWorkAreaWidth: (w) => set({ workAreaWidth: w }),
@@ -50,6 +55,7 @@ export const useAppSettings = create<AppSettings>()(
       setAutoZoomOnLayerSelect: (v) => set({ autoZoomOnLayerSelect: v }),
       setAutoPanOnLayerSelect: (v) => set({ autoPanOnLayerSelect: v }),
       setCalibratedPxPerMm: (v) => set({ calibratedPxPerMm: v }),
+      setProjectsViewMode: (v) => set({ projectsViewMode: v }),
     }),
     { name: 'laserflow-settings' },
   ),
