@@ -49,8 +49,9 @@ export class JobExecutionEngine extends EventEmitter {
       }
 
       if (resp.type === 'error' && this.currentJob) {
+        const jobId = this.currentJob.id;
         this.emit('jobError', {
-          jobId: this.currentJob.id,
+          jobId,
           error: line,
           failedGcodeLineNumber: sentRecord?.lineNumber,
           failedGcodeLineContent: sentRecord?.content,
@@ -59,7 +60,9 @@ export class JobExecutionEngine extends EventEmitter {
 
         // Safety: immediately turn off the laser/spindle so it does not
         // keep burning in one spot after motion has stopped.
-        serialManager.sendCommand('M5').catch(() => {});
+        serialManager.sendCommand('M5').catch((e) => {
+          this.emit('jobError', { jobId, error: `Failed to send M5 after GRBL error: ${e}` });
+        });
 
         this.currentJob = null;
         this.lines = [];

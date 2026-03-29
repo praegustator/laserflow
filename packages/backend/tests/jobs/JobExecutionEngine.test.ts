@@ -40,15 +40,15 @@ describe('JobExecutionEngine', () => {
 
     await engine.start(job);
 
-    // The engine should have sent commands via sendCommand.
+    // Record how many sendCommand calls happened before the error
+    const callCountBeforeError = mockSerialManager.sendCommand.mock.calls.length;
+
     // Now simulate GRBL responding with an error for the first command.
     mockSerialManager.emit('data', 'error:24');
 
-    // Verify M5 was sent to turn off the laser
-    const m5Calls = mockSerialManager.sendCommand.mock.calls.filter(
-      (call: string[]) => call[0] === 'M5'
-    );
-    expect(m5Calls.length).toBeGreaterThanOrEqual(1);
+    // Verify M5 was sent after the error (not during startup)
+    const callsAfterError = mockSerialManager.sendCommand.mock.calls.slice(callCountBeforeError);
+    expect(callsAfterError).toContainEqual(['M5']);
 
     // Verify the error event was emitted
     expect(errorHandler).toHaveBeenCalledWith(

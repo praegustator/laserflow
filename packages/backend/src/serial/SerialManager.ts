@@ -120,7 +120,7 @@ class SerialManager extends EventEmitter {
    */
   writeRealtime(char: string): void {
     if (!this.port?.isOpen) return;
-    this.port.write(char, () => {});
+    this.port.write(char[0], () => {});
   }
 
   getStatus(): ConnectionStatus {
