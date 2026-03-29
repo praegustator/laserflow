@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
 import type { Layer, Operation, MachineProfile } from '../types';
 import { computeShapesBoundingBox, computeMultiLayerWorldBBox } from '../utils/geometry';
 import { useAppSettings } from '../store/appSettingsStore';
@@ -8,6 +8,24 @@ export interface TransformPreview {
   deltaX: number;
   deltaY: number;
   deltaRotation: number;
+}
+
+/** Bounding box type used for fitLayers */
+export interface BBox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  width: number;
+  height: number;
+}
+
+/** Imperative handle exposed via ref */
+export interface SvgCanvasHandle {
+  fitAll: () => void;
+  fitLayers: (bbox: BBox) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
 }
 
 interface Props {
@@ -37,7 +55,7 @@ const GRID_SPACING = 10; // mm
 /** Degrees of rotation per pixel of horizontal mouse drag */
 const ROTATE_SENSITIVITY = 0.5;
 
-export default function SvgCanvas({ layers, operations, selectedLayerIds, selectedShapeIds, onSelectLayer, onSelectShape, onUpdateLayer, originPosition, machineProfile, transformPreview }: Props) {
+export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, operations, selectedLayerIds, selectedShapeIds, onSelectLayer, onSelectShape, onUpdateLayer, originPosition, machineProfile, transformPreview }, ref) {
   const settingsWorkW = useAppSettings(s => s.workAreaWidth);
   const settingsWorkH = useAppSettings(s => s.workAreaHeight);
   const workW = machineProfile?.workArea.x ?? settingsWorkW;
@@ -68,6 +86,54 @@ export default function SvgCanvas({ layers, operations, selectedLayerIds, select
       scale,
     });
   }, [workW, workH]);
+
+  useImperativeHandle(ref, () => ({
+    fitAll() {
+      const el = svgRef.current;
+      if (!el) return;
+      const { width, height } = el.getBoundingClientRect();
+      const scaleX = (width - 80) / workW;
+      const scaleY = (height - 80) / workH;
+      const scale = Math.min(scaleX, scaleY);
+      setTransform({
+        tx: (width - workW * scale) / 2,
+        ty: (height - workH * scale) / 2,
+        scale,
+      });
+    },
+    fitLayers(bbox: BBox) {
+      const el = svgRef.current;
+      if (!el || bbox.width === 0 || bbox.height === 0) return;
+      const { width, height } = el.getBoundingClientRect();
+      const pad = 60;
+      const scale = Math.min((width - pad * 2) / bbox.width, (height - pad * 2) / bbox.height, 50);
+      setTransform({
+        tx: (width - bbox.width * scale) / 2 - bbox.minX * scale,
+        ty: (height - bbox.height * scale) / 2 - bbox.minY * scale,
+        scale,
+      });
+    },
+    zoomIn() {
+      setTransform(t => {
+        const el = svgRef.current;
+        const newScale = Math.min(50, t.scale * 1.25);
+        if (!el) return { ...t, scale: newScale };
+        const { width, height } = el.getBoundingClientRect();
+        const cx = width / 2, cy = height / 2;
+        return { scale: newScale, tx: cx - (cx - t.tx) * (newScale / t.scale), ty: cy - (cy - t.ty) * (newScale / t.scale) };
+      });
+    },
+    zoomOut() {
+      setTransform(t => {
+        const el = svgRef.current;
+        const newScale = Math.max(0.1, t.scale * 0.8);
+        if (!el) return { ...t, scale: newScale };
+        const { width, height } = el.getBoundingClientRect();
+        const cx = width / 2, cy = height / 2;
+        return { scale: newScale, tx: cx - (cx - t.tx) * (newScale / t.scale), ty: cy - (cy - t.ty) * (newScale / t.scale) };
+      });
+    },
+  }), [workW, workH]);
 
   const onWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -379,4 +445,4 @@ export default function SvgCanvas({ layers, operations, selectedLayerIds, select
       </text>
     </svg>
   );
-}
+});

@@ -3,13 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import type { Operation, OperationType, Layer, MaterialPreset, Project } from '../types';
 import { useProjectStore } from '../store/projectStore';
 import { useToastStore } from '../store/toastStore';
-import { useMachineStore } from '../store/machineStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { api } from '../api/client';
-import { computeBoundingBox } from '../utils/geometry';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCircle as faCircleSolid, faTrash, faClone, faChevronUp, faChevronDown, faGears, faEye, faBorderAll } from '@fortawesome/free-solid-svg-icons';
-import { faCircle as faCircleRegular } from '@fortawesome/free-regular-svg-icons';
+import { faToggleOn, faToggleOff, faTrash, faClone, faChevronUp, faChevronDown, faGears, faEye } from '@fortawesome/free-solid-svg-icons';
 
 const OP_TYPE_LABELS: Record<OperationType, string> = {
   cut: '✂ Cut',
@@ -41,9 +38,10 @@ interface OperationRowProps {
   onToggleExpanded: () => void;
   isSelected: boolean;
   onSelect: (e: React.MouseEvent) => void;
+  isLayerHighlighted: boolean;
 }
 
-function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, presets, layers, onAssignLayer, onUnassignLayer, onDragStart, onDragOver, onDrop, isDragOver, expanded, onToggleExpanded, isSelected, onSelect }: OperationRowProps) {
+function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, presets, layers, onAssignLayer, onUnassignLayer, onDragStart, onDragOver, onDrop, isDragOver, expanded, onToggleExpanded, isSelected, onSelect, isLayerHighlighted }: OperationRowProps) {
   const [editingLabel, setEditingLabel] = useState(false);
   const [localLabel, setLocalLabel] = useState(op.label ?? '');
   const [editingPower, setEditingPower] = useState(false);
@@ -64,7 +62,7 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
 
   return (
     <div
-      className={`border rounded-lg overflow-hidden transition-colors ${op.enabled ? 'border-gray-700' : 'border-gray-800 opacity-60'} ${isDragOver ? 'border-orange-400 border-dashed' : ''} ${isSelected ? 'ring-1 ring-orange-500' : ''}`}
+      className={`border rounded-lg overflow-hidden transition-colors ${op.enabled ? 'border-gray-700' : 'border-gray-800 opacity-60'} ${isDragOver ? 'border-orange-400 border-dashed' : ''} ${isSelected ? 'ring-1 ring-orange-500' : isLayerHighlighted ? 'ring-1 ring-blue-500/60' : ''}`}
       onClick={onSelect}
       onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOver(op.id); }}
       onDrop={e => { e.preventDefault(); onDrop(); }}
@@ -79,15 +77,15 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
         <span className="text-xs text-gray-600 select-none mr-0.5">⠿</span>
         <button
           onClick={onToggleEnabled}
-          className={`text-xs w-6 text-center flex-shrink-0 ${op.enabled ? 'text-green-400' : 'text-gray-600'}`}
+          className={`text-xs w-6 text-center flex-shrink-0 ${op.enabled ? 'text-orange-400' : 'text-gray-600'}`}
           title={op.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable'}
-        ><FontAwesomeIcon icon={op.enabled ? faCircleSolid : faCircleRegular} /></button>
+        ><FontAwesomeIcon icon={op.enabled ? faToggleOn : faToggleOff} /></button>
 
         <button
           onClick={(e) => { e.stopPropagation(); onToggleExpanded(); }}
           className="flex-1 flex items-center gap-2 text-left min-w-0"
         >
-          <span className={`text-sm font-semibold ${OP_COLORS[op.type]}`}>
+          <span className={`text-sm font-semibold whitespace-nowrap ${OP_COLORS[op.type]}`}>
             {OP_TYPE_LABELS[op.type]}
           </span>
           {editingLabel ? (
@@ -219,12 +217,12 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
                   <label className="text-xs text-gray-500 uppercase">Power (%)</label>
                   {editingPower ? (
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="numeric"
                       value={localPower}
-                      min={0}
-                      max={100}
-                      onChange={e => setLocalPower(e.target.value)}
+                      onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalPower(v); }}
                       onBlur={commitPower}
+                      onFocus={e => e.currentTarget.select()}
                       onKeyDown={e => { if (e.key === 'Enter') commitPower(); if (e.key === 'Escape') { setEditingPower(false); setLocalPower(String(op.power)); } }}
                       autoFocus
                       className="w-14 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-right focus:outline-none"
@@ -316,11 +314,11 @@ function OperationRow({ op, onChange, onRemove, onToggleEnabled, onDuplicate, pr
 interface Props {
   project: Project;
   layers: Layer[];
-  originPosition: string;
   selectedLayerIds?: Set<string>;
+  onSelectedOpIdsChange?: (layerIds: Set<string>) => void;
 }
 
-export default function OperationsPanel({ project, layers, originPosition, selectedLayerIds }: Props) {
+export default function OperationsPanel({ project, layers, selectedLayerIds, onSelectedOpIdsChange }: Props) {
   const addOperation = useProjectStore(s => s.addOperation);
   const addOperationForLayers = useProjectStore(s => s.addOperationForLayers);
   const updateOperation = useProjectStore(s => s.updateOperation);
@@ -332,8 +330,8 @@ export default function OperationsPanel({ project, layers, originPosition, selec
   const duplicateOperation = useProjectStore(s => s.duplicateOperation);
   const compileJob = useProjectStore(s => s.compileJob);
   const addToast = useToastStore(s => s.addToast);
-  const connectionStatus = useMachineStore(s => s.connectionStatus);
-  const sendCommand = useMachineStore(s => s.sendCommand);
+  const singleExpandedOp = useAppSettings(s => s.singleExpandedOp);
+  const originPosition = useAppSettings(s => s.originPosition);
   const workAreaHeight = useAppSettings(s => s.workAreaHeight);
   const navigate = useNavigate();
   const [generating, setGenerating] = useState(false);
@@ -349,6 +347,18 @@ export default function OperationsPanel({ project, layers, originPosition, selec
       .catch(() => { console.warn('Failed to load material presets'); });
   }, []);
 
+  // Notify parent of layer IDs referenced by currently selected ops (for cross-highlighting)
+  useEffect(() => {
+    if (!onSelectedOpIdsChange) return;
+    const layerIds = new Set<string>();
+    for (const op of project.operations) {
+      if (selectedOpIds.has(op.id)) {
+        op.layerIds.forEach(lid => layerIds.add(lid));
+      }
+    }
+    onSelectedOpIdsChange(layerIds);
+  }, [selectedOpIds, project.operations, onSelectedOpIdsChange]);
+
   const handleDragStart = (id: string) => { dragOpId.current = id; };
   const handleDragOver = (id: string) => { setDragOverId(id); };
   const handleDrop = () => {
@@ -362,6 +372,10 @@ export default function OperationsPanel({ project, layers, originPosition, selec
 
   const toggleExpanded = (id: string) => {
     setExpandedOpIds(prev => {
+      if (singleExpandedOp) {
+        // In single-expand mode: opening an op collapses all others
+        return prev.has(id) ? new Set<string>() : new Set([id]);
+      }
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
@@ -399,68 +413,6 @@ export default function OperationsPanel({ project, layers, originPosition, selec
       addToast('error', err instanceof Error ? err.message : 'Failed to generate G-code');
     } finally {
       setGenerating(false);
-    }
-  };
-
-  /** Trace the bounding-box frame of all enabled-operation geometry with laser off. */
-  const handleTraceFrame = async () => {
-    const enabledOps = project.operations.filter(o => o.enabled && o.type !== 'ignore');
-    if (enabledOps.length === 0) {
-      addToast('error', 'No enabled operations');
-      return;
-    }
-
-    // Compute the bounding box of all operation geometry with layer transforms applied
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    let hasGeometry = false;
-    for (const op of enabledOps) {
-      for (const layerId of op.layerIds) {
-        const layer = layers.find(l => l.id === layerId);
-        if (!layer || layer.shapes.length === 0) continue;
-        const layerBbox = computeBoundingBox(layer.shapes.map(s => ({ d: s.d })));
-        if (!layerBbox) continue;
-        hasGeometry = true;
-        // Transform the four corners of the layer bbox through the layer transform
-        const corners = [
-          [layerBbox.minX, layerBbox.minY],
-          [layerBbox.maxX, layerBbox.minY],
-          [layerBbox.maxX, layerBbox.maxY],
-          [layerBbox.minX, layerBbox.maxY],
-        ];
-        for (const [cx, cy] of corners) {
-          const tx = layer.offsetX + cx * layer.scaleX;
-          let ty = layer.offsetY + cy * layer.scaleY;
-          if (originPosition === 'bottom-left') {
-            ty = workAreaHeight - ty;
-          }
-          if (tx < minX) minX = tx;
-          if (ty < minY) minY = ty;
-          if (tx > maxX) maxX = tx;
-          if (ty > maxY) maxY = ty;
-        }
-      }
-    }
-
-    if (!hasGeometry || !Number.isFinite(minX)) {
-      addToast('error', 'No geometry in enabled operations');
-      return;
-    }
-
-    const fmt = (n: number) => n.toFixed(3);
-    const feedRate = Math.max(...enabledOps.map(o => o.feedRate));
-
-    // Send G-code commands sequentially to trace the frame rectangle with laser off
-    try {
-      await sendCommand('M5');
-      await sendCommand('G90');
-      await sendCommand(`G0 X${fmt(minX)} Y${fmt(minY)}`);
-      await sendCommand(`G1 X${fmt(maxX)} Y${fmt(minY)} F${feedRate}`);
-      await sendCommand(`G1 X${fmt(maxX)} Y${fmt(maxY)} F${feedRate}`);
-      await sendCommand(`G1 X${fmt(minX)} Y${fmt(maxY)} F${feedRate}`);
-      await sendCommand(`G1 X${fmt(minX)} Y${fmt(minY)} F${feedRate}`);
-      addToast('success', 'Tracing job frame…');
-    } catch (err) {
-      addToast('error', err instanceof Error ? err.message : 'Failed to trace frame');
     }
   };
 
@@ -502,7 +454,10 @@ export default function OperationsPanel({ project, layers, originPosition, selec
             No operations. Add one below.
           </div>
         ) : (
-          operations.map((op) => (
+          operations.map((op) => {
+            const isOpSelected = selectedOpIds.has(op.id);
+            const isLayerHighlighted = !isOpSelected && !!selectedLayerIds && op.layerIds.some(lid => selectedLayerIds.has(lid));
+            return (
             <OperationRow
               key={op.id}
               op={op}
@@ -512,7 +467,10 @@ export default function OperationsPanel({ project, layers, originPosition, selec
               onDuplicate={() => {
                 const layerIds = selectedLayerIds ? Array.from(selectedLayerIds) : undefined;
                 const newId = duplicateOperation(op.id, layerIds);
-                if (newId) setExpandedOpIds(prev => new Set(prev).add(newId));
+                if (newId) {
+                  setExpandedOpIds(new Set([newId]));
+                  setSelectedOpIds(new Set([newId]));
+                }
               }}
               presets={presets}
               layers={layers}
@@ -524,10 +482,12 @@ export default function OperationsPanel({ project, layers, originPosition, selec
               isDragOver={dragOverId === op.id}
               expanded={expandedOpIds.has(op.id)}
               onToggleExpanded={() => toggleExpanded(op.id)}
-              isSelected={selectedOpIds.has(op.id)}
+              isSelected={isOpSelected}
               onSelect={(e) => handleSelectOp(op.id, e)}
+              isLayerHighlighted={isLayerHighlighted}
             />
-          ))
+            );
+          })
         )}
       </div>
 
@@ -610,7 +570,10 @@ export default function OperationsPanel({ project, layers, originPosition, selec
             } else {
               newId = addOperation();
             }
-            if (newId) setExpandedOpIds(prev => new Set(prev).add(newId));
+            if (newId) {
+              setExpandedOpIds(new Set([newId]));
+              setSelectedOpIds(new Set([newId]));
+            }
           }}
           className="w-full py-1.5 text-sm rounded border border-dashed border-gray-600 text-gray-400 hover:border-orange-500 hover:text-orange-400 transition-colors"
         >{selectedLayerIds && selectedLayerIds.size > 0
@@ -631,13 +594,6 @@ export default function OperationsPanel({ project, layers, originPosition, selec
             title={gcodeUpToDate ? 'Preview generated G-code' : 'Generate G-code first'}
           ><FontAwesomeIcon icon={faEye} className="mr-1" />Preview</button>
         </div>
-
-        <button
-          onClick={() => { void handleTraceFrame(); }}
-          disabled={!hasEnabledOps || connectionStatus !== 'connected'}
-          className="w-full py-1.5 text-sm rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 font-semibold transition-colors"
-          title="Trace the bounding box of all operation geometry with laser off"
-        ><FontAwesomeIcon icon={faBorderAll} className="mr-1" />Trace Frame</button>
 
         {project.gcode && (
           <p className={`text-xs text-center ${gcodeUpToDate ? 'text-green-400' : 'text-yellow-500'}`}>

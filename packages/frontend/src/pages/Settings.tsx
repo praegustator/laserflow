@@ -241,6 +241,10 @@ export default function Settings() {
   const setSafetyConfirmation = useAppSettings((s) => s.setSafetyConfirmation);
   const autoScrollConsole = useAppSettings((s) => s.autoScrollConsole);
   const setAutoScrollConsole = useAppSettings((s) => s.setAutoScrollConsole);
+  const autoZoomOnLayerSelect = useAppSettings((s) => s.autoZoomOnLayerSelect);
+  const setAutoZoomOnLayerSelect = useAppSettings((s) => s.setAutoZoomOnLayerSelect);
+  const singleExpandedOp = useAppSettings((s) => s.singleExpandedOp);
+  const setSingleExpandedOp = useAppSettings((s) => s.setSingleExpandedOp);
 
   const [pendingUrl, setPendingUrl] = useState(backendUrl);
   const [testStatus, setTestStatus] = useState<string | null>(null);
@@ -777,6 +781,32 @@ export default function Settings() {
               type="checkbox"
               checked={autoScrollConsole}
               onChange={e => setAutoScrollConsole(e.target.checked)}
+              className="accent-orange-500 w-4 h-4"
+            />
+          </div>
+          <div className="border-t border-gray-700" />
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm text-gray-200">Auto-zoom to selected layer</div>
+              <div className="text-xs text-gray-500">Pan and zoom the canvas to fit a layer when you select it</div>
+            </div>
+            <input
+              type="checkbox"
+              checked={autoZoomOnLayerSelect}
+              onChange={e => setAutoZoomOnLayerSelect(e.target.checked)}
+              className="accent-orange-500 w-4 h-4"
+            />
+          </div>
+          <div className="border-t border-gray-700" />
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm text-gray-200">Single expanded operation</div>
+              <div className="text-xs text-gray-500">Keep only one operation expanded at a time in the Operations panel</div>
+            </div>
+            <input
+              type="checkbox"
+              checked={singleExpandedOp}
+              onChange={e => setSingleExpandedOp(e.target.checked)}
               className="accent-orange-500 w-4 h-4"
             />
           </div>
