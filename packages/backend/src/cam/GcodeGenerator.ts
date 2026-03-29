@@ -403,6 +403,7 @@ export function rasterImageToGcode(
   // When a lineInterval is provided, use it for scan line spacing so that
   // raster images are engraved with the same density as SVG hatch fills.
   // Otherwise fall back to the natural pixel height.
+  // Note: if the interval is larger than the image height, numLines clamps to 1.
   const effectiveInterval = lineInterval && lineInterval > 0 ? lineInterval : pixelH;
   const numLines = Math.max(1, Math.round(bbox.h / effectiveInterval));
   const actualInterval = bbox.h / numLines;
@@ -411,7 +412,9 @@ export function rasterImageToGcode(
     const leftToRight = lineIdx % 2 === 0;
     const y = bbox.y + (lineIdx + 0.5) * actualInterval;
 
-    // Map Y position to nearest pixel row
+    // When a custom lineInterval is used, multiple scan lines may map to the
+    // same pixel row (interval < pixelH) or some rows may be skipped
+    // (interval > pixelH).  We pick the nearest source row for each scan line.
     const row = Math.min(image.height - 1, Math.max(0, Math.floor((y - bbox.y) / pixelH)));
     const step = leftToRight ? 1 : -1;
 
