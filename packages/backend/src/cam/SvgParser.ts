@@ -322,6 +322,7 @@ function walkTree(node: INode, paths: PathGeometry[], transform: Matrix, inherit
 
   // Resolve fill: explicit attribute overrides inherited value.
   // `fill="none"` is treated as no-fill (undefined).
+  // Per SVG spec, the default fill for shape elements is `#000000` (black).
   const rawFill = node.attributes['fill'];
   let currentFill = inheritedFill;
   if (rawFill !== undefined) {
@@ -370,6 +371,8 @@ export async function parseSvg(svgContent: string): Promise<PathGeometry[]> {
   const node = parseSync(svgContent);
   const rootMatrix = computeRootMatrix(node.attributes);
   const paths: PathGeometry[] = [];
-  walkTree(node, paths, rootMatrix, undefined);
+  // SVG spec: the initial value of the `fill` property is `#000000` (black).
+  // Shapes that don't explicitly set fill="none" will inherit this default.
+  walkTree(node, paths, rootMatrix, '#000000');
   return paths;
 }

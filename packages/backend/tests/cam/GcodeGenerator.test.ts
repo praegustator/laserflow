@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateGcode } from '../../src/cam/GcodeGenerator.js';
+import { generateGcode, fillBrightness } from '../../src/cam/GcodeGenerator.js';
 import type { PathGeometry, Operation, MachineProfile } from '../../src/types/index.js';
 
 const defaultProfile: MachineProfile = {
@@ -414,5 +414,91 @@ describe('GcodeGenerator', () => {
     const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
     // Should still produce hatch lines
     expect(g1Lines.length).toBeGreaterThan(10);
+  });
+
+  it('scales hatch-fill S value by fill shade brightness', () => {
+    // Two filled squares: one black (#000), one gray (#999)
+    // Both assigned to the same engrave operation at 100% power.
+    // The black fill should produce S1000, the gray should produce a lower S value.
+    const geometry: PathGeometry[] = [
+      { d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z', fill: '#000000', layerId: 'L1' },
+      { d: 'M 20 0 L 30 0 L 30 10 L 20 10 Z', fill: '#999999', layerId: 'L2' },
+    ];
+    const operations: Operation[] = [{
+      id: 'shade-op',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 100,
+      passes: 1,
+      engraveLineInterval: 1,
+      layerIds: ['L1', 'L2'],
+    }];
+    const gcode = generateGcode(geometry, operations, defaultProfile);
+
+    // Parse all G1 lines — hatch lines for the black square should use S1000,
+    // hatch lines for the gray square should use a lower S value.
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+    const sValues = g1Lines.map(l => {
+      const m = l.match(/S(\d+)/);
+      return m ? parseInt(m[1]) : 0;
+    });
+
+    // Black fill (#000) → brightness ≈ 0 → S ≈ 1000 (full power)
+    expect(sValues).toContain(1000);
+    // Gray fill (#999) → brightness ≈ 0.6 → S ≈ 400 (reduced power)
+    const grayS = sValues.filter(s => s > 0 && s < 1000);
+    expect(grayS.length).toBeGreaterThan(0);
+    // The gray S value should be roughly 400 (1000 * (1 - 0.6))
+    expect(grayS[0]).toBeGreaterThan(300);
+    expect(grayS[0]).toBeLessThan(500);
+  });
+
+  it('hatch-fills shapes with SVG default fill (#000000) in engrave operations', () => {
+    // This shape has fill="#000000" (the SVG default), simulating a shape
+    // that had no explicit fill attribute in the SVG source.
+    const geometry: PathGeometry[] = [{
+      d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z',
+      fill: '#000000',
+    }];
+    const operations: Operation[] = [{
+      id: 'default-fill-engrave',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 50,
+      passes: 1,
+      engraveLineInterval: 1,
+    }];
+    const gcode = generateGcode(geometry, operations, defaultProfile);
+
+    // Should produce hatch lines plus outline
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+    expect(g1Lines.length).toBeGreaterThan(10);
+    // Black fill = full operation power (500)
+    expect(gcode).toContain('S500');
+  });
+});
+
+describe('fillBrightness', () => {
+  it('returns 0 for black (#000000)', () => {
+    expect(fillBrightness('#000000')).toBeCloseTo(0);
+  });
+
+  it('returns 1 for white (#ffffff)', () => {
+    expect(fillBrightness('#ffffff')).toBeCloseTo(1);
+  });
+
+  it('returns ≈0.6 for #999999', () => {
+    expect(fillBrightness('#999999')).toBeCloseTo(0.6, 1);
+  });
+
+  it('handles short hex (#RGB)', () => {
+    expect(fillBrightness('#000')).toBeCloseTo(0);
+    expect(fillBrightness('#fff')).toBeCloseTo(1);
+  });
+
+  it('returns null for non-hex strings', () => {
+    expect(fillBrightness('red')).toBeNull();
+    expect(fillBrightness(undefined)).toBeNull();
+    expect(fillBrightness('')).toBeNull();
   });
 });

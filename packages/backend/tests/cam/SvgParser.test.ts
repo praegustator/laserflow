@@ -389,13 +389,13 @@ describe('parseSvg – fill extraction', () => {
     expect(paths[0].fill).toBeUndefined();
   });
 
-  it('returns undefined fill when no fill attribute is present', async () => {
+  it('applies SVG default fill (#000000) when no fill attribute is present', async () => {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
       <rect width="80" height="80" stroke="#000"/>
     </svg>`;
     const paths = await parseSvg(svg);
     expect(paths).toHaveLength(1);
-    expect(paths[0].fill).toBeUndefined();
+    expect(paths[0].fill).toBe('#000000');
   });
 
   it('inherits fill from parent <g> element', async () => {
@@ -422,6 +422,6 @@ describe('parseSvg – fill extraction', () => {
     expect(paths).toHaveLength(3);
     expect(paths[0].fill).toBeUndefined();  // circle: fill="none"
     expect(paths[1].fill).toBe('#999');      // path: fill="#999"
-    expect(paths[2].fill).toBeUndefined();  // path: no fill attr
+    expect(paths[2].fill).toBe('#000000');   // path: no fill attr → SVG default black
   });
 });

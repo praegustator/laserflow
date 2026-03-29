@@ -12,6 +12,30 @@ export interface PathTransform {
 
 const IDENTITY_TRANSFORM: PathTransform = { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 };
 
+/**
+ * Parse a CSS hex colour (#RGB or #RRGGBB) and return the perceived
+ * brightness as a 0-1 value (0 = black, 1 = white).  Returns `null` if
+ * the colour string cannot be parsed.
+ */
+export function fillBrightness(fill: string | undefined): number | null {
+  if (!fill) return null;
+  const hex = fill.trim();
+  let r: number, g: number, b: number;
+  if (/^#[0-9a-f]{6}$/i.test(hex)) {
+    r = parseInt(hex.slice(1, 3), 16);
+    g = parseInt(hex.slice(3, 5), 16);
+    b = parseInt(hex.slice(5, 7), 16);
+  } else if (/^#[0-9a-f]{3}$/i.test(hex)) {
+    r = parseInt(hex[1] + hex[1], 16);
+    g = parseInt(hex[2] + hex[2], 16);
+    b = parseInt(hex[3] + hex[3], 16);
+  } else {
+    return null;
+  }
+  // ITU-R BT.601 luma
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
+
 function applyTransform(x: number, y: number, t: PathTransform): [number, number] {
   const tx = t.offsetX + x * t.scaleX;
   let ty = t.offsetY + y * t.scaleY;
@@ -364,11 +388,19 @@ export function generateGcode(
           transform = { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, flipY: true, workH };
         }
 
-        // For engrave operations, filled shapes get hatch-fill scan lines
-        if (op.type === 'engrave' && geo.fill) {
+        // For engrave operations, filled shapes get hatch-fill scan lines.
+        // The S value is scaled by the fill shade: darker = more power,
+        // lighter = less.  fill="none" shapes (fill === undefined) are
+        // skipped — they have no interior to raster.
+        if (op.type === 'engrave' && geo.fill && geo.fill !== 'none') {
           const interval = op.engraveLineInterval ?? 0.1;
           const angle = op.engraveLineAngle ?? 0;
-          const hatchGcode = hatchFillToGcode(geo.d, op.feedRate, sValue, interval, angle, transform);
+          // Scale power by shade brightness (black = full power, white = 0)
+          const brightness = fillBrightness(geo.fill);
+          const shadeSValue = brightness !== null
+            ? Math.round(sValue * (1 - brightness))
+            : sValue;
+          const hatchGcode = hatchFillToGcode(geo.d, op.feedRate, shadeSValue, interval, angle, transform);
           if (hatchGcode) lines.push(hatchGcode);
         }
 
