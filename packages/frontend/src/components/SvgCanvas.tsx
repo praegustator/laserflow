@@ -48,7 +48,6 @@ interface Props {
 const OP_COLORS: Record<string, string> = {
   cut: '#ef4444',
   engrave: '#3b82f6',
-  ignore: '#6b7280',
 };
 
 const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];

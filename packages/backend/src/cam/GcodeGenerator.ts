@@ -478,7 +478,6 @@ export async function generateGcode(
   lines.push('');
 
   for (const op of operations) {
-    if (op.type === 'ignore') continue;
 
     const sValue = Math.round((op.power / 100) * profile.maxSpindleSpeed);
     const laserMode = op.type === 'cut' ? 'M3' : 'M4';

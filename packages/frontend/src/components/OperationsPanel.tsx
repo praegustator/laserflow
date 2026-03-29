@@ -6,18 +6,16 @@ import { useToastStore } from '../store/toastStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { api } from '../api/client';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faToggleOn, faToggleOff, faTrash, faClone, faChevronUp, faChevronDown, faGears, faEye } from '@fortawesome/free-solid-svg-icons';
+import { faToggleOn, faToggleOff, faTrash, faClone, faGears, faEye } from '@fortawesome/free-solid-svg-icons';
 
 const OP_TYPE_LABELS: Record<OperationType, string> = {
   cut: '✂ Cut',
   engrave: '✏ Engrave',
-  ignore: '✕ Ignore',
 };
 
 const OP_COLORS: Record<OperationType, string> = {
   cut: 'text-red-400',
   engrave: 'text-blue-400',
-  ignore: 'text-gray-500',
 };
 
 /* ─── Helper: compute shared value across operations (null = mixed) ─── */
@@ -46,7 +44,6 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
   const multiLineInterval = sharedValue(selectedOps, o => o.engraveLineInterval ?? 0.1);
   const multiLineAngle = sharedValue(selectedOps, o => o.engraveLineAngle ?? 0);
 
-  const isAllIgnore = multiType === 'ignore';
   const anyEngrave = selectedOps.some(o => o.type === 'engrave');
 
   const commitPower = () => {
@@ -70,7 +67,7 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
       <div>
         <label className="text-xs text-gray-500 uppercase">Type</label>
         <div className="flex gap-1 mt-1">
-          {(['cut', 'engrave', 'ignore'] as OperationType[]).map(t => (
+          {(['cut', 'engrave'] as OperationType[]).map(t => (
             <button
               key={t}
               onClick={() => onChange({ type: t })}
@@ -84,8 +81,7 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
         </div>
       </div>
 
-      {!isAllIgnore && (
-        <>
+      <>
           {/* Material preset quick-apply */}
           {presets.length > 0 && (
             <div>
@@ -221,7 +217,6 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
             </>
           )}
         </>
-      )}
     </div>
   );
 }
@@ -230,6 +225,7 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
 
 interface OperationRowProps {
   op: Operation;
+  index: number;
   onRemove: () => void;
   onToggleEnabled: () => void;
   onDuplicate: () => void;
@@ -241,14 +237,12 @@ interface OperationRowProps {
   onDragOver: (id: string) => void;
   onDrop: () => void;
   isDragOver: boolean;
-  expanded: boolean;
-  onToggleExpanded: () => void;
   isSelected: boolean;
   onSelect: (e: React.MouseEvent) => void;
   isLayerHighlighted: boolean;
 }
 
-function OperationRow({ op, onRemove, onToggleEnabled, onDuplicate, onRename, layers, onAssignLayer, onUnassignLayer, onDragStart, onDragOver, onDrop, isDragOver, expanded, onToggleExpanded, isSelected, onSelect, isLayerHighlighted }: OperationRowProps) {
+function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRename, layers, onAssignLayer, onUnassignLayer, onDragStart, onDragOver, onDrop, isDragOver, isSelected, onSelect, isLayerHighlighted }: OperationRowProps) {
   const [editingLabel, setEditingLabel] = useState(false);
   const [localLabel, setLocalLabel] = useState(op.label ?? '');
 
@@ -273,16 +267,14 @@ function OperationRow({ op, onRemove, onToggleEnabled, onDuplicate, onRename, la
         onDragEnd={() => onDrop()}
       >
         <span className="text-xs text-gray-600 select-none mr-0.5">⠿</span>
+        <span className="text-xs text-gray-500 select-none w-5 text-center flex-shrink-0">{index}</span>
         <button
           onClick={onToggleEnabled}
           className={`text-xs w-6 text-center flex-shrink-0 ${op.enabled ? 'text-orange-400' : 'text-gray-600'}`}
           title={op.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable'}
         ><FontAwesomeIcon icon={op.enabled ? faToggleOn : faToggleOff} /></button>
 
-        <button
-          onClick={onToggleExpanded}
-          className="flex-1 flex items-center gap-2 text-left min-w-0"
-        >
+        <div className="flex-1 flex items-center gap-2 min-w-0">
           <span className={`text-sm font-semibold whitespace-nowrap ${OP_COLORS[op.type]}`}>
             {OP_TYPE_LABELS[op.type]}
           </span>
@@ -310,8 +302,7 @@ function OperationRow({ op, onRemove, onToggleEnabled, onDuplicate, onRename, la
           <span className="text-xs text-gray-500 ml-auto flex-shrink-0">
             {op.feedRate}mm/min · {op.power}% · ×{op.passes}
           </span>
-          <span className="text-gray-500 text-xs flex-shrink-0"><FontAwesomeIcon icon={expanded ? faChevronUp : faChevronDown} /></span>
-        </button>
+        </div>
 
         <div className="flex gap-0.5 flex-shrink-0">
           <button onClick={onDuplicate} className="text-gray-500 hover:text-gray-200 text-xs" title="Duplicate"><FontAwesomeIcon icon={faClone} /></button>
@@ -319,41 +310,39 @@ function OperationRow({ op, onRemove, onToggleEnabled, onDuplicate, onRename, la
         </div>
       </div>
 
-      {/* Body — assigned layers only */}
-      {expanded && (
-        <div className="px-3 py-3 bg-gray-900 space-y-3">
-          <div>
-            <label className="text-xs text-gray-500 uppercase">Assigned Layers</label>
-            <div className="mt-1 space-y-1">
-              {op.layerIds.length === 0 && (
-                <p className="text-xs text-yellow-500 italic">⚠ No layers assigned — operation inactive</p>
-              )}
-              {op.layerIds.map(lid => {
-                const layer = layers.find(l => l.id === lid);
-                return (
-                  <div key={lid} className="flex items-center gap-2 text-xs">
-                    <span className="text-gray-300 truncate flex-1">{layer?.name ?? lid}</span>
-                    <button onClick={() => onUnassignLayer(lid)} className="text-gray-500 hover:text-red-400">✕</button>
-                  </div>
-                );
-              })}
-            </div>
-            {/* Add layer dropdown */}
-            {layers.filter(l => !op.layerIds.includes(l.id)).length > 0 && (
-              <select
-                value=""
-                onChange={e => { if (e.target.value) onAssignLayer(e.target.value); }}
-                className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-orange-500"
-              >
-                <option value="">+ Assign layer…</option>
-                {layers.filter(l => !op.layerIds.includes(l.id)).map(l => (
-                  <option key={l.id} value={l.id}>{l.name}</option>
-                ))}
-              </select>
+      {/* Body — assigned layers always visible */}
+      <div className="px-3 py-3 bg-gray-900 space-y-3">
+        <div>
+          <label className="text-xs text-gray-500 uppercase">Assigned Layers</label>
+          <div className="mt-1 space-y-1">
+            {op.layerIds.length === 0 && (
+              <p className="text-xs text-yellow-500 italic">⚠ No layers assigned — operation inactive</p>
             )}
+            {op.layerIds.map(lid => {
+              const layer = layers.find(l => l.id === lid);
+              return (
+                <div key={lid} className="flex items-center gap-2 text-xs">
+                  <span className="text-gray-300 truncate flex-1">{layer?.name ?? lid}</span>
+                  <button onClick={() => onUnassignLayer(lid)} className="text-gray-500 hover:text-red-400">✕</button>
+                </div>
+              );
+            })}
           </div>
+          {/* Add layer dropdown */}
+          {layers.filter(l => !op.layerIds.includes(l.id)).length > 0 && (
+            <select
+              value=""
+              onChange={e => { if (e.target.value) onAssignLayer(e.target.value); }}
+              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-orange-500"
+            >
+              <option value="">+ Assign layer…</option>
+              {layers.filter(l => !op.layerIds.includes(l.id)).map(l => (
+                <option key={l.id} value={l.id}>{l.name}</option>
+              ))}
+            </select>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -377,7 +366,6 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
   const duplicateOperation = useProjectStore(s => s.duplicateOperation);
   const compileJob = useProjectStore(s => s.compileJob);
   const addToast = useToastStore(s => s.addToast);
-  const singleExpandedOp = useAppSettings(s => s.singleExpandedOp);
   const originPosition = useAppSettings(s => s.originPosition);
   const workAreaHeight = useAppSettings(s => s.workAreaHeight);
   const navigate = useNavigate();
@@ -385,7 +373,6 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
   const [presets, setPresets] = useState<MaterialPreset[]>([]);
   const dragOpId = useRef<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [expandedOpIds, setExpandedOpIds] = useState<Set<string>>(new Set());
   const [selectedOpIds, setSelectedOpIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -415,18 +402,6 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
     }
     dragOpId.current = null;
     setDragOverId(null);
-  };
-
-  const toggleExpanded = (id: string) => {
-    setExpandedOpIds(prev => {
-      if (singleExpandedOp) {
-        // In single-expand mode: opening an op collapses all others
-        return prev.has(id) ? new Set<string>() : new Set([id]);
-      }
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
   };
 
   const handleSelectOp = (id: string, e: React.MouseEvent) => {
@@ -496,13 +471,13 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
             <OperationRow
               key={op.id}
               op={op}
+              index={operations.indexOf(op) + 1}
               onRemove={() => removeOperation(op.id)}
               onToggleEnabled={() => toggleOperationEnabled(op.id)}
               onDuplicate={() => {
                 const layerIds = selectedLayerIds ? Array.from(selectedLayerIds) : undefined;
                 const newId = duplicateOperation(op.id, layerIds);
                 if (newId) {
-                  setExpandedOpIds(new Set([newId]));
                   setSelectedOpIds(new Set([newId]));
                 }
               }}
@@ -514,8 +489,6 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
               onDragOver={handleDragOver}
               onDrop={handleDrop}
               isDragOver={dragOverId === op.id}
-              expanded={expandedOpIds.has(op.id)}
-              onToggleExpanded={() => toggleExpanded(op.id)}
               isSelected={isOpSelected}
               onSelect={(e) => handleSelectOp(op.id, e)}
               isLayerHighlighted={isLayerHighlighted}
@@ -547,7 +520,6 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
               newId = addOperation();
             }
             if (newId) {
-              setExpandedOpIds(new Set([newId]));
               setSelectedOpIds(new Set([newId]));
             }
           }}

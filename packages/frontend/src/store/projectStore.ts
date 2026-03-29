@@ -1,12 +1,17 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '../api/client';
-import type { Project, ProjectFile, ProjectVersion, Layer, Shape, Operation, PathGeometry, Job } from '../types';
+import type { Project, ProjectFile, ProjectVersion, Layer, Shape, Operation, PathGeometry, Job, PivotAnchor } from '../types';
 import { computeShapesBoundingBox, bakeLayerTransform, splitPathIntoSubpaths } from '../utils/geometry';
-import { useAppSettings } from './appSettingsStore';
+import { useAppSettings, type OriginPosition } from './appSettingsStore';
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/** Return the default layer pivot anchor that matches the board origin position. */
+function defaultPivot(originPosition: OriginPosition): PivotAnchor {
+  return originPosition === 'bottom-left' ? 'bl' : 'tl';
 }
 
 interface ProjectStore {
@@ -151,7 +156,6 @@ export const useProjectStore = create<ProjectStore>()(
         // Compute bounding box to position the layer based on origin setting
         const bbox = computeShapesBoundingBox(shapes);
         const { originPosition, workAreaHeight } = useAppSettings.getState();
-
         // For top-left origin: align shape top to board top, left to board left.
         // For bottom-left origin: align shape bottom to board bottom (machine origin), left to board left.
         const offsetX = bbox ? -bbox.minX : 0;
@@ -178,7 +182,7 @@ export const useProjectStore = create<ProjectStore>()(
           rotation: 0,
           mirrorX: false,
           mirrorY: false,
-          pivot: 'tl',
+          pivot: defaultPivot(originPosition),
         };
 
         set(s => ({
@@ -261,7 +265,7 @@ export const useProjectStore = create<ProjectStore>()(
           rotation: 0,
           mirrorX: false,
           mirrorY: false,
-          pivot: 'tl',
+          pivot: defaultPivot(originPosition),
         };
 
         set(s => ({
@@ -277,6 +281,7 @@ export const useProjectStore = create<ProjectStore>()(
       addLayer: (name: string) => {
         const { activeProjectId } = get();
         if (!activeProjectId) return;
+        const { originPosition } = useAppSettings.getState();
         const layer: Layer = {
           id: uid(),
           name,
@@ -289,7 +294,7 @@ export const useProjectStore = create<ProjectStore>()(
           rotation: 0,
           mirrorX: false,
           mirrorY: false,
-          pivot: 'tl',
+          pivot: defaultPivot(originPosition),
         };
         set(s => ({
           projects: updateProject(s.projects, activeProjectId, p => ({
@@ -594,7 +599,7 @@ export const useProjectStore = create<ProjectStore>()(
                 rotation: 0,
                 mirrorX: false,
                 mirrorY: false,
-                pivot: 'tl' as const,
+                pivot: defaultPivot(useAppSettings.getState().originPosition),
               } : l),
             operations: p.operations.map(op => ({
               ...op,
@@ -917,7 +922,7 @@ export const useProjectStore = create<ProjectStore>()(
         const project = getActiveProject(projects, activeProjectId);
         if (!project) throw new Error('No active project');
 
-        const enabledOps = project.operations.filter(op => op.enabled && op.type !== 'ignore');
+        const enabledOps = project.operations.filter(op => op.enabled);
         if (enabledOps.length === 0) throw new Error('No enabled operations');
 
         // Collect geometry from all layers referenced by enabled operations.

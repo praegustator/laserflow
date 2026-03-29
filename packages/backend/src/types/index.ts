@@ -18,7 +18,7 @@ export interface MaterialPreset {
 
 export type JobStatus = 'idle' | 'queued' | 'running' | 'paused' | 'completed' | 'canceled' | 'error';
 
-export type OperationType = 'cut' | 'engrave' | 'ignore';
+export type OperationType = 'cut' | 'engrave';
 
 export interface Operation {
   id: string;
