@@ -852,8 +852,8 @@ describe('raster image engraving', () => {
     const g1Lines3 = gcode3.split('\n').filter(l => l.startsWith('G1'));
 
     // Hatch fill produces one G1 per scan line.
-    // At scale=1: floor((10-1)/1) + 1 ≈ 10 lines
-    // At scale=3: ~30 lines (3x more due to 3x physical size)
+    // At scale=1: 10mm physical height / 1mm interval → ~10 scan lines
+    // At scale=3: 30mm physical height / 1mm interval → ~30 scan lines
     expect(g1Lines3.length).toBeGreaterThan(g1Lines1.length * 2);
   });
 });

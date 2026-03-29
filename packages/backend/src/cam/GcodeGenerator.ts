@@ -307,12 +307,13 @@ function hatchFillToGcode(
   // layer-space by dividing by the effective scale factor perpendicular to
   // the scan direction so the *physical* line spacing matches regardless of
   // how much the layer has been scaled.
+  // Guard against degenerate zero-scale transforms to avoid division by zero.
   const sinAngle = Math.sin(radians);
   const cosAngle = Math.cos(radians);
   const effectiveScale = Math.sqrt(
     (transform.scaleX * sinAngle) ** 2 + (transform.scaleY * cosAngle) ** 2
-  ) || 1;
-  const layerInterval = lineInterval / effectiveScale;
+  );
+  const layerInterval = effectiveScale > 0 ? lineInterval / effectiveScale : lineInterval;
 
   const lines: string[] = [];
   let leftToRight = true;
