@@ -29,11 +29,17 @@ export interface Operation {
   zOffset?: number;
   /** Layer IDs this operation applies to. When present, only geometry tagged with a matching layerId is processed. */
   layerIds?: string[];
+  /** Spacing between hatch scan-lines when engraving filled shapes (mm, default 0.1). */
+  engraveLineInterval?: number;
+  /** Angle of hatch scan-lines in degrees (default 0 = horizontal). */
+  engraveLineAngle?: number;
 }
 
 export interface PathGeometry {
   d: string;        // SVG path data string
   layerId?: string;
+  /** Fill colour from the source SVG (e.g. '#999'). `undefined` means no fill / outline only. */
+  fill?: string;
 }
 
 export interface Job {

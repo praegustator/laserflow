@@ -13,12 +13,18 @@ export interface Operation {
   enabled: boolean;
   /** @deprecated kept for backward compat with old jobs */
   layerId?: string;
+  /** Spacing between hatch scan-lines when engraving filled shapes (mm, default 0.1). */
+  engraveLineInterval?: number;
+  /** Angle of hatch scan-lines in degrees (default 0 = horizontal). */
+  engraveLineAngle?: number;
 }
 
 export interface PathGeometry {
   d: string;
   layerId?: string;
   shapeId?: string;
+  /** Fill colour from the source SVG (e.g. '#999'). `undefined` means no fill / outline only. */
+  fill?: string;
 }
 
 /** A single shape extracted from an SVG file */
@@ -27,6 +33,8 @@ export interface Shape {
   name: string;
   d: string;
   sourceFileId: string;
+  /** Fill colour from the source SVG (e.g. '#999'). `undefined` means no fill / outline only. */
+  fill?: string;
 }
 
 /**

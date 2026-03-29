@@ -307,7 +307,7 @@ function polylineToPath(attrs: Record<string, string>, close: boolean): string {
 
 /* ── Tree walker ─────────────────────────────────────────────────────── */
 
-function walkTree(node: INode, paths: PathGeometry[], transform: Matrix): void {
+function walkTree(node: INode, paths: PathGeometry[], transform: Matrix, inheritedFill: string | undefined): void {
   const tag = node.name.toLowerCase();
 
   // Skip non-visual containers — their children must not be extracted
@@ -318,6 +318,15 @@ function walkTree(node: INode, paths: PathGeometry[], transform: Matrix): void {
   const transformAttr = node.attributes['transform'];
   if (transformAttr) {
     currentTransform = multiplyMatrices(transform, parseTransformAttr(transformAttr));
+  }
+
+  // Resolve fill: explicit attribute overrides inherited value.
+  // `fill="none"` is treated as no-fill (undefined).
+  // Per SVG spec, the default fill for shape elements is `#000000` (black).
+  const rawFill = node.attributes['fill'];
+  let currentFill = inheritedFill;
+  if (rawFill !== undefined) {
+    currentFill = rawFill.trim().toLowerCase() === 'none' ? undefined : rawFill.trim();
   }
 
   let d: string | null = null;
@@ -350,11 +359,11 @@ function walkTree(node: INode, paths: PathGeometry[], transform: Matrix): void {
     const transformed = applyMatrixToPath(d.trim(), currentTransform);
     const cleaned = removeClosedPathSpurs(transformed);
     const layerId = node.attributes['data-layer'] ?? node.attributes['id'] ?? undefined;
-    paths.push({ d: cleaned, layerId });
+    paths.push({ d: cleaned, layerId, fill: currentFill });
   }
 
   for (const child of node.children ?? []) {
-    walkTree(child, paths, currentTransform);
+    walkTree(child, paths, currentTransform, currentFill);
   }
 }
 
@@ -362,6 +371,8 @@ export async function parseSvg(svgContent: string): Promise<PathGeometry[]> {
   const node = parseSync(svgContent);
   const rootMatrix = computeRootMatrix(node.attributes);
   const paths: PathGeometry[] = [];
-  walkTree(node, paths, rootMatrix);
+  // SVG spec: the initial value of the `fill` property is `#000000` (black).
+  // Shapes that don't explicitly set fill="none" will inherit this default.
+  walkTree(node, paths, rootMatrix, '#000000');
   return paths;
 }

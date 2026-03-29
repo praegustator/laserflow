@@ -367,3 +367,61 @@ describe('parseSvg – Illustrator rectangle', () => {
     }
   });
 });
+
+// ── Fill attribute extraction ─────────────────────────────────────────
+
+describe('parseSvg – fill extraction', () => {
+  it('extracts explicit fill colour from path elements', async () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+      <path d="M 0 0 L 100 0 L 100 100 Z" fill="#999"/>
+    </svg>`;
+    const paths = await parseSvg(svg);
+    expect(paths).toHaveLength(1);
+    expect(paths[0].fill).toBe('#999');
+  });
+
+  it('treats fill="none" as undefined (no fill)', async () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+      <circle cx="50" cy="50" r="40" fill="none" stroke="#000"/>
+    </svg>`;
+    const paths = await parseSvg(svg);
+    expect(paths).toHaveLength(1);
+    expect(paths[0].fill).toBeUndefined();
+  });
+
+  it('applies SVG default fill (#000000) when no fill attribute is present', async () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+      <rect width="80" height="80" stroke="#000"/>
+    </svg>`;
+    const paths = await parseSvg(svg);
+    expect(paths).toHaveLength(1);
+    expect(paths[0].fill).toBe('#000000');
+  });
+
+  it('inherits fill from parent <g> element', async () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+      <g fill="#ff0000">
+        <rect width="50" height="50"/>
+        <rect x="50" width="50" height="50" fill="none"/>
+      </g>
+    </svg>`;
+    const paths = await parseSvg(svg);
+    expect(paths).toHaveLength(2);
+    expect(paths[0].fill).toBe('#ff0000');
+    expect(paths[1].fill).toBeUndefined(); // fill="none" overrides inherited
+  });
+
+  it('parses fill from the issue example SVG', async () => {
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" width="15.35mm" height="15.35mm" viewBox="0 0 43.52 43.52">
+  <circle cx="21.76" cy="21.76" r="21.26" fill="none" stroke="#000" stroke-miterlimit="10"/>
+  <path d="M21.76,43.02c11.74,0,21.26-9.52,21.26-21.26,0-6.2-2.67-11.77-6.91-15.66L.77,18.55c-.16,1.05-.27,2.11-.27,3.21,0,11.74,9.52,21.26,21.26,21.26Z" fill="#999" stroke="#000" stroke-miterlimit="10"/>
+  <path d="M21.76,43.02c11.74,0,21.26-9.52,21.26-21.26,0-.56-.03-1.11-.07-1.66L4.39,34c3.85,5.45,10.19,9.02,17.37,9.02Z" stroke="#000" stroke-miterlimit="10"/>
+</svg>`;
+    const paths = await parseSvg(svg);
+    expect(paths).toHaveLength(3);
+    expect(paths[0].fill).toBeUndefined();  // circle: fill="none"
+    expect(paths[1].fill).toBe('#999');      // path: fill="#999"
+    expect(paths[2].fill).toBe('#000000');   // path: no fill attr → SVG default black
+  });
+});

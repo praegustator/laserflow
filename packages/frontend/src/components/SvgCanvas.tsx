@@ -248,7 +248,8 @@ export default function SvgCanvas({ layers, operations, selectedLayerIds, select
                       )}
                       <path
                         d={shape.d}
-                        fill="none"
+                        fill={shape.fill ?? 'none'}
+                        fillOpacity={shape.fill ? 0.35 : undefined}
                         stroke={strokeColor}
                         strokeWidth={sw}
                         opacity={0.9}
