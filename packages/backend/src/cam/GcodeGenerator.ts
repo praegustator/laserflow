@@ -515,8 +515,11 @@ export async function generateGcode(
             const image = await decodeImageDataUrl(geo.imageDataUrl);
             const rasterGcode = rasterImageToGcode(image, geo.d, op.feedRate, sValue, transform);
             if (rasterGcode) lines.push(rasterGcode);
+            // For engrave, only raster-scan the pixels — do NOT trace the bounding
+            // rectangle outline, as that would burn an unwanted border around the image.
+            continue;
           }
-          // Always trace the bounding rectangle outline
+          // For cut: trace the bounding rectangle outline to cut the image out.
           const pathGcode = pathToGcode(geo.d, op.feedRate, sValue, transform);
           lines.push(pathGcode);
           continue;

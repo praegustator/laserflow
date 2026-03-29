@@ -544,6 +544,13 @@ describe('raster image engraving', () => {
     // G0 S0 moves are present (for row positioning and any interior white gaps)
     const g0Lines = gcode.split('\n').filter(l => l.includes('G0') && l.includes('S0'));
     expect(g0Lines.length).toBeGreaterThan(0);
+
+    // Engrave should NOT trace the bounding rectangle outline — no rectangle border burns.
+    // Previously the code always called pathToGcode on the bounding rect for all op types,
+    // causing an unwanted burned border around engraved images.
+    // With the fix, X4.000 Y2.000 should not appear as a G1 endpoint (bounding rect corner).
+    const g1AtCorner = gcode.split('\n').filter(l => l.startsWith('G1') && l.includes('X4.000') && l.includes('Y2.000'));
+    expect(g1AtCorner.length).toBe(0);
   });
 
   it('traces bounding rectangle outline for cut operations on images', async () => {
