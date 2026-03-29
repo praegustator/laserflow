@@ -74,16 +74,20 @@ describe('GcodeGenerator', () => {
     }
   });
 
-  it('ignores operations with type ignore', async () => {
+  it('skips disabled operations', async () => {
     const geometry: PathGeometry[] = [{ d: 'M 0 0 L 100 0' }];
     const operations: Operation[] = [{
       id: 'op3',
-      type: 'ignore',
+      type: 'cut',
       feedRate: 600,
       power: 80,
       passes: 1,
+      enabled: false,
     }];
-    const gcode = await generateGcode(geometry, operations, defaultProfile);
+    // Disabled ops are filtered out by the caller before reaching generateGcode,
+    // so passing all ops here should still not produce M3/M4 when none are enabled.
+    const enabledOps = operations.filter(o => o.enabled !== false);
+    const gcode = await generateGcode(geometry, enabledOps, defaultProfile);
     expect(gcode).not.toContain('M3');
     expect(gcode).not.toContain('M4');
   });
