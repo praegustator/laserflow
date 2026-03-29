@@ -92,11 +92,13 @@ interface RulerCalibrationProps {
 function RulerCalibration({ currentScale, onApply, onClose }: RulerCalibrationProps) {
   // Default ruler length: 100 mm rendered at the current scale
   const defaultLengthMm = 100;
+  const FALLBACK_RULER_WIDTH = 468;
   const [lengthPx, setLengthPx] = useState(Math.round(defaultLengthMm * currentScale));
   const [inputMm, setInputMm] = useState(String(defaultLengthMm));
   const [dragging, setDragging] = useState(false);
   const rulerRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ x: number; px: number } | null>(null);
+  const rulerWidth = () => rulerRef.current?.clientWidth ?? FALLBACK_RULER_WIDTH;
 
   const onMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -109,7 +111,7 @@ function RulerCalibration({ currentScale, onApply, onClose }: RulerCalibrationPr
     const onMove = (e: MouseEvent) => {
       if (!dragStartRef.current) return;
       const delta = e.clientX - dragStartRef.current.x;
-      const maxPx = rulerRef.current?.clientWidth ?? 468;
+      const maxPx = rulerWidth();
       setLengthPx(Math.max(10, Math.min(maxPx, dragStartRef.current.px + delta)));
     };
     const onUp = () => setDragging(false);
@@ -139,14 +141,14 @@ function RulerCalibration({ currentScale, onApply, onClose }: RulerCalibrationPr
         <div ref={rulerRef} className="relative h-10 bg-gray-800 rounded overflow-hidden">
           <div
             className="absolute left-0 top-0 h-full bg-orange-500/30 border-r-2 border-orange-400 rounded-l flex items-center"
-            style={{ width: Math.min(lengthPx, rulerRef.current?.clientWidth ?? 468) }}
+            style={{ width: Math.min(lengthPx, rulerWidth()) }}
           >
             <span className="text-xs text-orange-300 px-2 truncate">{Math.round(lengthPx)} px</span>
           </div>
           {/* Drag handle */}
           <div
             className={`absolute top-0 h-full w-4 flex items-center justify-center cursor-col-resize z-10 ${dragging ? 'text-orange-300' : 'text-orange-500 hover:text-orange-300'}`}
-            style={{ left: Math.min(lengthPx, rulerRef.current?.clientWidth ?? 468) - 8 }}
+            style={{ left: Math.min(lengthPx, rulerWidth()) - 8 }}
             onMouseDown={onMouseDown}
           >
             <div className="w-1 h-6 bg-current rounded-full" />
