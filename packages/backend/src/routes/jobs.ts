@@ -293,8 +293,7 @@ export function registerRoutes(app: FastifyInstance): void {
     }
     // Send soft-reset to GRBL if connected
     if (serialManager.getStatus() === 'connected') {
-      const resetChar = String.fromCharCode(GRBL_REALTIME.SOFT_RESET);
-      try { await serialManager.sendCommand(resetChar); } catch (e) { app.log.warn('Emergency stop: soft-reset failed: %s', e); }
+      serialManager.writeRealtime(String.fromCharCode(GRBL_REALTIME.SOFT_RESET));
       try { await serialManager.sendCommand('M5'); } catch (e) { app.log.warn('Emergency stop: M5 failed: %s', e); }
     }
     return reply.send({ status: 'stopped' });
