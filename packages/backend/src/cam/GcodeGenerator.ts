@@ -20,18 +20,27 @@ const IDENTITY_TRANSFORM: PathTransform = { offsetX: 0, offsetY: 0, scaleX: 1, s
  */
 export function fillBrightness(fill: string | undefined): number | null {
   if (!fill) return null;
-  const hex = fill.trim();
+  const s = fill.trim();
   let r: number, g: number, b: number;
-  if (/^#[0-9a-f]{6}$/i.test(hex)) {
-    r = parseInt(hex.slice(1, 3), 16);
-    g = parseInt(hex.slice(3, 5), 16);
-    b = parseInt(hex.slice(5, 7), 16);
-  } else if (/^#[0-9a-f]{3}$/i.test(hex)) {
-    r = parseInt(hex[1] + hex[1], 16);
-    g = parseInt(hex[2] + hex[2], 16);
-    b = parseInt(hex[3] + hex[3], 16);
+  if (/^#[0-9a-f]{6}$/i.test(s)) {
+    r = parseInt(s.slice(1, 3), 16);
+    g = parseInt(s.slice(3, 5), 16);
+    b = parseInt(s.slice(5, 7), 16);
+  } else if (/^#[0-9a-f]{3}$/i.test(s)) {
+    r = parseInt(s[1] + s[1], 16);
+    g = parseInt(s[2] + s[2], 16);
+    b = parseInt(s[3] + s[3], 16);
   } else {
-    return null;
+    // Try rgb(r, g, b) comma-separated or rgb(r g b) space-separated notation
+    const rgbMatch = s.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i)
+      ?? s.match(/^rgb\(\s*(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})\s*\)$/i);
+    if (rgbMatch) {
+      r = Math.min(255, parseInt(rgbMatch[1], 10));
+      g = Math.min(255, parseInt(rgbMatch[2], 10));
+      b = Math.min(255, parseInt(rgbMatch[3], 10));
+    } else {
+      return null;
+    }
   }
   // ITU-R BT.601 luma
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
@@ -293,11 +302,24 @@ function hatchFillToGcode(
     }
   }
 
+  // The lineInterval is specified in world-space mm, but the polygon
+  // coordinates are in layer space (before the transform).  Convert to
+  // layer-space by dividing by the effective scale factor perpendicular to
+  // the scan direction so the *physical* line spacing matches regardless of
+  // how much the layer has been scaled.
+  // Guard against degenerate zero-scale transforms to avoid division by zero.
+  const sinAngle = Math.sin(radians);
+  const cosAngle = Math.cos(radians);
+  const effectiveScale = Math.sqrt(
+    (transform.scaleX * sinAngle) ** 2 + (transform.scaleY * cosAngle) ** 2
+  );
+  const layerInterval = effectiveScale > 0 ? lineInterval / effectiveScale : lineInterval;
+
   const lines: string[] = [];
   let leftToRight = true;
 
   // Scan from minY to maxY, offset by half-interval to stay inside the shape
-  for (let scanY = minY + lineInterval / 2; scanY <= maxY - lineInterval / 2 + 1e-9; scanY += lineInterval) {
+  for (let scanY = minY + layerInterval / 2; scanY <= maxY - layerInterval / 2 + 1e-9; scanY += layerInterval) {
     // Find all X-intersections with polygon edges at this scanY
     const intersections: number[] = [];
     for (const edge of edges) {
@@ -391,6 +413,7 @@ export function rasterImageToGcode(
   feedRate: number,
   sValue: number,
   transform: PathTransform = IDENTITY_TRANSFORM,
+  lineInterval?: number,
 ): string {
   const bbox = parsePathBBox(d);
   if (!bbox || image.width === 0 || image.height === 0) return '';
@@ -399,9 +422,30 @@ export function rasterImageToGcode(
   const pixelW = bbox.w / image.width;
   const pixelH = bbox.h / image.height;
 
-  for (let row = 0; row < image.height; row++) {
-    const leftToRight = row % 2 === 0;
-    const y = bbox.y + (row + 0.5) * pixelH;
+  // When a lineInterval is provided, use it for scan line spacing so that
+  // raster images are engraved with the same density as SVG hatch fills.
+  // The interval is specified in world-space mm, but scan lines are computed
+  // in layer space (before the transform is applied).  Divide by the Y scale
+  // factor so that the *physical* line spacing matches the requested value
+  // regardless of how much the layer has been scaled.
+  // Note: if the interval is larger than the image height, numLines clamps to 1.
+  // Guard against degenerate zero-scale transforms to avoid division by zero.
+  const absScaleY = Math.abs(transform.scaleY);
+  const layerInterval = lineInterval && lineInterval > 0
+    ? (absScaleY > 0 ? lineInterval / absScaleY : lineInterval)
+    : undefined;
+  const effectiveInterval = layerInterval ?? pixelH;
+  const numLines = Math.max(1, Math.round(bbox.h / effectiveInterval));
+  const actualInterval = bbox.h / numLines;
+
+  for (let lineIdx = 0; lineIdx < numLines; lineIdx++) {
+    const leftToRight = lineIdx % 2 === 0;
+    const y = bbox.y + (lineIdx + 0.5) * actualInterval;
+
+    // When a custom lineInterval is used, multiple scan lines may map to the
+    // same pixel row (interval < pixelH) or some rows may be skipped
+    // (interval > pixelH).  We pick the nearest source row for each scan line.
+    const row = Math.min(image.height - 1, Math.max(0, Math.floor((y - bbox.y) / pixelH)));
     const step = leftToRight ? 1 : -1;
 
     // Find the first and last non-white pixels in this row.
@@ -512,7 +556,7 @@ export async function generateGcode(
         if (geo.imageDataUrl) {
           if (op.type === 'engrave') {
             const image = await decodeImageDataUrl(geo.imageDataUrl);
-            const rasterGcode = rasterImageToGcode(image, geo.d, op.feedRate, sValue, transform);
+            const rasterGcode = rasterImageToGcode(image, geo.d, op.feedRate, sValue, transform, op.engraveLineInterval);
             if (rasterGcode) lines.push(rasterGcode);
             // For engrave, only raster-scan the pixels — do NOT trace the bounding
             // rectangle outline, as that would burn an unwanted border around the image.
@@ -540,9 +584,13 @@ export async function generateGcode(
           if (hatchGcode) lines.push(hatchGcode);
         }
 
-        // Always trace the outline (cut or engrave)
-        const pathGcode = pathToGcode(geo.d, op.feedRate, sValue, transform);
-        lines.push(pathGcode);
+        // For engrave ops: filled shapes were hatch-filled above — skip the
+        // outline to avoid burning an unwanted border around each shape.
+        // For cut ops (or unfilled engrave shapes): always trace the outline.
+        if (op.type !== 'engrave' || !geo.fill) {
+          const pathGcode = pathToGcode(geo.d, op.feedRate, sValue, transform);
+          lines.push(pathGcode);
+        }
       }
       lines.push('');
     }

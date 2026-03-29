@@ -424,4 +424,70 @@ describe('parseSvg – fill extraction', () => {
     expect(paths[1].fill).toBe('#999');      // path: fill="#999"
     expect(paths[2].fill).toBe('#000000');   // path: no fill attr → SVG default black
   });
+
+  it('extracts fill from inline style attribute', async () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+      <rect width="50" height="50" style="fill:#999;stroke:#000;stroke-width:1px"/>
+    </svg>`;
+    const paths = await parseSvg(svg);
+    expect(paths).toHaveLength(1);
+    expect(paths[0].fill).toBe('#999');
+  });
+
+  it('extracts fill from inline style with spaces', async () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+      <rect width="50" height="50" style="fill: #abcdef ; stroke: #000"/>
+    </svg>`;
+    const paths = await parseSvg(svg);
+    expect(paths).toHaveLength(1);
+    expect(paths[0].fill).toBe('#abcdef');
+  });
+
+  it('handles fill:none in inline style', async () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+      <rect width="50" height="50" style="fill:none;stroke:#000"/>
+    </svg>`;
+    const paths = await parseSvg(svg);
+    expect(paths).toHaveLength(1);
+    expect(paths[0].fill).toBeUndefined();
+  });
+
+  it('extracts rgb() fill from inline style', async () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+      <rect width="50" height="50" style="fill:rgb(153,153,153)"/>
+    </svg>`;
+    const paths = await parseSvg(svg);
+    expect(paths).toHaveLength(1);
+    expect(paths[0].fill).toBe('rgb(153,153,153)');
+  });
+
+  it('prefers fill attribute over inline style fill', async () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+      <rect width="50" height="50" fill="#ff0000" style="fill:#00ff00"/>
+    </svg>`;
+    const paths = await parseSvg(svg);
+    expect(paths).toHaveLength(1);
+    expect(paths[0].fill).toBe('#ff0000');
+  });
+
+  it('parses Illustrator-style SVG with inline style fills', async () => {
+    // Typical Illustrator export uses inline styles for fill colours
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="15.35mm" height="27.22mm" viewBox="0 0 43.52 77.15">
+  <rect width="43.52" height="12.86" style="fill:#1a1a1a;stroke-width:0px"/>
+  <rect y="12.86" width="43.52" height="12.86" style="fill:#4d4d4d;stroke-width:0px"/>
+  <rect y="25.72" width="43.52" height="12.86" style="fill:#808080;stroke-width:0px"/>
+  <rect y="38.57" width="43.52" height="12.86" style="fill:#b3b3b3;stroke-width:0px"/>
+  <rect y="51.43" width="43.52" height="12.86" style="fill:#d9d9d9;stroke-width:0px"/>
+  <rect y="64.29" width="43.52" height="12.86" style="fill:#f2f2f2;stroke-width:0px"/>
+</svg>`;
+    const paths = await parseSvg(svg);
+    expect(paths).toHaveLength(6);
+    expect(paths[0].fill).toBe('#1a1a1a');
+    expect(paths[1].fill).toBe('#4d4d4d');
+    expect(paths[2].fill).toBe('#808080');
+    expect(paths[3].fill).toBe('#b3b3b3');
+    expect(paths[4].fill).toBe('#d9d9d9');
+    expect(paths[5].fill).toBe('#f2f2f2');
+  });
 });
