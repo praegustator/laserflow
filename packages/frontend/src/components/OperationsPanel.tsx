@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Operation, OperationType, Layer, MaterialPreset, Project } from '../types';
+import type { Operation, OperationType, EngravePattern, Layer, MaterialPreset, Project } from '../types';
 import { useProjectStore } from '../store/projectStore';
 import { useJobStore } from '../store/jobStore';
 import { useToastStore } from '../store/toastStore';
@@ -54,8 +54,11 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
   const multiZOffset = sharedValue(selectedOps, o => o.zOffset ?? 0);
   const multiLineInterval = sharedValue(selectedOps, o => o.engraveLineInterval ?? 0.1);
   const multiLineAngle = sharedValue(selectedOps, o => o.engraveLineAngle ?? 0);
+  const multiPattern = sharedValue(selectedOps, o => o.engravePattern ?? 'lines');
 
   const anyEngrave = selectedOps.some(o => o.type === 'engrave');
+  // lineAngle only makes sense for line-based and dot patterns
+  const patternHasAngle = multiPattern === 'lines' || multiPattern === 'crosshatch' || multiPattern === 'dots' || multiPattern === null;
 
   const commitPower = () => {
     const val = Math.max(0, Math.min(100, Math.round(Number(localPower) || 0)));
@@ -270,11 +273,32 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
             <>
               <div className="pt-1 border-t border-gray-800">
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Fill Engrave Settings</p>
-                <p className="text-xs text-gray-600 mb-2">Controls hatch-fill for shapes with a fill colour.</p>
+                <p className="text-xs text-gray-600 mb-2">Controls fill for shapes with a fill colour.</p>
               </div>
+
+              {/* Pattern selector */}
+              <div>
+                <label className="text-xs text-gray-500 uppercase">Pattern</label>
+                <div className="grid grid-cols-5 gap-1 mt-1">
+                  {(['lines', 'crosshatch', 'concentric', 'spiral', 'dots'] as EngravePattern[]).map(p => (
+                    <button
+                      key={p}
+                      onClick={() => onChange({ engravePattern: p })}
+                      className={`py-1 text-xs rounded font-semibold transition-colors capitalize ${
+                        multiPattern === p
+                          ? 'bg-orange-500 text-white'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                      title={p}
+                    >{p === 'crosshatch' ? 'Cross' : p.charAt(0).toUpperCase() + p.slice(1)}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Spacing */}
               <div>
                 <div className="flex justify-between">
-                  <label className="text-xs text-gray-500 uppercase">Line Interval (mm)</label>
+                  <label className="text-xs text-gray-500 uppercase">Spacing (mm)</label>
                   {editingLineInterval ? (
                     <input
                       type="text"
@@ -296,30 +320,34 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
                   )}
                 </div>
               </div>
-              <div>
-                <div className="flex justify-between">
-                  <label className="text-xs text-gray-500 uppercase">Line Angle (°)</label>
-                  {editingLineAngle ? (
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={localLineAngle}
-                      onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalLineAngle(v); }}
-                      onBlur={commitLineAngle}
-                      onFocus={e => e.currentTarget.select()}
-                      onKeyDown={e => { if (e.key === 'Enter') commitLineAngle(); if (e.key === 'Escape') setEditingLineAngle(false); }}
-                      autoFocus
-                      className="w-12 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-right focus:outline-none"
-                    />
-                  ) : (
-                    <span
-                      className="text-xs text-gray-400 cursor-pointer hover:text-gray-200"
-                      title="Double-click to edit"
-                      onDoubleClick={() => { setLocalLineAngle(String(multiLineAngle ?? 0)); setEditingLineAngle(true); }}
-                    >{multiLineAngle !== null ? `${multiLineAngle}°` : 'mixed'}</span>
-                  )}
+
+              {/* Angle — only for line/crosshatch/dot patterns */}
+              {patternHasAngle && (
+                <div>
+                  <div className="flex justify-between">
+                    <label className="text-xs text-gray-500 uppercase">Angle (°)</label>
+                    {editingLineAngle ? (
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={localLineAngle}
+                        onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalLineAngle(v); }}
+                        onBlur={commitLineAngle}
+                        onFocus={e => e.currentTarget.select()}
+                        onKeyDown={e => { if (e.key === 'Enter') commitLineAngle(); if (e.key === 'Escape') setEditingLineAngle(false); }}
+                        autoFocus
+                        className="w-12 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-right focus:outline-none"
+                      />
+                    ) : (
+                      <span
+                        className="text-xs text-gray-400 cursor-pointer hover:text-gray-200"
+                        title="Double-click to edit"
+                        onDoubleClick={() => { setLocalLineAngle(String(multiLineAngle ?? 0)); setEditingLineAngle(true); }}
+                      >{multiLineAngle !== null ? `${multiLineAngle}°` : 'mixed'}</span>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </>
           )}
         </>

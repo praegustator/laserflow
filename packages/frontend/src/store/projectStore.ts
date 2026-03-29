@@ -1008,6 +1008,7 @@ export const useProjectStore = create<ProjectStore>()(
             layerIds: op.layerIds,
             engraveLineInterval: op.engraveLineInterval,
             engraveLineAngle: op.engraveLineAngle,
+            engravePattern: op.engravePattern,
           })),
           machineId,
           layerTransforms,

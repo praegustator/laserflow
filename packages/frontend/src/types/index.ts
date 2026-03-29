@@ -1,6 +1,9 @@
 export type JobStatus = 'idle' | 'queued' | 'running' | 'paused' | 'completed' | 'canceled' | 'error';
 export type OperationType = 'cut' | 'engrave';
 
+/** Fill pattern used when engraving filled shapes. */
+export type EngravePattern = 'lines' | 'crosshatch' | 'concentric' | 'spiral' | 'dots';
+
 export interface Operation {
   id: string;
   type: OperationType;
@@ -15,8 +18,10 @@ export interface Operation {
   layerId?: string;
   /** Spacing between hatch scan-lines when engraving filled shapes (mm, default 0.1). */
   engraveLineInterval?: number;
-  /** Angle of hatch scan-lines in degrees (default 0 = horizontal). */
+  /** Angle of hatch/dot scan-lines in degrees (default 0 = horizontal). Used by 'lines', 'crosshatch', 'dots'. */
   engraveLineAngle?: number;
+  /** Fill pattern for engrave operations (default: 'lines'). */
+  engravePattern?: EngravePattern;
 }
 
 export interface PathGeometry {
