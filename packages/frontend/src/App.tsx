@@ -3,7 +3,6 @@ import { HashRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import BackendOverlay from './components/BackendOverlay';
 import Dashboard from './pages/Dashboard';
-import Console from './pages/Console';
 import Editor from './pages/Editor';
 import Settings from './pages/Settings';
 import GcodePreview from './pages/GcodePreview';
@@ -92,7 +91,6 @@ function AppInner() {
     <Routes>
       <Route path="/" element={<Layout />}>
         <Route index element={<Dashboard />} />
-        <Route path="console" element={<Console />} />
         <Route path="editor" element={<Editor />} />
         <Route path="settings" element={<Settings />} />
         <Route path="gcode-preview" element={<GcodePreview />} />

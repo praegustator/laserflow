@@ -49,11 +49,40 @@ describe('JobRepository', () => {
     expect(repo.findById('job-2')?.name).toBe('Updated Name');
   });
 
-  it('deletes a job', () => {
+  it('soft-deletes a job (moves to trash)', () => {
     repo.save(makeJob('job-3'));
     repo.delete('job-3');
+    // findAll() (active jobs) should not include it
     expect(repo.findAll()).toHaveLength(0);
-    expect(repo.findById('job-3')).toBeNull();
+    // findAllDeleted() should include it with deletedAt set
+    const trashed = repo.findAllDeleted();
+    expect(trashed).toHaveLength(1);
+    expect(trashed[0].id).toBe('job-3');
+    expect(trashed[0].deletedAt).toBeDefined();
+    // findById() still returns it (needed for restore/purge)
+    expect(repo.findById('job-3')).not.toBeNull();
+  });
+
+  it('restores a soft-deleted job', () => {
+    repo.save(makeJob('job-3b'));
+    repo.delete('job-3b');
+    expect(repo.findAll()).toHaveLength(0);
+    repo.restore('job-3b');
+    expect(repo.findAll()).toHaveLength(1);
+    expect(repo.findAll()[0].deletedAt).toBeUndefined();
+  });
+
+  it('purges jobs older than a given age', () => {
+    const job = makeJob('job-3c');
+    repo.save(job);
+    repo.delete('job-3c');
+    // Manually backdate the deletedAt to 40 days ago
+    const trashed = repo.findById('job-3c')!;
+    trashed.deletedAt = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString();
+    repo.save(trashed);
+    const purged = repo.purgeOlderThan(30);
+    expect(purged).toBe(1);
+    expect(repo.findById('job-3c')).toBeNull();
   });
 
   it('persists across instances', () => {
