@@ -6,7 +6,7 @@ import { useToastStore } from '../store/toastStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { api } from '../api/client';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faToggleOn, faToggleOff, faTrash, faClone, faPlus, faGears, faEye } from '@fortawesome/free-solid-svg-icons';
+import { faToggleOn, faToggleOff, faTrash, faClone, faPlus, faGears, faEye, faPencil } from '@fortawesome/free-solid-svg-icons';
 
 const OP_TYPE_LABELS: Record<OperationType, string> = {
   cut: '✂ Cut',
@@ -246,6 +246,7 @@ function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRen
   const [editingLabel, setEditingLabel] = useState(false);
   const [localLabel, setLocalLabel] = useState(op.label ?? '');
   const [assignOpen, setAssignOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const assignRef = useRef<HTMLDivElement>(null);
 
   const commitLabel = () => {
@@ -306,57 +307,32 @@ function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRen
             className="flex-1 min-w-0 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 focus:outline-none"
           />
         ) : (
-          <span
-            className="text-xs text-gray-600 italic truncate max-w-[60px]"
-            title="Double-click to rename"
-            onDoubleClick={e => { e.stopPropagation(); setLocalLabel(op.label ?? ''); setEditingLabel(true); }}
-          >{op.label ? `(${op.label})` : ''}</span>
+          <>
+            <span
+              className="text-xs text-gray-300 truncate max-w-[80px]"
+              title="Double-click to rename"
+              onDoubleClick={e => { e.stopPropagation(); setLocalLabel(op.label ?? ''); setEditingLabel(true); }}
+            >{op.label || ''}</span>
+            <button
+              onClick={e => { e.stopPropagation(); setLocalLabel(op.label ?? ''); setEditingLabel(true); }}
+              className="text-gray-600 hover:text-orange-400 text-[10px] flex-shrink-0"
+              title="Rename operation"
+            ><FontAwesomeIcon icon={faPencil} /></button>
+          </>
         )}
 
-        {/* Assigned layer chips */}
-        <div className="flex flex-wrap gap-0.5 flex-1 min-w-0 items-center" onClick={e => e.stopPropagation()}>
-          {op.layerIds.length === 0 && op.enabled && (
-            <span className="text-xs text-yellow-500" title="No layers assigned">⚠</span>
-          )}
-          {op.layerIds.map(lid => {
-            const layer = layers.find(l => l.id === lid);
-            return (
-              <span
-                key={lid}
-                className="inline-flex items-center gap-0.5 bg-gray-700 rounded px-1 py-0 text-xs text-gray-300 leading-4"
-              >
-                <span className="truncate max-w-[56px]" title={layer?.name ?? lid}>{layer?.name ?? lid}</span>
-                <button
-                  onClick={() => onUnassignLayer(lid)}
-                  className="text-gray-500 hover:text-red-400 leading-none ml-0.5"
-                  title="Remove"
-                >×</button>
-              </span>
-            );
-          })}
+        <div className="flex-1 min-w-0" />
 
-          {/* + assign button with popover */}
-          {unassignedLayers.length > 0 && (
-            <div className="relative" ref={assignRef}>
-              <button
-                onClick={e => { e.stopPropagation(); setAssignOpen(o => !o); }}
-                className="inline-flex items-center justify-center w-4 h-4 rounded bg-gray-700 hover:bg-orange-600 text-gray-400 hover:text-white text-xs leading-none transition-colors"
-                title="Assign layer"
-              ><FontAwesomeIcon icon={faPlus} className="text-[10px]" /></button>
-              {assignOpen && (
-                <div className="absolute left-0 top-full mt-1 z-50 bg-gray-800 border border-gray-600 rounded-lg shadow-xl min-w-[140px] py-1" onClick={e => e.stopPropagation()}>
-                  {unassignedLayers.map(l => (
-                    <button
-                      key={l.id}
-                      onClick={() => { onAssignLayer(l.id); setAssignOpen(false); }}
-                      className="w-full text-left px-3 py-1 text-xs text-gray-200 hover:bg-gray-700 truncate"
-                    >{l.name}</button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        {op.layerIds.length === 0 && op.enabled && (
+          <span className="text-xs text-yellow-500" title="No layers assigned">⚠</span>
+        )}
+
+        {/* Expand/collapse button to show layers */}
+        <button
+          onClick={e => { e.stopPropagation(); setExpanded(v => !v); }}
+          className="text-gray-500 hover:text-gray-200 text-xs flex-shrink-0"
+          title={expanded ? 'Collapse layers' : 'Expand layers'}
+        >{expanded ? '▾' : '▸'} <span className="text-[10px]">{op.layerIds.length}</span></button>
 
         <span className="text-xs text-gray-600 flex-shrink-0 hidden xl:block">
           {op.feedRate}mm/min · {op.power}% · ×{op.passes}
@@ -367,6 +343,52 @@ function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRen
           <button onClick={onRemove} className="text-gray-500 hover:text-red-400 text-xs" title="Remove"><FontAwesomeIcon icon={faTrash} /></button>
         </div>
       </div>
+
+      {/* Expanded layer assignment section */}
+      {expanded && (
+        <div className="px-2 py-1.5 bg-gray-850 border-t border-gray-700/50" onClick={e => e.stopPropagation()}>
+          <div className="flex flex-wrap gap-1 items-center">
+            {op.layerIds.map(lid => {
+              const layer = layers.find(l => l.id === lid);
+              return (
+                <span
+                  key={lid}
+                  className="inline-flex items-center gap-0.5 bg-gray-700 rounded px-1.5 py-0.5 text-xs text-gray-300 leading-4"
+                >
+                  <span className="truncate max-w-[80px]" title={layer?.name ?? lid}>{layer?.name ?? lid}</span>
+                  <button
+                    onClick={() => onUnassignLayer(lid)}
+                    className="text-gray-500 hover:text-red-400 leading-none ml-0.5"
+                    title="Remove"
+                  >×</button>
+                </span>
+              );
+            })}
+
+            {/* + assign button with popover */}
+            {unassignedLayers.length > 0 && (
+              <div className="relative" ref={assignRef}>
+                <button
+                  onClick={e => { e.stopPropagation(); setAssignOpen(o => !o); }}
+                  className="inline-flex items-center justify-center gap-0.5 h-5 px-1.5 rounded bg-gray-700 hover:bg-orange-600 text-gray-400 hover:text-white text-xs leading-none transition-colors"
+                  title="Assign layer"
+                ><FontAwesomeIcon icon={faPlus} className="text-[10px]" /> <span className="text-[10px]">Add</span></button>
+                {assignOpen && (
+                  <div className="absolute left-0 top-full mt-1 z-50 bg-gray-800 border border-gray-600 rounded-lg shadow-xl min-w-[140px] py-1" onClick={e => e.stopPropagation()}>
+                    {unassignedLayers.map(l => (
+                      <button
+                        key={l.id}
+                        onClick={() => { onAssignLayer(l.id); setAssignOpen(false); }}
+                        className="w-full text-left px-3 py-1 text-xs text-gray-200 hover:bg-gray-700 truncate"
+                      >{l.name}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

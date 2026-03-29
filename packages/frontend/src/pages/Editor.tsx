@@ -13,7 +13,7 @@ import ImageImportDialog from '../components/ImageImportDialog';
 import type { Layer, PivotAnchor } from '../types';
 import { hasMultipleSubpaths, computeLayerWorldBBox, computeMultiLayerWorldBBox, worldAnchorPoint } from '../utils/geometry';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faEye, faEyeSlash, faTrash, faFileImport, faObjectGroup, faLayerGroup, faScissors, faArrowUpFromBracket, faMagnifyingGlassPlus, faMagnifyingGlassMinus, faExpand, faCompress, faBezierCurve, faImage, faCrosshairs, faXmark } from '@fortawesome/free-solid-svg-icons';
+import { faEye, faEyeSlash, faTrash, faFileImport, faObjectGroup, faLayerGroup, faScissors, faArrowUpFromBracket, faMagnifyingGlassPlus, faMagnifyingGlassMinus, faExpand, faCompress, faBezierCurve, faImage, faCrosshairs, faXmark, faPencil } from '@fortawesome/free-solid-svg-icons';
 
 const LAYER_COLORS = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6'];
 const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|bmp|webp)$/i;
@@ -210,10 +210,13 @@ export default function Editor() {
   const restoreVersion = useProjectStore(s => s.restoreVersion);
   const deleteVersion = useProjectStore(s => s.deleteVersion);
   const alignLayersToPoint = useProjectStore(s => s.alignLayersToPoint);
+  const renameProject = useProjectStore(s => s.renameProject);
   const originPosition = useAppSettings(s => s.originPosition);
   const workAreaHeight = useAppSettings(s => s.workAreaHeight);
   const autoZoomOnLayerSelect = useAppSettings(s => s.autoZoomOnLayerSelect);
   const autoPanOnLayerSelect = useAppSettings(s => s.autoPanOnLayerSelect);
+  const calibratedPxPerMm = useAppSettings(s => s.calibratedPxPerMm);
+  const setCalibratedPxPerMm = useAppSettings(s => s.setCalibratedPxPerMm);
   const addToast = useToastStore(s => s.addToast);
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -252,6 +255,9 @@ export default function Editor() {
   const [alignTarget, setAlignTarget] = useState<{ type: 'layer'; layerId: string; label: string } | { type: 'board'; label: string } | null>(null);
   // Ruler calibration overlay
   const [showRulerCalibration, setShowRulerCalibration] = useState(false);
+  // Project name editing
+  const [editingProjectName, setEditingProjectName] = useState(false);
+  const [projectNameDraft, setProjectNameDraft] = useState('');
 
   const project = projects.find(p => p.id === activeProjectId) ?? null;
 
@@ -548,7 +554,30 @@ export default function Editor() {
       <div className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-4 py-2 flex items-center gap-3">
         {project ? (
           <>
-            <span className="text-sm font-semibold text-gray-100">{project.name}</span>
+            {editingProjectName ? (
+              <input
+                type="text"
+                value={projectNameDraft}
+                onChange={e => setProjectNameDraft(e.target.value)}
+                onBlur={() => { if (projectNameDraft.trim()) renameProject(project.id, projectNameDraft.trim()); setEditingProjectName(false); }}
+                onKeyDown={e => { if (e.key === 'Enter') { if (projectNameDraft.trim()) renameProject(project.id, projectNameDraft.trim()); setEditingProjectName(false); } if (e.key === 'Escape') setEditingProjectName(false); }}
+                autoFocus
+                className="text-sm font-semibold bg-gray-800 border border-orange-500 rounded px-1 py-0 text-gray-100 focus:outline-none min-w-[100px]"
+              />
+            ) : (
+              <>
+                <span
+                  className="text-sm font-semibold text-gray-100"
+                  title="Double-click to rename"
+                  onDoubleClick={() => { setProjectNameDraft(project.name); setEditingProjectName(true); }}
+                >{project.name}</span>
+                <button
+                  onClick={() => { setProjectNameDraft(project.name); setEditingProjectName(true); }}
+                  className="text-gray-600 hover:text-orange-400 text-[10px]"
+                  title="Rename project"
+                ><FontAwesomeIcon icon={faPencil} /></button>
+              </>
+            )}
             <span className="text-xs text-gray-500">
               {project.layers.length} layer{project.layers.length !== 1 ? 's' : ''} · {project.operations.length} op{project.operations.length !== 1 ? 's' : ''}
             </span>
@@ -793,11 +822,18 @@ export default function Editor() {
                         className="flex-1 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 focus:outline-none min-w-0"
                       />
                     ) : (
-                      <span
-                        className="flex-1 text-xs text-gray-200 truncate"
-                        title={`${layer.name} — double-click to rename`}
-                        onDoubleClick={e => { e.stopPropagation(); startEditingLayerName(layer.id, layer.name); }}
-                      >{layer.name}</span>
+                      <>
+                        <span
+                          className="flex-1 text-xs text-gray-200 truncate"
+                          title={`${layer.name} — double-click to rename`}
+                          onDoubleClick={e => { e.stopPropagation(); startEditingLayerName(layer.id, layer.name); }}
+                        >{layer.name}</span>
+                        <button
+                          onClick={e => { e.stopPropagation(); startEditingLayerName(layer.id, layer.name); }}
+                          className="text-gray-600 hover:text-orange-400 text-[10px] flex-shrink-0"
+                          title="Rename layer"
+                        ><FontAwesomeIcon icon={faPencil} /></button>
+                      </>
                     )}
 
                     {/* Expand/collapse shapes — only when layer has multiple shapes */}
@@ -854,6 +890,11 @@ export default function Editor() {
                                   title={`${shape.name} — double-click to rename`}
                                   onDoubleClick={e => { e.stopPropagation(); startEditingShapeName(shape.id, layer.id, shape.name); }}
                                 >{shape.name}</span>
+                                <button
+                                  onClick={e => { e.stopPropagation(); startEditingShapeName(shape.id, layer.id, shape.name); }}
+                                  className="text-gray-600 hover:text-orange-400 text-[9px] flex-shrink-0"
+                                  title="Rename shape"
+                                ><FontAwesomeIcon icon={faPencil} /></button>
                               </>
                             )}
                           </div>
@@ -1033,9 +1074,11 @@ export default function Editor() {
               ><FontAwesomeIcon icon={faMagnifyingGlassPlus} /></button>
               <span
                 className="text-xs text-gray-300 min-w-[3rem] text-center tabular-nums select-none cursor-help"
-                title={`${currentZoom.toFixed(3)} px/mm — 100% means 1 CSS pixel = 1 mm. Use the ruler calibration (📐) to match your physical display.`}
+                title={calibratedPxPerMm
+                  ? `${currentZoom.toFixed(3)} px/mm (calibrated: ${calibratedPxPerMm.toFixed(3)} px/mm) — 100% = real physical size.`
+                  : `${currentZoom.toFixed(3)} px/mm — Use the ruler calibration (📐) to match your physical display so 100% = real size.`}
               >
-                {Math.round(currentZoom * 100)}%
+                {Math.round((calibratedPxPerMm ? currentZoom / calibratedPxPerMm : currentZoom) * 100)}%
               </span>
               <button
                 onClick={() => canvasRef.current?.zoomOut()}
@@ -1072,7 +1115,7 @@ export default function Editor() {
             {showRulerCalibration && (
               <RulerCalibration
                 currentScale={currentZoom}
-                onApply={pxPerMm => { canvasRef.current?.setScale(pxPerMm); setShowRulerCalibration(false); }}
+                onApply={pxPerMm => { setCalibratedPxPerMm(pxPerMm); canvasRef.current?.setScale(pxPerMm); setShowRulerCalibration(false); }}
                 onClose={() => setShowRulerCalibration(false)}
               />
             )}
