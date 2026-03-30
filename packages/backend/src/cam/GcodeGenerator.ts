@@ -259,6 +259,31 @@ function linearizePathToPolygons(d: string): Array<Array<[number, number]>> {
   return polygons;
 }
 
+/* ── Shared fill-pattern helpers ─────────────────────────────────────── */
+
+/** Points generated per full spiral revolution. Higher = smoother curve, more G-code lines. */
+const SPIRAL_POINTS_PER_REVOLUTION = 100;
+
+/** Length (mm) of the G1 laser-on move that forms each dot in the dots pattern.
+ *  0.1 mm is short enough to look like a point but long enough to be accepted by all firmware. */
+const DOT_PULSE_MM = 0.1;
+
+/** Even-odd point-in-polygon test for a set of polygons. */
+function pointInPolygons(x: number, y: number, polygons: Array<Array<[number, number]>>): boolean {
+  let inside = false;
+  for (const poly of polygons) {
+    const n = poly.length;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const xi = poly[i][0], yi = poly[i][1];
+      const xj = poly[j][0], yj = poly[j][1];
+      if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) {
+        inside = !inside;
+      }
+    }
+  }
+  return inside;
+}
+
 /**
  * Generate hatch-fill G-code for a filled shape using a scan-line algorithm.
  * Returns G-code lines that raster-fill the interior of the shape.
@@ -359,6 +384,152 @@ function hatchFillToGcode(
     }
 
     leftToRight = !leftToRight;
+  }
+
+  return lines.join('\n');
+}
+
+/* ── Cross-hatch fill ─────────────────────────────────────────────────── */
+
+/**
+ * Two perpendicular hatch passes at `lineAngle` and `lineAngle + 90°`.
+ * Setting `lineAngle` to 45 produces a classic diamond crosshatch.
+ */
+function crosshatchFillToGcode(
+  d: string,
+  feedRate: number,
+  sValue: number,
+  lineInterval: number,
+  lineAngle: number,
+  transform: PathTransform = IDENTITY_TRANSFORM,
+): string {
+  const pass1 = hatchFillToGcode(d, feedRate, sValue, lineInterval, lineAngle, transform);
+  const pass2 = hatchFillToGcode(d, feedRate, sValue, lineInterval, lineAngle + 90, transform);
+  return [pass1, pass2].filter(Boolean).join('\n');
+}
+
+/* ── Spiral fill ──────────────────────────────────────────────────────── */
+
+/**
+ * Fill a shape with an Archimedean spiral radiating from the shape centroid.
+ * The spiral is clipped to the shape interior using an even-odd point test.
+ * `lineInterval` controls the spacing between successive spiral arms.
+ */
+function spiralFillToGcode(
+  d: string,
+  feedRate: number,
+  sValue: number,
+  lineInterval: number,
+  transform: PathTransform = IDENTITY_TRANSFORM,
+): string {
+  const polygons = linearizePathToPolygons(d);
+  if (polygons.length === 0) return '';
+
+  // Bounding box and centroid
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const poly of polygons) {
+    for (const [x, y] of poly) {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  const maxRadius = Math.hypot(maxX - minX, maxY - minY) / 2;
+
+  // Convert world-space lineInterval to layer space
+  const geoScale = Math.sqrt(Math.abs(transform.scaleX * transform.scaleY));
+  const layerInterval = geoScale > 0 ? lineInterval / geoScale : lineInterval;
+
+  // Archimedean spiral: r = b * θ, so after 2π radians r grows by layerInterval
+  const b = layerInterval / (2 * Math.PI);
+  // θ at which r = maxRadius
+  const thetaMax = b > 0 ? maxRadius / b : 0;
+  if (thetaMax <= 0) return '';
+
+  // Angular step giving SPIRAL_POINTS_PER_REVOLUTION points per revolution for smooth curves
+  const angularStep = (2 * Math.PI) / SPIRAL_POINTS_PER_REVOLUTION;
+
+  const lines: string[] = [];
+  let prevInside = false;
+
+  // Spiral outward from centre
+  for (let theta = angularStep; theta <= thetaMax + angularStep; theta += angularStep) {
+    const r = b * Math.min(theta, thetaMax);
+    const x = cx + r * Math.cos(theta);
+    const y = cy + r * Math.sin(theta);
+    const inside = pointInPolygons(x, y, polygons);
+
+    const [tx, ty] = applyTransform(x, y, transform);
+    if (inside && !prevInside) {
+      lines.push(`G0 X${fmt(tx)} Y${fmt(ty)} S0`);
+    } else if (inside) {
+      lines.push(`G1 X${fmt(tx)} Y${fmt(ty)} F${feedRate} S${sValue}`);
+    }
+    prevInside = inside;
+  }
+
+  return lines.join('\n');
+}
+
+/* ── Dots fill ────────────────────────────────────────────────────────── */
+
+/**
+ * Fill a shape with a grid of laser-pulse dots spaced `lineInterval` apart.
+ * The grid can be rotated by `lineAngle` degrees.
+ * Each dot is a very short (0.1 mm) G1 move to keep firmware compatibility.
+ */
+function dotsFillToGcode(
+  d: string,
+  feedRate: number,
+  sValue: number,
+  lineInterval: number,
+  lineAngle: number,
+  transform: PathTransform = IDENTITY_TRANSFORM,
+): string {
+  const polygons = linearizePathToPolygons(d);
+  if (polygons.length === 0) return '';
+
+  const geoScale = Math.sqrt(Math.abs(transform.scaleX * transform.scaleY));
+  const layerInterval = geoScale > 0 ? lineInterval / geoScale : lineInterval;
+
+  // Bounding box
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const poly of polygons) {
+    for (const [x, y] of poly) {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  const diag = Math.hypot(maxX - minX, maxY - minY);
+
+  const radians = (lineAngle % 360) * Math.PI / 180;
+  const cosA = Math.cos(radians), sinA = Math.sin(radians);
+
+  const iMax = Math.ceil(diag / layerInterval) + 1;
+  const lines: string[] = [];
+
+  for (let i = -iMax; i <= iMax; i++) {
+    for (let j = -iMax; j <= iMax; j++) {
+      // Rotated grid point
+      const gx = i * layerInterval;
+      const gy = j * layerInterval;
+      const x = cx + gx * cosA - gy * sinA;
+      const y = cy + gx * sinA + gy * cosA;
+
+      if (!pointInPolygons(x, y, polygons)) continue;
+
+      const [tx, ty] = applyTransform(x, y, transform);
+      // Move to dot centre with laser off, then short move with laser on
+      lines.push(`G0 X${fmt(tx)} Y${fmt(ty)} S0`);
+      lines.push(`G1 X${fmt(tx + DOT_PULSE_MM)} Y${fmt(ty)} F${feedRate} S${sValue}`);
+    }
   }
 
   return lines.join('\n');
@@ -568,20 +739,34 @@ export async function generateGcode(
           continue;
         }
 
-        // For engrave operations, filled shapes get hatch-fill scan lines.
+        // For engrave operations, filled shapes get pattern-fill scan lines.
         // The S value is scaled by the fill shade: darker = more power,
         // lighter = less.  fill="none" shapes (fill === undefined) are
         // skipped — they have no interior to raster.
         if (op.type === 'engrave' && geo.fill) {
           const interval = op.engraveLineInterval ?? 0.1;
           const angle = op.engraveLineAngle ?? 0;
+          const pattern = op.engravePattern ?? 'lines';
           // Scale power by shade brightness (black = full power, white = 0)
           const brightness = fillBrightness(geo.fill);
           const shadeSValue = brightness !== null
             ? Math.round(sValue * (1 - brightness))
             : sValue;
-          const hatchGcode = hatchFillToGcode(geo.d, op.feedRate, shadeSValue, interval, angle, transform);
-          if (hatchGcode) lines.push(hatchGcode);
+          let fillGcode = '';
+          switch (pattern) {
+            case 'crosshatch':
+              fillGcode = crosshatchFillToGcode(geo.d, op.feedRate, shadeSValue, interval, angle, transform);
+              break;
+            case 'spiral':
+              fillGcode = spiralFillToGcode(geo.d, op.feedRate, shadeSValue, interval, transform);
+              break;
+            case 'dots':
+              fillGcode = dotsFillToGcode(geo.d, op.feedRate, shadeSValue, interval, angle, transform);
+              break;
+            default:
+              fillGcode = hatchFillToGcode(geo.d, op.feedRate, shadeSValue, interval, angle, transform);
+          }
+          if (fillGcode) lines.push(fillGcode);
         }
 
         // For engrave ops: filled shapes were hatch-filled above — skip the

@@ -539,6 +539,12 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
         const ARROW_LEN = 50; // screen pixels
         const ARROWHEAD_SIZE = 7; // arrowhead tip length in pixels
         const yDir = originPosition === 'bottom-left' ? -1 : 1;
+
+        // Grid dimension labels — show one gridStep measurement on each axis
+        const stepPx = gridStep * scale;
+        const xLabelPx = oxPx + stepPx;
+        const yLabelPx = oyPx + yDir * stepPx;
+
         return (
           <>
             <circle cx={oxPx} cy={oyPx} r={4} fill="#f97316" />
@@ -552,6 +558,25 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
             <line x1={oxPx} y1={oyPx} x2={oxPx} y2={oyPx + yDir * ARROW_LEN} stroke="#f97316" strokeWidth={1.5} opacity={0.8} />
             <polygon points={`${oxPx},${oyPx + yDir * ARROW_LEN} ${oxPx - ARROWHEAD_SIZE * 0.5},${oyPx + yDir * (ARROW_LEN - ARROWHEAD_SIZE)} ${oxPx + ARROWHEAD_SIZE * 0.5},${oyPx + yDir * (ARROW_LEN - ARROWHEAD_SIZE)}`} fill="#f97316" opacity={0.8} />
             <text x={oxPx + 4} y={oyPx + yDir * (ARROW_LEN + 4)} fill="#f97316" fontSize={12} fontFamily="monospace" opacity={0.9}>Y</text>
+
+            {/* Grid dimension label on X axis */}
+            {stepPx >= 20 && (
+              <>
+                <line x1={oxPx} y1={oyPx + 8} x2={oxPx} y2={oyPx + 14} stroke="#9ca3af" strokeWidth={0.5} opacity={0.6} />
+                <line x1={oxPx} y1={oyPx + 11} x2={xLabelPx} y2={oyPx + 11} stroke="#9ca3af" strokeWidth={0.5} opacity={0.6} />
+                <line x1={xLabelPx} y1={oyPx + 8} x2={xLabelPx} y2={oyPx + 14} stroke="#9ca3af" strokeWidth={0.5} opacity={0.6} />
+                <text x={oxPx + stepPx / 2} y={oyPx + 22} fill="#9ca3af" fontSize={9} fontFamily="monospace" opacity={0.7} textAnchor="middle">{gridStep}mm</text>
+              </>
+            )}
+            {/* Grid dimension label on Y axis */}
+            {stepPx >= 20 && (
+              <>
+                <line x1={oxPx - 8} y1={oyPx} x2={oxPx - 14} y2={oyPx} stroke="#9ca3af" strokeWidth={0.5} opacity={0.6} />
+                <line x1={oxPx - 11} y1={oyPx} x2={oxPx - 11} y2={yLabelPx} stroke="#9ca3af" strokeWidth={0.5} opacity={0.6} />
+                <line x1={oxPx - 8} y1={yLabelPx} x2={oxPx - 14} y2={yLabelPx} stroke="#9ca3af" strokeWidth={0.5} opacity={0.6} />
+                <text x={oxPx - 16} y={oyPx + yDir * stepPx / 2 + 3} fill="#9ca3af" fontSize={9} fontFamily="monospace" opacity={0.7} textAnchor="end">{gridStep}mm</text>
+              </>
+            )}
           </>
         );
       })()}

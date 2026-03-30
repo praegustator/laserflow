@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Operation, OperationType, Layer, MaterialPreset, Project } from '../types';
+import type { Operation, OperationType, EngravePattern, Layer, MaterialPreset, Project } from '../types';
 import { useProjectStore } from '../store/projectStore';
+import { useJobStore } from '../store/jobStore';
 import { useToastStore } from '../store/toastStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { api } from '../api/client';
@@ -9,8 +10,8 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faToggleOn, faToggleOff, faTrash, faClone, faPlus, faGears, faEye, faPencil } from '@fortawesome/free-solid-svg-icons';
 
 const OP_TYPE_LABELS: Record<OperationType, string> = {
-  cut: '✂ Cut',
-  engrave: '✏ Engrave',
+  cut: 'Cut',
+  engrave: 'Engrave',
 };
 
 const OP_COLORS: Record<OperationType, string> = {
@@ -33,9 +34,6 @@ interface OperationParamsPanelProps {
 }
 
 function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParamsPanelProps) {
-  const [editingPower, setEditingPower] = useState(false);
-  const [localPower, setLocalPower] = useState('');
-
   const multiType = sharedValue(selectedOps, o => o.type);
   const multiFeedRate = sharedValue(selectedOps, o => o.feedRate);
   const multiPower = sharedValue(selectedOps, o => o.power);
@@ -43,19 +41,63 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
   const multiZOffset = sharedValue(selectedOps, o => o.zOffset ?? 0);
   const multiLineInterval = sharedValue(selectedOps, o => o.engraveLineInterval ?? 0.1);
   const multiLineAngle = sharedValue(selectedOps, o => o.engraveLineAngle ?? 0);
+  const multiPattern = sharedValue(selectedOps, o => o.engravePattern ?? 'lines');
 
   const anyEngrave = selectedOps.some(o => o.type === 'engrave');
+  const patternHasAngle = multiPattern === 'lines' || multiPattern === 'crosshatch' || multiPattern === 'dots' || multiPattern === null;
+
+  // Local text state for each numeric field — always-visible inputs
+  const [localFeedRate, setLocalFeedRate] = useState(String(multiFeedRate ?? ''));
+  const [localPower, setLocalPower] = useState(String(multiPower ?? ''));
+  const [localPasses, setLocalPasses] = useState(String(multiPasses ?? ''));
+  const [localZOffset, setLocalZOffset] = useState(String(multiZOffset ?? 0));
+  const [localLineInterval, setLocalLineInterval] = useState(String(multiLineInterval ?? 0.1));
+  const [localLineAngle, setLocalLineAngle] = useState(String(multiLineAngle ?? 0));
+
+  // Sync local state when the external values change (e.g. after commit or preset apply)
+  useEffect(() => { setLocalFeedRate(multiFeedRate !== null ? String(multiFeedRate) : ''); }, [multiFeedRate]);
+  useEffect(() => { setLocalPower(multiPower !== null ? String(multiPower) : ''); }, [multiPower]);
+  useEffect(() => { setLocalPasses(multiPasses !== null ? String(multiPasses) : ''); }, [multiPasses]);
+  useEffect(() => { setLocalZOffset(multiZOffset !== null ? String(multiZOffset) : ''); }, [multiZOffset]);
+  useEffect(() => { setLocalLineInterval(multiLineInterval !== null ? String(multiLineInterval) : ''); }, [multiLineInterval]);
+  useEffect(() => { setLocalLineAngle(multiLineAngle !== null ? String(multiLineAngle) : ''); }, [multiLineAngle]);
+
+  const commitFeedRate = () => {
+    const val = Math.max(1, Math.min(10000, Math.round(Number(localFeedRate) || 1)));
+    onChange({ feedRate: val });
+  };
 
   const commitPower = () => {
     const val = Math.max(0, Math.min(100, Math.round(Number(localPower) || 0)));
     onChange({ power: val });
-    setLocalPower(String(val));
-    setEditingPower(false);
+  };
+
+  const commitPasses = () => {
+    const val = Math.max(1, Math.min(20, Math.round(Number(localPasses) || 1)));
+    onChange({ passes: val });
+  };
+
+  const commitZOffset = () => {
+    const val = Number(localZOffset) || 0;
+    onChange({ zOffset: Math.round(val * 10) / 10 });
+  };
+
+  const commitLineInterval = () => {
+    const val = Math.max(0.01, Math.min(10, Number(localLineInterval) || 0.1));
+    onChange({ engraveLineInterval: Math.round(val * 100) / 100 });
+  };
+
+  const commitLineAngle = () => {
+    const val = Math.max(0, Math.min(359, Math.round(Number(localLineAngle) || 0)));
+    onChange({ engraveLineAngle: val });
   };
 
   const label = selectedOps.length === 1
     ? selectedOps[0].label || selectedOps[0].type
     : `${selectedOps.length} operations`;
+
+  // Shared input class — matches transform panel style
+  const inputCls = 'w-16 text-xs bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-gray-100 text-right focus:outline-none focus:border-orange-500';
 
   return (
     <div className="space-y-2">
@@ -91,7 +133,6 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
                 onChange={e => {
                   const preset = presets.find(p => p.id === e.target.value);
                   if (!preset) return;
-                  // Apply cut or engrave preset depending on majority type
                   const useEngrave = multiType === 'engrave';
                   const settings = useEngrave ? preset.engrave : preset.cutThin;
                   onChange({ feedRate: settings.feedRate, power: settings.power, label: preset.name });
@@ -107,42 +148,34 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
           )}
 
           {/* Feed rate */}
-          <div>
-            <label className="text-xs text-gray-500 uppercase">Feed Rate (mm/min)</label>
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs text-gray-500 uppercase shrink-0">Feed Rate (mm/min)</label>
             <input
-              type="number"
-              value={multiFeedRate ?? ''}
+              type="text" inputMode="numeric"
+              value={localFeedRate}
+              onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalFeedRate(v); }}
+              onBlur={commitFeedRate}
+              onFocus={e => e.currentTarget.select()}
+              onKeyDown={e => { if (e.key === 'Enter') commitFeedRate(); }}
               placeholder={multiFeedRate === null ? 'mixed' : undefined}
-              min={1}
-              max={10000}
-              onChange={e => { if (e.target.value) onChange({ feedRate: Number(e.target.value) }); }}
-              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+              className={inputCls}
             />
           </div>
 
           {/* Power */}
           <div>
-            <div className="flex justify-between">
-              <label className="text-xs text-gray-500 uppercase">Power (%)</label>
-              {editingPower ? (
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={localPower}
-                  onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalPower(v); }}
-                  onBlur={commitPower}
-                  onFocus={e => e.currentTarget.select()}
-                  onKeyDown={e => { if (e.key === 'Enter') commitPower(); if (e.key === 'Escape') setEditingPower(false); }}
-                  autoFocus
-                  className="w-14 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-right focus:outline-none"
-                />
-              ) : (
-                <span
-                  className="text-xs text-gray-400 cursor-pointer hover:text-gray-200"
-                  title="Double-click to enter power value"
-                  onDoubleClick={() => { setLocalPower(String(multiPower ?? '')); setEditingPower(true); }}
-                >{multiPower !== null ? `${multiPower}%` : 'mixed'}</span>
-              )}
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-xs text-gray-500 uppercase shrink-0">Power (%)</label>
+              <input
+                type="text" inputMode="numeric"
+                value={localPower}
+                onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalPower(v); }}
+                onBlur={commitPower}
+                onFocus={e => e.currentTarget.select()}
+                onKeyDown={e => { if (e.key === 'Enter') commitPower(); }}
+                placeholder={multiPower === null ? 'mixed' : undefined}
+                className={inputCls}
+              />
             </div>
             <input
               type="range"
@@ -155,29 +188,32 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
           </div>
 
           {/* Passes */}
-          <div>
-            <label className="text-xs text-gray-500 uppercase">Passes</label>
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs text-gray-500 uppercase shrink-0">Passes</label>
             <input
-              type="number"
-              value={multiPasses ?? ''}
+              type="text" inputMode="numeric"
+              value={localPasses}
+              onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalPasses(v); }}
+              onBlur={commitPasses}
+              onFocus={e => e.currentTarget.select()}
+              onKeyDown={e => { if (e.key === 'Enter') commitPasses(); }}
               placeholder={multiPasses === null ? 'mixed' : undefined}
-              min={1}
-              max={20}
-              onChange={e => { if (e.target.value) onChange({ passes: Number(e.target.value) }); }}
-              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+              className={inputCls}
             />
           </div>
 
           {/* Z Offset */}
-          <div>
-            <label className="text-xs text-gray-500 uppercase">Z Offset (mm)</label>
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs text-gray-500 uppercase shrink-0">Z Offset (mm)</label>
             <input
-              type="number"
-              value={multiZOffset ?? ''}
+              type="text" inputMode="decimal"
+              value={localZOffset}
+              onChange={e => { const v = e.target.value; if (v === '' || v === '-' || /^-?\d*\.?\d*$/.test(v)) setLocalZOffset(v); }}
+              onBlur={commitZOffset}
+              onFocus={e => e.currentTarget.select()}
+              onKeyDown={e => { if (e.key === 'Enter') commitZOffset(); }}
               placeholder={multiZOffset === null ? 'mixed' : undefined}
-              step={0.1}
-              onChange={e => { if (e.target.value !== '') onChange({ zOffset: Number(e.target.value) }); }}
-              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+              className={inputCls}
             />
           </div>
 
@@ -186,34 +222,59 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
             <>
               <div className="pt-1 border-t border-gray-800">
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Fill Engrave Settings</p>
-                <p className="text-xs text-gray-600 mb-2">Controls hatch-fill for shapes with a fill colour.</p>
+                <p className="text-xs text-gray-600 mb-2">Controls fill for shapes with a fill colour.</p>
               </div>
+
+              {/* Pattern selector */}
               <div>
-                <label className="text-xs text-gray-500 uppercase">Line Interval (mm)</label>
+                <label className="text-xs text-gray-500 uppercase">Pattern</label>
+                <div className="grid grid-cols-4 gap-1 mt-1">
+                  {(['lines', 'crosshatch', 'spiral', 'dots'] as EngravePattern[]).map(p => (
+                    <button
+                      key={p}
+                      onClick={() => onChange({ engravePattern: p })}
+                      className={`py-1 text-xs rounded font-semibold transition-colors capitalize ${
+                        multiPattern === p
+                          ? 'bg-orange-500 text-white'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                      title={p}
+                    >{p === 'crosshatch' ? 'Cross' : p.charAt(0).toUpperCase() + p.slice(1)}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Spacing */}
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs text-gray-500 uppercase shrink-0">Spacing (mm)</label>
                 <input
-                  type="number"
-                  value={multiLineInterval ?? ''}
+                  type="text" inputMode="decimal"
+                  value={localLineInterval}
+                  onChange={e => { const v = e.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setLocalLineInterval(v); }}
+                  onBlur={commitLineInterval}
+                  onFocus={e => e.currentTarget.select()}
+                  onKeyDown={e => { if (e.key === 'Enter') commitLineInterval(); }}
                   placeholder={multiLineInterval === null ? 'mixed' : undefined}
-                  min={0.01}
-                  max={10}
-                  step={0.01}
-                  onChange={e => { if (e.target.value) onChange({ engraveLineInterval: Number(e.target.value) }); }}
-                  className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+                  className={inputCls}
                 />
               </div>
-              <div>
-                <label className="text-xs text-gray-500 uppercase">Line Angle (°)</label>
-                <input
-                  type="number"
-                  value={multiLineAngle ?? ''}
-                  placeholder={multiLineAngle === null ? 'mixed' : undefined}
-                  min={0}
-                  max={359}
-                  step={1}
-                  onChange={e => { if (e.target.value !== '') onChange({ engraveLineAngle: Number(e.target.value) }); }}
-                  className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
-                />
-              </div>
+
+              {/* Angle — only for line/crosshatch/dot patterns */}
+              {patternHasAngle && (
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs text-gray-500 uppercase shrink-0">Angle (°)</label>
+                  <input
+                    type="text" inputMode="numeric"
+                    value={localLineAngle}
+                    onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalLineAngle(v); }}
+                    onBlur={commitLineAngle}
+                    onFocus={e => e.currentTarget.select()}
+                    onKeyDown={e => { if (e.key === 'Enter') commitLineAngle(); }}
+                    placeholder={multiLineAngle === null ? 'mixed' : undefined}
+                    className={inputCls}
+                  />
+                </div>
+              )}
             </>
           )}
         </>
@@ -246,7 +307,6 @@ function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRen
   const [editingLabel, setEditingLabel] = useState(false);
   const [localLabel, setLocalLabel] = useState(op.label ?? '');
   const [assignOpen, setAssignOpen] = useState(false);
-  const [expanded, setExpanded] = useState(false);
   const assignRef = useRef<HTMLDivElement>(null);
 
   const commitLabel = () => {
@@ -329,13 +389,6 @@ function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRen
           <span className="text-xs text-yellow-500" title="No layers assigned">⚠</span>
         )}
 
-        {/* Expand/collapse button to show layers */}
-        <button
-          onClick={e => { e.stopPropagation(); setExpanded(v => !v); }}
-          className="text-gray-500 hover:text-gray-200 text-xs flex-shrink-0"
-          title={expanded ? 'Collapse layers' : 'Expand layers'}
-        >{expanded ? '▾' : '▸'} <span className="text-[10px]">{op.layerIds.length}</span></button>
-
         <span className="text-xs text-gray-600 flex-shrink-0 hidden xl:block">
           {op.feedRate}mm/min · {op.power}% · ×{op.passes}
         </span>
@@ -346,9 +399,8 @@ function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRen
         </div>
       </div>
 
-      {/* Expanded layer assignment section */}
-      {expanded && (
-        <div className="px-2 py-1.5 bg-gray-850 border-t border-gray-700/50" onClick={e => e.stopPropagation()}>
+      {/* Layer assignment section — always visible */}
+      <div className="px-2 py-1.5 bg-gray-850 border-t border-gray-700/50" onClick={e => e.stopPropagation()}>
           <div className="flex flex-wrap gap-1 items-center">
             {op.layerIds.map(lid => {
               const layer = layers.find(l => l.id === lid);
@@ -390,7 +442,6 @@ function OperationRow({ op, index, onRemove, onToggleEnabled, onDuplicate, onRen
             )}
           </div>
         </div>
-      )}
     </div>
   );
 }
@@ -414,6 +465,7 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
   const duplicateOperation = useProjectStore(s => s.duplicateOperation);
   const compileJob = useProjectStore(s => s.compileJob);
   const addToast = useToastStore(s => s.addToast);
+  const setActiveJobId = useJobStore(s => s.setActiveJobId);
   const originPosition = useAppSettings(s => s.originPosition);
   const workAreaHeight = useAppSettings(s => s.workAreaHeight);
   const navigate = useNavigate();
@@ -512,35 +564,49 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
             No operations. Add one below.
           </div>
         ) : (
-          operations.map((op) => {
+          operations.map((op, idx) => {
             const isOpSelected = selectedOpIds.has(op.id);
             const isLayerHighlighted = !isOpSelected && !!selectedLayerIds && op.layerIds.some(lid => selectedLayerIds.has(lid));
+            const isDragging = dragOpId.current === op.id;
+            const isDropTarget = dragOverId === op.id && dragOpId.current !== op.id;
+            const dragFromIdx = dragOpId.current ? operations.findIndex(o => o.id === dragOpId.current) : -1;
+            const showBefore = isDropTarget && dragFromIdx > idx;
+            const showAfter = isDropTarget && dragFromIdx < idx;
             return (
-            <OperationRow
-              key={op.id}
-              op={op}
-              index={operations.indexOf(op) + 1}
-              onRemove={() => removeOperation(op.id)}
-              onToggleEnabled={() => toggleOperationEnabled(op.id)}
-              onDuplicate={() => {
-                const layerIds = selectedLayerIds ? Array.from(selectedLayerIds) : undefined;
-                const newId = duplicateOperation(op.id, layerIds);
-                if (newId) {
-                  setSelectedOpIds(new Set([newId]));
-                }
-              }}
-              onRename={label => updateOperation(op.id, { label })}
-              layers={layers}
-              onAssignLayer={layerId => assignLayerToOperation(op.id, layerId)}
-              onUnassignLayer={layerId => unassignLayerFromOperation(op.id, layerId)}
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              isDragOver={dragOverId === op.id}
-              isSelected={isOpSelected}
-              onSelect={(e) => handleSelectOp(op.id, e)}
-              isLayerHighlighted={isLayerHighlighted}
-            />
+            <div key={op.id}>
+              {showBefore && (
+                <div className="h-8 border-2 border-dashed border-orange-400/50 rounded-lg mb-2" />
+              )}
+              <div className={isDragging ? 'opacity-40' : ''}>
+              <OperationRow
+                op={op}
+                index={idx + 1}
+                onRemove={() => removeOperation(op.id)}
+                onToggleEnabled={() => toggleOperationEnabled(op.id)}
+                onDuplicate={() => {
+                  const layerIds = selectedLayerIds ? Array.from(selectedLayerIds) : undefined;
+                  const newId = duplicateOperation(op.id, layerIds);
+                  if (newId) {
+                    setSelectedOpIds(new Set([newId]));
+                  }
+                }}
+                onRename={label => updateOperation(op.id, { label })}
+                layers={layers}
+                onAssignLayer={layerId => assignLayerToOperation(op.id, layerId)}
+                onUnassignLayer={layerId => unassignLayerFromOperation(op.id, layerId)}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                isDragOver={isDropTarget}
+                isSelected={isOpSelected}
+                onSelect={(e) => handleSelectOp(op.id, e)}
+                isLayerHighlighted={isLayerHighlighted}
+              />
+              </div>
+              {showAfter && (
+                <div className="h-8 border-2 border-dashed border-orange-400/50 rounded-lg mt-2" />
+              )}
+            </div>
             );
           })
         )}
@@ -584,7 +650,7 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
             title={gcodeUpToDate ? 'G-code is up to date' : 'Generate G-code from operations'}
           ><FontAwesomeIcon icon={faGears} className="mr-1" />{generating ? 'Generating…' : 'Generate'}</button>
           <button
-            onClick={() => { void navigate('/gcode-preview'); }}
+            onClick={() => { setActiveJobId(null); void navigate('/gcode-preview'); }}
             disabled={!gcodeUpToDate}
             className="flex-1 py-2 text-sm rounded bg-blue-700 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
             title={gcodeUpToDate ? 'Preview generated G-code' : 'Generate G-code first'}

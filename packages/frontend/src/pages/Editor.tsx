@@ -84,24 +84,29 @@ function AlignPivotPicker({ targetLabel, onConfirm, onCancel }: AlignPickerProps
 
 /* ─── Ruler Calibration overlay ─── */
 interface RulerCalibrationProps {
-  currentScale: number;   // current px/mm
   onApply: (pxPerMm: number) => void;
   onClose: () => void;
 }
 
-function RulerCalibration({ currentScale, onApply, onClose }: RulerCalibrationProps) {
+function RulerCalibration({ onApply, onClose }: RulerCalibrationProps) {
   // Default ruler length: 100 mm rendered at the current scale
   const defaultLengthMm = 100;
-  const [lengthPx, setLengthPx] = useState(Math.round(defaultLengthMm * currentScale));
+  // Approximate inner width of the ruler bar container (dialog is w-[480px] minus padding)
+  const FALLBACK_RULER_WIDTH = 468;
+  // Start the bar at half the container width so the handle is centred and easy to grab
+  const [lengthPx, setLengthPx] = useState(Math.round(FALLBACK_RULER_WIDTH / 2));
   const [inputMm, setInputMm] = useState(String(defaultLengthMm));
+  const [manualDpi, setManualDpi] = useState('');
   const [dragging, setDragging] = useState(false);
   const rulerRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ x: number; px: number } | null>(null);
+  const rulerWidth = () => rulerRef.current?.clientWidth ?? FALLBACK_RULER_WIDTH;
 
   const onMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     dragStartRef.current = { x: e.clientX, px: lengthPx };
     setDragging(true);
+    setManualDpi(''); // clear manual DPI when dragging
   };
 
   useEffect(() => {
@@ -109,7 +114,8 @@ function RulerCalibration({ currentScale, onApply, onClose }: RulerCalibrationPr
     const onMove = (e: MouseEvent) => {
       if (!dragStartRef.current) return;
       const delta = e.clientX - dragStartRef.current.x;
-      setLengthPx(Math.max(10, dragStartRef.current.px + delta));
+      const maxPx = rulerWidth();
+      setLengthPx(Math.max(10, Math.min(maxPx, dragStartRef.current.px + delta)));
     };
     const onUp = () => setDragging(false);
     window.addEventListener('mousemove', onMove);
@@ -118,7 +124,9 @@ function RulerCalibration({ currentScale, onApply, onClose }: RulerCalibrationPr
   }, [dragging]);
 
   const targetMm = Math.max(1, parseFloat(inputMm) || defaultLengthMm);
-  const derivedPxPerMm = lengthPx / targetMm;
+  // If the user entered a DPI value directly, use that; otherwise derive from the bar
+  const manualDpiNum = parseFloat(manualDpi);
+  const derivedPxPerMm = (manualDpi !== '' && manualDpiNum > 0) ? manualDpiNum / 25.4 : lengthPx / targetMm;
 
   return (
     <div className="absolute inset-0 z-30 bg-gray-950/90 flex flex-col items-center justify-center gap-6 select-none">
@@ -129,31 +137,30 @@ function RulerCalibration({ currentScale, onApply, onClose }: RulerCalibrationPr
         </div>
 
         <p className="text-xs text-gray-400 leading-relaxed">
-          Drag the right edge of the orange bar to match a known length on your physical ruler,
+          Drag the handle to match a known length on your physical ruler,
           then enter that length in mm and click <strong className="text-orange-400">Apply</strong>.
-          This sets 1 mm on screen = 1 mm in real life.
+          Or enter your monitor DPI directly below.
         </p>
 
         {/* Draggable ruler bar */}
-        <div className="relative h-10 bg-gray-800 rounded overflow-visible">
+        <div ref={rulerRef} className="relative h-10 bg-gray-800 rounded overflow-hidden">
           <div
-            ref={rulerRef}
             className="absolute left-0 top-0 h-full bg-orange-500/30 border-r-2 border-orange-400 rounded-l flex items-center"
-            style={{ width: Math.max(10, lengthPx) }}
+            style={{ width: Math.min(lengthPx, rulerWidth()) }}
           >
             <span className="text-xs text-orange-300 px-2 truncate">{Math.round(lengthPx)} px</span>
           </div>
-          {/* Drag handle */}
+          {/* Drag handle — centred at the bar edge */}
           <div
-            className={`absolute top-0 h-full w-4 flex items-center justify-center cursor-col-resize z-10 ${dragging ? 'text-orange-300' : 'text-orange-500 hover:text-orange-300'}`}
-            style={{ left: Math.max(10, lengthPx) - 8 }}
+            className={`absolute top-0 h-full w-5 flex items-center justify-center cursor-col-resize z-10 ${dragging ? 'text-orange-300' : 'text-orange-500 hover:text-orange-300'}`}
+            style={{ left: Math.min(lengthPx, rulerWidth()) - 10 }}
             onMouseDown={onMouseDown}
           >
-            <div className="w-1 h-6 bg-current rounded-full" />
+            <div className="w-1.5 h-7 bg-current rounded-full" />
           </div>
         </div>
 
-        {/* Length input */}
+        {/* Physical length input */}
         <div className="flex items-center gap-3">
           <label className="text-xs text-gray-400 flex-shrink-0">This bar measures</label>
           <input
@@ -161,10 +168,25 @@ function RulerCalibration({ currentScale, onApply, onClose }: RulerCalibrationPr
             min={1}
             max={1000}
             value={inputMm}
-            onChange={e => setInputMm(e.target.value)}
+            onChange={e => { setInputMm(e.target.value); setManualDpi(''); }}
             className="w-24 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-orange-500 text-right"
           />
           <label className="text-xs text-gray-400">mm on my ruler</label>
+        </div>
+
+        {/* Manual DPI entry */}
+        <div className="flex items-center gap-3">
+          <label className="text-xs text-gray-400 flex-shrink-0">Or enter DPI directly</label>
+          <input
+            type="number"
+            min={1}
+            max={1000}
+            value={manualDpi}
+            placeholder={String(Math.round(derivedPxPerMm * 25.4))}
+            onChange={e => setManualDpi(e.target.value)}
+            className="w-24 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-orange-500 text-right"
+          />
+          <label className="text-xs text-gray-400">DPI</label>
         </div>
 
         <p className="text-xs text-gray-500">
@@ -248,6 +270,9 @@ export default function Editor() {
   const [transformPreview, setTransformPreview] = useState<TransformPreview>({ deltaX: 0, deltaY: 0, deltaRotation: 0 });
   // Current canvas zoom level (scale factor, e.g. 1.5 = 150%)
   const [currentZoom, setCurrentZoom] = useState(1.5);
+  // Editable zoom %
+  const [editingZoom, setEditingZoom] = useState(false);
+  const [localZoom, setLocalZoom] = useState('');
   // Image import dialog state: queue of image files waiting for DPI confirmation
   const [imageImportQueue, setImageImportQueue] = useState<File[]>([]);
   // Alignment mode state
@@ -573,7 +598,7 @@ export default function Editor() {
                 >{project.name}</span>
                 <button
                   onClick={() => { setProjectNameDraft(project.name); setEditingProjectName(true); }}
-                  className="text-gray-600 hover:text-orange-400 text-[10px]"
+                  className="text-gray-600 hover:text-orange-400 text-[10px] ml-1"
                   title="Rename project"
                 ><FontAwesomeIcon icon={faPencil} /></button>
               </>
@@ -710,9 +735,20 @@ export default function Editor() {
               ) : (
                 project.layers.map((layer, idx) => {
                 const currentColor = layer.color ?? LAYER_COLORS[idx % LAYER_COLORS.length];
+                const isDragging = dragLayerId.current === layer.id;
+                const isDropTarget = dragOverLayerId === layer.id && dragLayerId.current !== layer.id;
+                const dragFromIdx = dragLayerId.current ? project.layers.findIndex(l => l.id === dragLayerId.current) : -1;
+                const showBefore = isDropTarget && dragFromIdx > idx;
+                const showAfter = isDropTarget && dragFromIdx < idx;
                 return (
+                <div key={layer.id}>
+                {showBefore && (
+                  <div className="h-8 border-2 border-dashed border-orange-400/50 rounded-lg mb-1" />
+                )}
                 <div
-                  key={layer.id}
+                  className={isDragging ? 'opacity-40' : ''}
+                >
+                <div
                   draggable
                   onDragStart={e => { e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; handleLayerDragStart(layer.id); }}
                   onDragOver={e => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; handleLayerDragOver(layer.id); }}
@@ -747,7 +783,7 @@ export default function Editor() {
                         : opHighlightedLayerIds.has(layer.id)
                           ? 'border-gray-700 bg-blue-900/20'
                           : 'border-gray-700 hover:border-gray-600'
-                  } ${dragOverLayerId === layer.id ? 'border-blue-400 border-dashed' : ''}`}
+                  }`}
                 >
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-gray-600 cursor-grab active:cursor-grabbing select-none mr-0.5" title="Drag to reorder">⠿</span>
@@ -830,7 +866,7 @@ export default function Editor() {
                         >{layer.name}</span>
                         <button
                           onClick={e => { e.stopPropagation(); startEditingLayerName(layer.id, layer.name); }}
-                          className="text-gray-600 hover:text-orange-400 text-[10px] flex-shrink-0"
+                          className="text-gray-600 hover:text-orange-400 text-[10px] flex-shrink-0 ml-0.5"
                           title="Rename layer"
                         ><FontAwesomeIcon icon={faPencil} /></button>
                       </>
@@ -892,7 +928,7 @@ export default function Editor() {
                                 >{shape.name}</span>
                                 <button
                                   onClick={e => { e.stopPropagation(); startEditingShapeName(shape.id, layer.id, shape.name); }}
-                                  className="text-gray-600 hover:text-orange-400 text-[9px] flex-shrink-0"
+                                  className="text-gray-600 hover:text-orange-400 text-[9px] flex-shrink-0 ml-0.5"
                                   title="Rename shape"
                                 ><FontAwesomeIcon icon={faPencil} /></button>
                               </>
@@ -931,6 +967,11 @@ export default function Editor() {
                       )}
                     </div>
                   )}
+                </div>
+                </div>
+                {showAfter && (
+                  <div className="h-8 border-2 border-dashed border-orange-400/50 rounded-lg mt-1" />
+                )}
                 </div>
               )})
               )}
@@ -1072,14 +1113,41 @@ export default function Editor() {
                 className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded text-xs transition-colors"
                 title="Zoom in"
               ><FontAwesomeIcon icon={faMagnifyingGlassPlus} /></button>
-              <span
-                className="text-xs text-gray-300 min-w-[3rem] text-center tabular-nums select-none cursor-help"
-                title={calibratedPxPerMm
-                  ? `${currentZoom.toFixed(3)} px/mm (calibrated: ${calibratedPxPerMm.toFixed(3)} px/mm) — 100% = real physical size.`
-                  : `${currentZoom.toFixed(3)} px/mm — Use the ruler calibration (📐) to match your physical display so 100% = real size.`}
-              >
-                {Math.round((calibratedPxPerMm ? currentZoom / calibratedPxPerMm : currentZoom) * 100)}%
-              </span>
+              {editingZoom ? (
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={localZoom}
+                  onChange={e => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setLocalZoom(v); }}
+                  onBlur={() => {
+                    const pct = Math.max(1, Math.min(5000, Number(localZoom) || 100));
+                    const newScale = calibratedPxPerMm ? pct / 100 * calibratedPxPerMm : pct / 100;
+                    canvasRef.current?.setScale(newScale);
+                    setEditingZoom(false);
+                  }}
+                  onFocus={e => e.currentTarget.select()}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.currentTarget.blur(); }
+                    if (e.key === 'Escape') setEditingZoom(false);
+                  }}
+                  autoFocus
+                  className="w-14 text-xs bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 text-center focus:outline-none"
+                />
+              ) : (
+                <span
+                  className="text-xs text-gray-300 min-w-[3rem] text-center tabular-nums select-none cursor-pointer hover:text-gray-100"
+                  title={calibratedPxPerMm
+                    ? `${currentZoom.toFixed(3)} px/mm — double-click to set zoom`
+                    : `${currentZoom.toFixed(3)} px/mm — double-click to set zoom`}
+                  onDoubleClick={() => {
+                    const pct = Math.round((calibratedPxPerMm ? currentZoom / calibratedPxPerMm : currentZoom) * 100);
+                    setLocalZoom(String(pct));
+                    setEditingZoom(true);
+                  }}
+                >
+                  {Math.round((calibratedPxPerMm ? currentZoom / calibratedPxPerMm : currentZoom) * 100)}%
+                </span>
+              )}
               <button
                 onClick={() => canvasRef.current?.zoomOut()}
                 className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded text-xs transition-colors"
@@ -1111,10 +1179,21 @@ export default function Editor() {
               >📐</button>
             </div>
 
+            {/* Uncalibrated warning */}
+            {!calibratedPxPerMm && (
+              <div
+                className="absolute top-12 right-2 z-10 flex items-center gap-1.5 bg-yellow-900/80 backdrop-blur-sm border border-yellow-700/60 rounded-lg px-2.5 py-1 cursor-pointer hover:bg-yellow-800/80 transition-colors"
+                title="Screen not calibrated — displayed sizes may not match real dimensions. Click to calibrate."
+                onClick={() => setShowRulerCalibration(true)}
+              >
+                <span className="text-yellow-400 text-xs">⚠</span>
+                <span className="text-yellow-300/90 text-[10px]">Size may be inaccurate — calibrate 📐</span>
+              </div>
+            )}
+
             {/* Ruler calibration overlay */}
             {showRulerCalibration && (
               <RulerCalibration
-                currentScale={currentZoom}
                 onApply={pxPerMm => { setCalibratedPxPerMm(pxPerMm); canvasRef.current?.setScale(pxPerMm); setShowRulerCalibration(false); }}
                 onClose={() => setShowRulerCalibration(false)}
               />

@@ -160,7 +160,11 @@ export default function Dashboard() {
         /* ── Card view ── */
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {sortedProjects.map(project => (
-            <div key={project.id} className="bg-gray-800 rounded-lg border border-gray-700 p-4 space-y-3 hover:border-gray-600 transition-colors">
+            <div
+              key={project.id}
+              onClick={() => handleOpen(project.id)}
+              className="bg-gray-800 rounded-lg border border-gray-700 p-4 space-y-3 cursor-pointer transition-all duration-150 hover:border-orange-500/60 hover:shadow-lg hover:shadow-orange-500/5 hover:scale-[1.01] active:scale-[0.99]"
+            >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   {editingProjectId === project.id ? (
@@ -175,7 +179,7 @@ export default function Dashboard() {
                       className="font-semibold w-full bg-gray-900 border border-orange-500 rounded px-1 py-0 text-gray-100 focus:outline-none text-sm"
                     />
                   ) : (
-                    <div className="flex items-center gap-1 min-w-0">
+                    <div className="flex items-center gap-1.5 min-w-0">
                       <h3 className="font-semibold text-gray-100 truncate">{project.name}</h3>
                       <button
                         onClick={e => { e.stopPropagation(); setEditingProjectName(project.name); setEditingProjectId(project.id); }}
@@ -192,8 +196,8 @@ export default function Dashboard() {
               </div>
               <p className="text-xs text-gray-400">{statLine(project)}</p>
               <div className="flex gap-2 pt-1">
-                <button onClick={() => handleOpen(project.id)} className="px-3 py-1 text-xs rounded bg-orange-700 hover:bg-orange-600 text-white transition-colors">Open</button>
-                <button onClick={() => deleteProject(project.id)} className="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-red-900 text-gray-400 hover:text-red-300 transition-colors ml-auto"><FontAwesomeIcon icon={faTrash} /></button>
+                <div className="flex-1" />
+                <button onClick={e => { e.stopPropagation(); deleteProject(project.id); }} className="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-red-900 text-gray-400 hover:text-red-300 transition-colors"><FontAwesomeIcon icon={faTrash} /></button>
               </div>
             </div>
           ))}
