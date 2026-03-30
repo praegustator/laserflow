@@ -127,7 +127,7 @@ export default function ImageImportDialog({ file, onConfirm, onCancel }: Props) 
               {/* Board preview with image projected on it */}
               <div className="flex justify-center mb-4">
                 <div
-                  className="relative border border-gray-600 bg-gray-900/60"
+                  className="relative border border-gray-600 bg-gray-900/60 overflow-hidden"
                   style={{ width: boardW, height: boardH }}
                 >
                   {/* Grid lines */}
@@ -160,8 +160,8 @@ export default function ImageImportDialog({ file, onConfirm, onCancel }: Props) 
                     <rect
                       x={0}
                       y={imgTop}
-                      width={Math.min(imgScaledW, boardW)}
-                      height={Math.min(imgScaledH, boardH)}
+                      width={imgScaledW}
+                      height={imgScaledH}
                       fill="none"
                       stroke="#f97316"
                       strokeWidth={1.5}
@@ -177,8 +177,8 @@ export default function ImageImportDialog({ file, onConfirm, onCancel }: Props) 
                       style={{
                         left: 0,
                         top: imgTop,
-                        width: Math.min(imgScaledW, boardW),
-                        height: Math.min(imgScaledH, boardH),
+                        width: imgScaledW,
+                        height: imgScaledH,
                       }}
                     />
                   )}
