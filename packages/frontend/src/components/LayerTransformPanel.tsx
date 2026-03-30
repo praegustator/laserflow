@@ -17,6 +17,11 @@ function parseDecimal(v: string): number {
   return Number(v.replace(/,/g, '.'));
 }
 
+/** Round a number to `decimals` places and return as string (trailing zeros stripped). */
+function roundDisplay(v: number, decimals = 3): string {
+  return String(Math.round(v * 10 ** decimals) / 10 ** decimals);
+}
+
 type SizeMode = 'scale' | 'absolute';
 type PosRotMode = 'absolute' | 'relative';
 
@@ -52,8 +57,8 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
   const effectivePosRotMode = posRotMode;
 
   // Local text state so the user can type freely (including commas)
-  const [localScaleX, setLocalScaleX] = useState(String(layer.scaleX));
-  const [localScaleY, setLocalScaleY] = useState(String(layer.scaleY));
+  const [localScaleX, setLocalScaleX] = useState(roundDisplay(layer.scaleX));
+  const [localScaleY, setLocalScaleY] = useState(roundDisplay(layer.scaleY));
   const [localRotation, setLocalRotation] = useState(String(layer.rotation ?? 0));
   // Delta inputs for relative positioning mode
   const [deltaX, setDeltaX] = useState('0');
@@ -103,8 +108,8 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
 
   // Sync local text state when the layer prop changes externally
   useEffect(() => {
-    setLocalScaleX(String(layer.scaleX));
-    setLocalScaleY(String(layer.scaleY));
+    setLocalScaleX(roundDisplay(layer.scaleX));
+    setLocalScaleY(roundDisplay(layer.scaleY));
     setLocalRotation(String(layer.rotation ?? 0));
     const w = naturalW * layer.scaleX;
     const h = naturalH * layer.scaleY;
@@ -338,9 +343,9 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
         <label className="text-xs text-gray-500">Position</label>
 
         {effectivePosRotMode === 'absolute' ? (
-          <div className="flex items-end gap-1">
-            <div className="flex-1">
-              <label className="text-xs text-gray-500">X</label>
+          <div className="flex items-center gap-1">
+            <div className="flex-1 flex items-center gap-1">
+              <label className="text-xs text-gray-500 shrink-0">X</label>
               <input
                 type="text"
                 inputMode="decimal"
@@ -351,8 +356,8 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
                 className={inputClass}
               />
             </div>
-            <div className="flex-1">
-              <label className="text-xs text-gray-500">Y</label>
+            <div className="flex-1 flex items-center gap-1">
+              <label className="text-xs text-gray-500 shrink-0">Y</label>
               <input
                 type="text"
                 inputMode="decimal"
@@ -363,13 +368,13 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
                 className={inputClass}
               />
             </div>
-            <span className="text-xs text-gray-600 pb-0.5 flex-shrink-0">mm</span>
+            <span className="text-xs text-gray-600 shrink-0">mm</span>
           </div>
         ) : (
           <div className="space-y-1">
-            <div className="flex items-end gap-1">
-              <div className="flex-1">
-                <label className="text-xs text-gray-500">ΔX</label>
+            <div className="flex items-center gap-1">
+              <div className="flex-1 flex items-center gap-1">
+                <label className="text-xs text-gray-500 shrink-0">ΔX</label>
                 <input
                   type="text"
                   inputMode="decimal"
@@ -380,8 +385,8 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
                   placeholder="±mm"
                 />
               </div>
-              <div className="flex-1">
-                <label className="text-xs text-gray-500">ΔY</label>
+              <div className="flex-1 flex items-center gap-1">
+                <label className="text-xs text-gray-500 shrink-0">ΔY</label>
                 <input
                   type="text"
                   inputMode="decimal"
@@ -424,9 +429,9 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
 
         {(effectivePosRotMode === 'relative' || (multi && effectivePosRotMode === 'absolute')) ? (
           /* Relative scale multiplier (multi-layer or single layer in relative mode) */
-          <div className="flex items-end gap-1">
-            <div className="flex-1">
-              <label className="text-xs text-gray-500">×X</label>
+          <div className="flex items-center gap-1">
+            <div className="flex-1 flex items-center gap-1">
+              <label className="text-xs text-gray-500 shrink-0">×X</label>
               <input
                 type="text"
                 inputMode="decimal"
@@ -438,8 +443,8 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
               />
             </div>
             {!ratioLocked && (
-              <div className="flex-1">
-                <label className="text-xs text-gray-500">×Y</label>
+              <div className="flex-1 flex items-center gap-1">
+                <label className="text-xs text-gray-500 shrink-0">×Y</label>
                 <input
                   type="text"
                   inputMode="decimal"
@@ -457,9 +462,9 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
             >Scale</button>
           </div>
         ) : sizeMode === 'scale' ? (
-          <div className="flex items-end gap-1">
-            <div className="flex-1">
-              <label className="text-xs text-gray-500">X</label>
+          <div className="flex items-center gap-1">
+            <div className="flex-1 flex items-center gap-1">
+              <label className="text-xs text-gray-500 shrink-0">X</label>
               <input
                 type="text"
                 inputMode="decimal"
@@ -470,8 +475,8 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
                 className={inputClass}
               />
             </div>
-            <div className="flex-1">
-              <label className="text-xs text-gray-500">Y</label>
+            <div className="flex-1 flex items-center gap-1">
+              <label className="text-xs text-gray-500 shrink-0">Y</label>
               <input
                 type="text"
                 inputMode="decimal"
@@ -484,9 +489,9 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
             </div>
           </div>
         ) : (
-          <div className="flex items-end gap-1">
-            <div className="flex-1">
-              <label className="text-xs text-gray-500">W</label>
+          <div className="flex items-center gap-1">
+            <div className="flex-1 flex items-center gap-1">
+              <label className="text-xs text-gray-500 shrink-0">W</label>
               <input
                 type="text"
                 inputMode="decimal"
@@ -497,8 +502,8 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
                 className={inputClass}
               />
             </div>
-            <div className="flex-1">
-              <label className="text-xs text-gray-500">H</label>
+            <div className="flex-1 flex items-center gap-1">
+              <label className="text-xs text-gray-500 shrink-0">H</label>
               <input
                 type="text"
                 inputMode="decimal"
@@ -509,7 +514,7 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
                 className={inputClass}
               />
             </div>
-            <span className="text-xs text-gray-600 pb-0.5 flex-shrink-0">mm</span>
+            <span className="text-xs text-gray-600 shrink-0">mm</span>
           </div>
         )}
       </div>
@@ -519,7 +524,7 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
         <label className="text-xs text-gray-500">Rotation</label>
 
         {effectivePosRotMode === 'absolute' ? (
-          <div className="flex items-end gap-1">
+          <div className="flex items-center gap-1">
             <div className="flex-1">
               <input
                 type="text"
@@ -531,12 +536,12 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
                 className={inputClass}
               />
             </div>
-            <span className="text-xs text-gray-600 pb-0.5 flex-shrink-0">°</span>
+            <span className="text-xs text-gray-600 shrink-0">°</span>
           </div>
         ) : (
-          <div className="flex items-end gap-1">
-            <div className="flex-1">
-              <label className="text-xs text-gray-500">Δ°</label>
+          <div className="flex items-center gap-1">
+            <div className="flex-1 flex items-center gap-1">
+              <label className="text-xs text-gray-500 shrink-0">Δ°</label>
               <input
                 type="text"
                 inputMode="decimal"
