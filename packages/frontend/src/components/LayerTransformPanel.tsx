@@ -17,7 +17,10 @@ function parseDecimal(v: string): number {
   return Number(v.replace(/,/g, '.'));
 }
 
-/** Round a number to `decimals` places and return as string (trailing zeros stripped). */
+/**
+ * Round a number to `decimals` places and return as string.
+ * Trailing fractional zeros are stripped (e.g. 1.200 → "1.2", 1.000 → "1").
+ */
 function roundDisplay(v: number, decimals = 3): string {
   return String(Math.round(v * 10 ** decimals) / 10 ** decimals);
 }
