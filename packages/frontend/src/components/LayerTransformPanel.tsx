@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Layer, PivotAnchor } from '../types';
-import { computeShapesBoundingBox, computeLayerWorldBBox, computeMultiLayerWorldBBox, type BBox } from '../utils/geometry';
+import { computeShapesBoundingBox, computeMultiLayerWorldBBox, type BBox } from '../utils/geometry';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowsLeftRight, faArrowsUpDown, faLock, faLockOpen } from '@fortawesome/free-solid-svg-icons';
 
@@ -10,6 +10,9 @@ interface Props {
   originPosition?: 'bottom-left' | 'top-left';
   workH?: number;
   onPreviewChange?: (preview: { deltaX: number; deltaY: number; deltaRotation: number }) => void;
+  /** Controlled pivot anchor for multi-layer selections (lifted to parent so canvas can sync). */
+  multiPivot?: PivotAnchor;
+  onMultiPivotChange?: (anchor: PivotAnchor) => void;
 }
 
 /** Parse a decimal string that may use comma or dot as separator */
@@ -45,7 +48,7 @@ function getPivotCoords(bbox: BBox | null, pivot: PivotAnchor): { px: number; py
   };
 }
 
-export default function LayerTransformPanel({ layers, onUpdate, originPosition = 'top-left', workH = 200, onPreviewChange }: Props) {
+export default function LayerTransformPanel({ layers, onUpdate, originPosition = 'top-left', workH = 200, onPreviewChange, multiPivot: multiPivotProp, onMultiPivotChange }: Props) {
   const multi = layers.length > 1;
   const layer = layers[0]; // Primary layer for single-layer mode
   const [sizeMode, setSizeMode] = useState<SizeMode>('scale');
@@ -53,13 +56,19 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
   const [ratioLocked, setRatioLocked] = useState(true);
   const bbox = computeShapesBoundingBox(layer.shapes);
 
-  // Multi-layer pivot anchor (for the combined bounding box)
-  const [multiPivot, setMultiPivot] = useState<PivotAnchor>('tl');
+  // Multi-layer pivot anchor — controlled from parent so canvas can stay in sync.
+  // Fall back to 'tl' when parent hasn't provided a value.
+  const multiPivot: PivotAnchor = multiPivotProp ?? 'tl';
+  const setMultiPivot = (anchor: PivotAnchor) => onMultiPivotChange?.(anchor);
 
   // Allow both absolute and relative for multi-layer
   const effectivePosRotMode = posRotMode;
 
-  // Local text state so the user can type freely (including commas)
+  // Local text state so the user can type freely (including commas).
+  // These scale/rotation values are sourced from layers[0] but are only ever
+  // rendered when multi === false (the JSX guards each section with !multi or
+  // the sizeMode === 'scale' && !multi condition), so showing the first layer's
+  // values in multi-layer mode is harmless.
   const [localScaleX, setLocalScaleX] = useState(roundDisplay(layer.scaleX));
   const [localScaleY, setLocalScaleY] = useState(roundDisplay(layer.scaleY));
   const [localRotation, setLocalRotation] = useState(String(layer.rotation ?? 0));
@@ -212,8 +221,9 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
 
   /**
    * Rotate all selected layers by `dr` degrees around the joint pivot (`multiPivotWorld`).
-   * Each layer's own rotation property is incremented by dr, and its world-space offset
-   * is orbited around the joint pivot so the group rotates as a whole.
+   * Each layer's own rotation property is incremented by dr, and its world-space origin
+   * (offsetX, offsetY) is orbited around the joint pivot so the group rotates as a whole.
+   * Rotating by +dr and then -dr returns every layer to its exact original position.
    */
   const applyGroupRotation = useCallback((dr: number) => {
     if (!Number.isFinite(dr) || dr === 0) return;
@@ -223,18 +233,13 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
     const jx = multiPivotWorld.px;
     const jy = multiPivotWorld.py;
     for (const l of layers) {
-      const wb = computeLayerWorldBBox(l);
-      // Use the layer's world bbox center as the representative point to orbit
-      const wx = wb ? wb.minX + wb.width / 2 : l.offsetX;
-      const wy = wb ? wb.minY + wb.height / 2 : l.offsetY;
-      const dx = wx - jx;
-      const dy = wy - jy;
-      const newWx = jx + dx * cos - dy * sin;
-      const newWy = jy + dx * sin + dy * cos;
+      // Orbit the layer's origin (offsetX, offsetY) around the joint pivot.
+      const dx = l.offsetX - jx;
+      const dy = l.offsetY - jy;
       onUpdate(l.id, {
         rotation: ((l.rotation ?? 0) + dr) % 360,
-        offsetX: l.offsetX + (newWx - wx),
-        offsetY: l.offsetY + (newWy - wy),
+        offsetX: jx + dx * cos - dy * sin,
+        offsetY: jy + dx * sin + dy * cos,
       });
     }
   }, [layers, multiPivotWorld, onUpdate]);
@@ -526,7 +531,7 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
       <div>
         <label className="text-xs text-gray-500">Rotation</label>
 
-        {effectivePosRotMode === 'absolute' ? (
+        {effectivePosRotMode === 'absolute' && !multi ? (
           <div className="flex items-center gap-1">
             <div className="flex-1">
               <input

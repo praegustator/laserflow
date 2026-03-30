@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
-import type { Layer, Operation, MachineProfile } from '../types';
-import { computeShapesBoundingBox, computeMultiLayerWorldBBox } from '../utils/geometry';
+import type { Layer, Operation, MachineProfile, PivotAnchor } from '../types';
+import { computeShapesBoundingBox, computeMultiLayerWorldBBox, worldAnchorPoint } from '../utils/geometry';
 import { useAppSettings } from '../store/appSettingsStore';
 
 /** Preview delta applied to selected layers (for relative transform preview) */
@@ -43,6 +43,8 @@ interface Props {
   machineProfile?: MachineProfile | null;
   /** When set, renders a ghost preview of selected layers shifted by this delta */
   transformPreview?: TransformPreview;
+  /** The pivot anchor used by the transform panel for multi-layer selections */
+  multiPivotAnchor?: PivotAnchor;
   /** Called whenever the canvas zoom scale changes */
   onZoomChange?: (scale: number) => void;
 }
@@ -67,7 +69,7 @@ function computeGridStep(scale: number): number {
 /** Degrees of rotation per pixel of horizontal mouse drag */
 const ROTATE_SENSITIVITY = 0.5;
 
-export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, operations, selectedLayerIds, selectedShapeIds, onSelectLayer, onSelectShape, onUpdateLayer, originPosition, machineProfile, transformPreview, onZoomChange }, ref) {
+export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, operations, selectedLayerIds, selectedShapeIds, onSelectLayer, onSelectShape, onUpdateLayer, originPosition, machineProfile, transformPreview, multiPivotAnchor, onZoomChange }, ref) {
   const settingsWorkW = useAppSettings(s => s.workAreaWidth);
   const settingsWorkH = useAppSettings(s => s.workAreaHeight);
   const workW = machineProfile?.workArea.x ?? settingsWorkW;
@@ -469,8 +471,10 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
             if (selectedLayers.length < 2) return null;
             const wb = computeMultiLayerWorldBBox(selectedLayers);
             if (!wb) return null;
-            const cx = wb.minX + wb.width / 2;
-            const cy = wb.minY + wb.height / 2;
+            // Use the same anchor the transform panel shows, defaulting to top-left.
+            const pivotPt = worldAnchorPoint(wb, multiPivotAnchor ?? 'tl');
+            const cx = pivotPt.x;
+            const cy = pivotPt.y;
             const PIVOT_R = 5 / scale;
             const ARM = 10 / scale;
             return (
@@ -496,9 +500,26 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
           })()}
 
           {/* Ghost preview for relative transform */}
-          {transformPreview && (transformPreview.deltaX !== 0 || transformPreview.deltaY !== 0 || transformPreview.deltaRotation !== 0) && (
-            layers.filter(l => selectedLayerIds.has(l.id) && l.visible).map((layer) => {
-              const rotation = (layer.rotation ?? 0) + transformPreview.deltaRotation;
+          {transformPreview && (transformPreview.deltaX !== 0 || transformPreview.deltaY !== 0 || transformPreview.deltaRotation !== 0) && (() => {
+            const previewLayers = layers.filter(l => selectedLayerIds.has(l.id) && l.visible);
+            const isMultiPreview = previewLayers.length > 1;
+
+            // For multi-layer group rotation, compute the joint pivot world position.
+            let jx = 0, jy = 0;
+            if (isMultiPreview && transformPreview.deltaRotation !== 0) {
+              const wb = computeMultiLayerWorldBBox(previewLayers);
+              if (wb) {
+                const jp = worldAnchorPoint(wb, multiPivotAnchor ?? 'tl');
+                jx = jp.x;
+                jy = jp.y;
+              }
+            }
+
+            const θ = (transformPreview.deltaRotation * Math.PI) / 180;
+            const cosθ = Math.cos(θ);
+            const sinθ = Math.sin(θ);
+
+            return previewLayers.map((layer) => {
               const mX = layer.mirrorX ?? false;
               const mY = layer.mirrorY ?? false;
               const sxm = mX ? -layer.scaleX : layer.scaleX;
@@ -512,9 +533,22 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
                 gPivotX = gBbox.minX + gBbox.width * col;
                 gPivotY = gBbox.minY + gBbox.height * row;
               }
+
+              let previewOffsetX = layer.offsetX + transformPreview.deltaX;
+              let previewOffsetY = layer.offsetY + transformPreview.deltaY;
+              const previewRotation = (layer.rotation ?? 0) + transformPreview.deltaRotation;
+
+              if (isMultiPreview && transformPreview.deltaRotation !== 0) {
+                // Orbit each layer's origin around the joint pivot, mirroring applyGroupRotation.
+                const dx = layer.offsetX - jx;
+                const dy = layer.offsetY - jy;
+                previewOffsetX = jx + dx * cosθ - dy * sinθ + transformPreview.deltaX;
+                previewOffsetY = jy + dx * sinθ + dy * cosθ + transformPreview.deltaY;
+              }
+
               const gParts = [
-                `translate(${layer.offsetX + transformPreview.deltaX},${layer.offsetY + transformPreview.deltaY})`,
-                `rotate(${rotation},${sxm * gPivotX},${sym * gPivotY})`,
+                `translate(${previewOffsetX},${previewOffsetY})`,
+                `rotate(${previewRotation},${sxm * gPivotX},${sym * gPivotY})`,
                 `scale(${sxm},${sym})`,
               ];
               return (
@@ -524,8 +558,8 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
                   ))}
                 </g>
               );
-            })
-          )}
+            });
+          })()}
 
           {/* Origin cross and axis direction arrows — REMOVED from here; rendered in screen space below */}
         </g>

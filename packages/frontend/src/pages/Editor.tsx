@@ -268,6 +268,8 @@ export default function Editor() {
   const transformDragRef = useRef<{ startY: number; startH: number } | null>(null);
   // Preview delta for relative transforms
   const [transformPreview, setTransformPreview] = useState<TransformPreview>({ deltaX: 0, deltaY: 0, deltaRotation: 0 });
+  // Pivot anchor for multi-layer selections — lifted here so SvgCanvas can sync with the panel
+  const [multiPivotAnchor, setMultiPivotAnchor] = useState<PivotAnchor>('tl');
   // Current canvas zoom level (scale factor, e.g. 1.5 = 150%)
   const [currentZoom, setCurrentZoom] = useState(1.5);
   // Editable zoom %
@@ -1092,6 +1094,8 @@ export default function Editor() {
                         originPosition={originPosition}
                         workH={workAreaHeight}
                         onPreviewChange={setTransformPreview}
+                        multiPivot={multiPivotAnchor}
+                        onMultiPivotChange={setMultiPivotAnchor}
                       />
                     )}
                   </div>
@@ -1209,6 +1213,7 @@ export default function Editor() {
               onUpdateLayer={(id, partial) => updateLayerTransform(id, partial)}
               originPosition={originPosition}
               transformPreview={transformPreview}
+              multiPivotAnchor={multiPivotAnchor}
               onZoomChange={setCurrentZoom}
             />
           </Panel>
