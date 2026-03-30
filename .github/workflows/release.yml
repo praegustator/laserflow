@@ -71,20 +71,6 @@ jobs:
           git tag "${VERSION}"
           git push origin "${VERSION}"
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Sync package.json versions
-        run: |
-          # Strip leading 'v' and pass semver string to the script
-          SEMVER="${{ steps.version.outputs.new }}"
-          node scripts/sync-version.mjs "${SEMVER#v}"
-          git add package.json packages/backend/package.json packages/frontend/package.json
-          git diff --cached --quiet || git commit -m "chore: bump package versions to ${{ steps.version.outputs.new }}"
-          git push origin HEAD:main
-
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
