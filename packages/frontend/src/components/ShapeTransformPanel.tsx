@@ -118,9 +118,9 @@ export default function ShapeTransformPanel({ shapes, layerId, onUpdatePaths, or
       {/* ── Position (relative) ── */}
       <div>
         <label className="text-xs text-gray-500">Position</label>
-        <div className="flex items-end gap-1">
-          <div className="flex-1">
-            <label className="text-xs text-gray-500">ΔX</label>
+        <div className="flex items-center gap-1">
+          <div className="flex-1 flex items-center gap-1">
+            <label className="text-xs text-gray-500 shrink-0">ΔX</label>
             <input
               type="text" inputMode="decimal" value={deltaX}
               onChange={e => setDeltaX(e.target.value)}
@@ -128,8 +128,8 @@ export default function ShapeTransformPanel({ shapes, layerId, onUpdatePaths, or
               className={inputClass} placeholder="±mm"
             />
           </div>
-          <div className="flex-1">
-            <label className="text-xs text-gray-500">ΔY</label>
+          <div className="flex-1 flex items-center gap-1">
+            <label className="text-xs text-gray-500 shrink-0">ΔY</label>
             <input
               type="text" inputMode="decimal" value={deltaY}
               onChange={e => setDeltaY(e.target.value)}
@@ -156,9 +156,9 @@ export default function ShapeTransformPanel({ shapes, layerId, onUpdatePaths, or
             <FontAwesomeIcon icon={ratioLocked ? faLock : faLockOpen} />
           </button>
         </div>
-        <div className="flex items-end gap-1">
-          <div className="flex-1">
-            <label className="text-xs text-gray-500">×X</label>
+        <div className="flex items-center gap-1">
+          <div className="flex-1 flex items-center gap-1">
+            <label className="text-xs text-gray-500 shrink-0">×X</label>
             <input
               type="text" inputMode="decimal" value={deltaScaleX}
               onChange={e => setDeltaScaleX(e.target.value)}
@@ -167,8 +167,8 @@ export default function ShapeTransformPanel({ shapes, layerId, onUpdatePaths, or
             />
           </div>
           {!ratioLocked && (
-            <div className="flex-1">
-              <label className="text-xs text-gray-500">×Y</label>
+            <div className="flex-1 flex items-center gap-1">
+              <label className="text-xs text-gray-500 shrink-0">×Y</label>
               <input
                 type="text" inputMode="decimal" value={deltaScaleY}
                 onChange={e => setDeltaScaleY(e.target.value)}
@@ -186,9 +186,9 @@ export default function ShapeTransformPanel({ shapes, layerId, onUpdatePaths, or
       {/* ── Rotation ── */}
       <div>
         <label className="text-xs text-gray-500">Rotation</label>
-        <div className="flex items-end gap-1">
-          <div className="flex-1">
-            <label className="text-xs text-gray-500">Δ°</label>
+        <div className="flex items-center gap-1">
+          <div className="flex-1 flex items-center gap-1">
+            <label className="text-xs text-gray-500 shrink-0">Δ°</label>
             <input
               type="text" inputMode="decimal" value={deltaRot}
               onChange={e => setDeltaRot(e.target.value)}
