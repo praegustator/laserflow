@@ -89,10 +89,19 @@ export default function Dashboard() {
     ].filter(Boolean).join(' · ');
   };
 
-  const projectStatus = (p: typeof projects[0]): { label: string; className: string } => {
-    if (p.gcode) return { label: 'Ready', className: 'bg-green-600 text-white' };
-    if (p.layers.length > 0) return { label: 'Draft', className: 'bg-yellow-600 text-white' };
+  const projectStatus = (project: typeof projects[0]): { label: string; className: string } => {
+    if (project.gcode) return { label: 'Ready', className: 'bg-green-600 text-white' };
+    if (project.layers.length > 0) return { label: 'Draft', className: 'bg-yellow-600 text-white' };
     return { label: 'New', className: 'bg-gray-600 text-gray-200' };
+  };
+
+  const StatusBadge = ({ project, small }: { project: typeof projects[0]; small?: boolean }) => {
+    const status = projectStatus(project);
+    return (
+      <span className={`${small ? 'px-1.5' : 'px-2'} py-0.5 rounded-full text-xs font-semibold ${status.className} flex-shrink-0`}>
+        {status.label}
+      </span>
+    );
   };
 
   return (
@@ -198,10 +207,7 @@ export default function Dashboard() {
                   )}
                   <p className="text-xs text-gray-500 mt-0.5">Last modified: {new Date(project.updatedAt).toLocaleString()}</p>
                 </div>
-                {(() => {
-                  const status = projectStatus(project);
-                  return <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${status.className} flex-shrink-0`}>{status.label}</span>;
-                })()}
+                <StatusBadge project={project} />
               </div>
               <p className="text-xs text-gray-400">{statLine(project)}</p>
               <div className="flex gap-2 pt-1">
@@ -247,10 +253,7 @@ export default function Dashboard() {
                     <td className={`px-3 py-2.5 text-right ${jobCount > 0 ? 'text-blue-400' : 'text-gray-600'}`}>{jobCount}</td>
                     <td className="px-3 py-2.5 text-right text-gray-500 text-xs whitespace-nowrap">{new Date(project.updatedAt).toLocaleString()}</td>
                     <td className="px-3 py-2.5 text-right">
-                      {(() => {
-                        const status = projectStatus(project);
-                        return <span className={`px-1.5 py-0.5 rounded-full text-xs font-semibold ${status.className}`}>{status.label}</span>;
-                      })()}
+                      <StatusBadge project={project} small />
                     </td>
                     <td className="px-3 py-2.5 text-right" onClick={e => e.stopPropagation()}>
                       <button onClick={() => deleteProject(project.id)} className="text-gray-600 hover:text-red-400 text-xs transition-colors"><FontAwesomeIcon icon={faTrash} /></button>
