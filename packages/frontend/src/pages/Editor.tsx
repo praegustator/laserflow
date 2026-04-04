@@ -425,6 +425,14 @@ export default function Editor() {
 
   /** Shape clicked on the canvas — supports Cmd/Ctrl multi-select */
   const handleCanvasShapeClick = (shapeId: string, layerId: string, e: React.MouseEvent) => {
+    // If the layer has only one shape, treat a click on that shape as selecting the layer itself
+    const layer = project?.layers.find(l => l.id === layerId);
+    if (layer && layer.shapes.length === 1) {
+      setSelectedLayerIds(new Set([layerId]));
+      setSelectedShapeIds(new Set());
+      return;
+    }
+
     const currentSingleLayer = selectedLayerIds.size === 1 ? Array.from(selectedLayerIds)[0] : null;
     if (e.metaKey || e.ctrlKey) {
       // Multi-select: toggle shape in selection within same layer
@@ -609,7 +617,6 @@ export default function Editor() {
               {project.layers.length} layer{project.layers.length !== 1 ? 's' : ''} · {project.operations.length} op{project.operations.length !== 1 ? 's' : ''}
             </span>
             <span className="text-xs text-gray-600">· {new Date(project.updatedAt).toLocaleString()}</span>
-            <div className="flex-1" />
             <button
               onClick={() => setShowVersionDialog(true)}
               className="px-3 py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"

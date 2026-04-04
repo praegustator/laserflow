@@ -89,8 +89,23 @@ export default function Dashboard() {
     ].filter(Boolean).join(' · ');
   };
 
+  const projectStatus = (project: typeof projects[0]): { label: string; className: string } => {
+    if (project.gcode) return { label: 'Ready', className: 'bg-green-600 text-white' };
+    if (project.layers.length > 0) return { label: 'Draft', className: 'bg-yellow-600 text-white' };
+    return { label: 'New', className: 'bg-gray-600 text-gray-200' };
+  };
+
+  const StatusBadge = ({ project, small }: { project: typeof projects[0]; small?: boolean }) => {
+    const status = projectStatus(project);
+    return (
+      <span className={`${small ? 'px-1.5' : 'px-2'} py-0.5 rounded-full text-xs font-semibold ${status.className} flex-shrink-0`}>
+        {status.label}
+      </span>
+    );
+  };
+
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="p-6 max-w-5xl mx-auto min-h-full">
       {/* Header */}
       <div className="flex items-center justify-between mb-6 gap-4">
         <div>
@@ -98,16 +113,18 @@ export default function Dashboard() {
           <p className="text-sm text-gray-400 mt-1">{projects.length} project{projects.length !== 1 ? 's' : ''}</p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Sort dropdown */}
-          <div className="flex items-center gap-1">
-            {(Object.keys(SORT_LABELS) as SortKey[]).map(k => (
-              <button
-                key={k}
-                onClick={() => handleSort(k)}
-                className={`px-2 py-1 text-xs rounded transition-colors flex items-center ${sortKey === k ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'}`}
-              >{SORT_LABELS[k]}<SortIcon k={k} /></button>
-            ))}
-          </div>
+          {/* Sort buttons — only shown in card view (table view uses its own column headers) */}
+          {viewMode === 'card' && (
+            <div className="flex items-center gap-1">
+              {(Object.keys(SORT_LABELS) as SortKey[]).map(k => (
+                <button
+                  key={k}
+                  onClick={() => handleSort(k)}
+                  className={`px-2 py-1 text-xs rounded transition-colors flex items-center ${sortKey === k ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'}`}
+                >{SORT_LABELS[k]}<SortIcon k={k} /></button>
+              ))}
+            </div>
+          )}
           {/* View toggle */}
           <div className="flex border border-gray-700 rounded overflow-hidden">
             <button
@@ -188,11 +205,9 @@ export default function Dashboard() {
                       ><FontAwesomeIcon icon={faPencil} /></button>
                     </div>
                   )}
-                  <p className="text-xs text-gray-500 mt-0.5">{new Date(project.updatedAt).toLocaleString()}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Last modified: {new Date(project.updatedAt).toLocaleString()}</p>
                 </div>
-                {project.gcode && (
-                  <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-600 text-white flex-shrink-0">ready</span>
-                )}
+                <StatusBadge project={project} />
               </div>
               <p className="text-xs text-gray-400">{statLine(project)}</p>
               <div className="flex gap-2 pt-1">
@@ -238,7 +253,7 @@ export default function Dashboard() {
                     <td className={`px-3 py-2.5 text-right ${jobCount > 0 ? 'text-blue-400' : 'text-gray-600'}`}>{jobCount}</td>
                     <td className="px-3 py-2.5 text-right text-gray-500 text-xs whitespace-nowrap">{new Date(project.updatedAt).toLocaleString()}</td>
                     <td className="px-3 py-2.5 text-right">
-                      {project.gcode && <span className="px-1.5 py-0.5 rounded-full text-xs font-semibold bg-green-600 text-white">ready</span>}
+                      <StatusBadge project={project} small />
                     </td>
                     <td className="px-3 py-2.5 text-right" onClick={e => e.stopPropagation()}>
                       <button onClick={() => deleteProject(project.id)} className="text-gray-600 hover:text-red-400 text-xs transition-colors"><FontAwesomeIcon icon={faTrash} /></button>

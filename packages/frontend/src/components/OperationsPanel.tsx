@@ -555,7 +555,6 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
     <div className="flex flex-col h-full">
       <div className="px-4 py-3 border-b border-gray-700">
         <h2 className="text-sm font-semibold text-gray-200">Operations</h2>
-        <p className="text-xs text-gray-500 mt-0.5">{project.name}</p>
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
