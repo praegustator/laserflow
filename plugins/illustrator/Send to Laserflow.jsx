@@ -140,12 +140,14 @@ function httpPost(url, jsonBody) {
  * Parse a URL into host, port, and path components.
  */
 function parseUrl(url) {
-  var match = url.match(/^https?:\/\/([^/:]+)(?::(\d+))?(\/.*)?$/);
+  // ExtendScript (ES3) does not support non-capturing groups (?:),
+  // so we use normal capturing groups and adjust indices.
+  var match = url.match(/^https?:\/\/([^\/:]+)(:(\d+))?(\/.*)?$/);
   if (!match) return null;
   return {
     host: match[1],
-    port: match[2] ? parseInt(match[2], 10) : 80,
-    path: match[3] || "/",
+    port: match[3] ? parseInt(match[3], 10) : 80,
+    path: match[4] || "/",
   };
 }
 
