@@ -181,6 +181,6 @@ export interface JobProgress {
 }
 
 export interface WsMessage {
-  type: 'console' | 'machineStatus' | 'jobProgress' | 'jobStatus' | 'serialStatus';
+  type: 'console' | 'machineStatus' | 'jobProgress' | 'jobStatus' | 'serialStatus' | 'svgPushed';
   data: unknown;
 }

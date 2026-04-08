@@ -27,6 +27,8 @@ interface ProjectStore {
   // File import
   importSvgFile: (file: File) => Promise<void>;
   importImageFile: (file: File, dpi?: number) => Promise<void>;
+  /** Import SVG data pushed from an external tool (e.g. Adobe Illustrator). */
+  importSvgFromPush: (data: { geometry: PathGeometry[]; sourceSvg: string; filename: string }) => void;
 
   // Layer management
   addLayer: (name: string) => void;
@@ -179,6 +181,64 @@ export const useProjectStore = create<ProjectStore>()(
         const layer: Layer = {
           id: layerId,
           name: file.name.replace(/\.svg$/i, ''),
+          shapes: [...shapes],
+          visible: true,
+          offsetX,
+          offsetY,
+          scaleX: 1,
+          scaleY: 1,
+          rotation: 0,
+          mirrorX: false,
+          mirrorY: false,
+          pivot: defaultPivot(originPosition),
+        };
+
+        set(s => ({
+          projects: updateProject(s.projects, activeProjectId, p => ({
+            ...p,
+            files: [...p.files, projectFile],
+            layers: [...p.layers, layer],
+            gcodeUpToDate: false,
+          })),
+        }));
+      },
+
+      importSvgFromPush: (data: { geometry: PathGeometry[]; sourceSvg: string; filename: string }) => {
+        const { activeProjectId } = get();
+        if (!activeProjectId) return;
+
+        const fileId = uid();
+        const shapes: Shape[] = data.geometry.map((g, idx) => ({
+          id: `${fileId}-shape-${idx}`,
+          name: `Shape ${idx + 1}`,
+          d: g.d,
+          sourceFileId: fileId,
+          fill: g.fill,
+        }));
+
+        const projectFile: ProjectFile = {
+          id: fileId,
+          name: data.filename,
+          sourceSvg: data.sourceSvg,
+          shapes,
+        };
+
+        const bbox = computeShapesBoundingBox(shapes);
+        const { originPosition, workAreaHeight } = useAppSettings.getState();
+        const offsetX = bbox ? -bbox.minX : 0;
+        let offsetY = 0;
+        if (bbox) {
+          if (originPosition === 'bottom-left') {
+            offsetY = workAreaHeight - bbox.maxY;
+          } else {
+            offsetY = -bbox.minY;
+          }
+        }
+
+        const layerId = uid();
+        const layer: Layer = {
+          id: layerId,
+          name: data.filename,
           shapes: [...shapes],
           visible: true,
           offsetX,

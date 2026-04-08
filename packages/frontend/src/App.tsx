@@ -10,8 +10,10 @@ import Queue from './pages/Queue';
 import { createWebSocket } from './api/client';
 import { useMachineStore } from './store/machineStore';
 import { useJobStore } from './store/jobStore';
+import { useProjectStore } from './store/projectStore';
+import { useToastStore } from './store/toastStore';
 import { useAppSettings } from './store/appSettingsStore';
-import type { WsMessage, MachineState, JobProgress } from './types';
+import type { WsMessage, MachineState, JobProgress, PathGeometry } from './types';
 
 function AppInner() {
   const addConsoleEntry = useMachineStore((s) => s.addConsoleEntry);
@@ -20,6 +22,8 @@ function AppInner() {
   const handleUnexpectedDisconnect = useMachineStore((s) => s.handleUnexpectedDisconnect);
   const updateJobProgress = useJobStore((s) => s.updateJobProgress);
   const updateJobStatus = useJobStore((s) => s.updateJobStatus);
+  const importSvgFromPush = useProjectStore((s) => s.importSvgFromPush);
+  const addToast = useToastStore((s) => s.addToast);
   const backendUrl = useAppSettings((s) => s.backendUrl);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -66,6 +70,10 @@ function AppInner() {
               if (d.status === 'disconnected') {
                 handleUnexpectedDisconnect();
               }
+            } else if (msg.type === 'svgPushed') {
+              const d = msg.data as { geometry: PathGeometry[]; sourceSvg: string; filename: string };
+              importSvgFromPush(d);
+              addToast('success', `Imported "${d.filename}" from external tool`);
             }
           } catch {
             // ignore malformed messages
@@ -85,7 +93,7 @@ function AppInner() {
 
     connect();
     return cleanup;
-  }, [backendUrl, addConsoleEntry, setMachineState, setBackendConnected, handleUnexpectedDisconnect, updateJobProgress, updateJobStatus]);
+  }, [backendUrl, addConsoleEntry, setMachineState, setBackendConnected, handleUnexpectedDisconnect, updateJobProgress, updateJobStatus, importSvgFromPush, addToast]);
 
   return (
     <Routes>
