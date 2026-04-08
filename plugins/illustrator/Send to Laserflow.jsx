@@ -19,7 +19,7 @@
 
 // ── Configuration ──────────────────────────────────────────────────────────
 // Change this if your Laserflow backend runs on a different host or port.
-var LASERFLOW_URL = "http://localhost:3001/api/import/svg";
+var LASERFLOW_URL = "http://127.0.0.1:3001/api/import/svg";
 
 // ── Main ───────────────────────────────────────────────────────────────────
 (function () {
@@ -27,6 +27,10 @@ var LASERFLOW_URL = "http://localhost:3001/api/import/svg";
     alert("No document is open.\nPlease open a document first.");
     return;
   }
+
+  // Show connection dialog so the user can confirm / change the URL
+  var targetUrl = showConnectionDialog(LASERFLOW_URL);
+  if (!targetUrl) return; // user cancelled
 
   var doc = app.activeDocument;
   var docName = doc.name.replace(/\.ai$/i, "");
@@ -56,16 +60,88 @@ var LASERFLOW_URL = "http://localhost:3001/api/import/svg";
   // Send to Laserflow via HTTP POST
   var payload = '{"svg":' + jsonStringEncode(svgContent) + ',"filename":' + jsonStringEncode(docName) + '}';
 
-  var success = httpPost(LASERFLOW_URL, payload);
+  var result = httpPost(targetUrl, payload);
 
-  if (success) {
+  if (result.ok) {
     alert("Sent to Laserflow!\n\nThe design \"" + docName + "\" has been imported into your active project.");
   } else {
-    alert("Could not reach Laserflow.\n\nMake sure the backend is running at:\n" + LASERFLOW_URL.replace("/api/import/svg", ""));
+    alert("Could not reach Laserflow.\n\n" + result.error);
   }
 })();
 
 // ── Helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Show a dialog that lets the user confirm or change the Laserflow URL
+ * and test the connection before sending.
+ * Returns the URL string, or null if the user cancelled.
+ */
+function showConnectionDialog(defaultUrl) {
+  var dlg = new Window("dialog", "Send to Laserflow");
+
+  dlg.orientation = "column";
+  dlg.alignChildren = ["fill", "top"];
+
+  dlg.add("statictext", undefined, "Laserflow backend URL:");
+  var urlInput = dlg.add("edittext", undefined, defaultUrl);
+  urlInput.characters = 40;
+
+  var statusText = dlg.add("statictext", undefined, "");
+  statusText.characters = 40;
+
+  var btnGroup = dlg.add("group");
+  btnGroup.alignment = ["center", "top"];
+
+  var testBtn = btnGroup.add("button", undefined, "Test Connection");
+  var sendBtn = btnGroup.add("button", undefined, "Send", { name: "ok" });
+  var cancelBtn = btnGroup.add("button", undefined, "Cancel", { name: "cancel" });
+
+  sendBtn.enabled = false;
+
+  testBtn.onClick = function () {
+    statusText.text = "Connecting\u2026";
+    dlg.update();
+    var parts = parseUrl(urlInput.text);
+    if (!parts) {
+      statusText.text = "\u2718 Invalid URL";
+      sendBtn.enabled = false;
+      return;
+    }
+    var ping = testConnection(parts.host, parts.port);
+    if (ping) {
+      statusText.text = "\u2714 Connected to " + parts.host + ":" + parts.port;
+      sendBtn.enabled = true;
+    } else {
+      statusText.text = "\u2718 Cannot connect to " + parts.host + ":" + parts.port;
+      sendBtn.enabled = false;
+    }
+  };
+
+  // Auto-test on open
+  testBtn.notify("onClick");
+
+  if (dlg.show() === 1) {
+    return urlInput.text;
+  }
+  return null;
+}
+
+/**
+ * Test whether we can open a TCP connection to the given host and port.
+ */
+function testConnection(host, port) {
+  try {
+    var conn = new Socket();
+    conn.timeout = 5;
+    if (!conn.open(host + ":" + port)) {
+      return false;
+    }
+    conn.close();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
 
 /**
  * Read the full contents of a text file.
@@ -106,14 +182,18 @@ function jsonStringEncode(str) {
  */
 function httpPost(url, jsonBody) {
   // Uses ExtendScript Socket (available on all platforms)
-  try {
-    var parts = parseUrl(url);
-    if (!parts) return false;
+  var parts = parseUrl(url);
+  if (!parts) return { ok: false, error: "Invalid URL: " + url };
 
+  try {
     var conn = new Socket();
     conn.timeout = 10;
     if (!conn.open(parts.host + ":" + parts.port)) {
-      return false;
+      return {
+        ok: false,
+        error: "Could not open connection to " + parts.host + ":" + parts.port +
+               "\n\nMake sure Laserflow is running.\nIf it is, try changing the URL to use 127.0.0.1 or your machine\u2019s IP address."
+      };
     }
 
     // jsonBody is pure ASCII (non-ASCII escaped to \uXXXX) so
@@ -129,13 +209,22 @@ function httpPost(url, jsonBody) {
 
     conn.write(request);
 
-    // Read response (just check for 200 status)
+    // Read response
     var response = conn.read(4096);
     conn.close();
 
-    return response && response.indexOf("200") !== -1;
+    if (!response) {
+      return { ok: false, error: "No response from server." };
+    }
+    if (response.indexOf("200") !== -1) {
+      return { ok: true };
+    }
+    // Try to extract a useful message from the HTTP response body
+    var bodyStart = response.indexOf("\r\n\r\n");
+    var body = bodyStart !== -1 ? response.substring(bodyStart + 4) : response;
+    return { ok: false, error: "Server responded with an error:\n" + body.substring(0, 200) };
   } catch (e) {
-    return false;
+    return { ok: false, error: "Exception: " + e.message };
   }
 }
 
