@@ -93,7 +93,7 @@ function jsonStringEncode(str) {
     else if (ch === "\t") result += "\\t";
     else if (ch === "\b") result += "\\b";
     else if (ch === "\f") result += "\\f";
-    else if (code < 0x20) result += "\\u" + ("0000" + code.toString(16)).slice(-4);
+    else if (code < 0x20 || code > 0x7e) result += "\\u" + ("0000" + code.toString(16)).slice(-4);
     else result += ch;
   }
   result += '"';
@@ -105,21 +105,24 @@ function jsonStringEncode(str) {
  * Uses the platform-specific approach available in ExtendScript.
  */
 function httpPost(url, jsonBody) {
-  // Try using Socket (available in ExtendScript on all platforms)
+  // Uses ExtendScript Socket (available on all platforms)
   try {
     var parts = parseUrl(url);
     if (!parts) return false;
 
     var conn = new Socket();
-    if (!conn.open(parts.host + ":" + parts.port, "binary")) {
+    conn.timeout = 10;
+    if (!conn.open(parts.host + ":" + parts.port)) {
       return false;
     }
 
+    // jsonBody is pure ASCII (non-ASCII escaped to \uXXXX) so
+    // .length equals byte length regardless of Socket encoding.
     var request =
       "POST " + parts.path + " HTTP/1.1\r\n" +
       "Host: " + parts.host + "\r\n" +
       "Content-Type: application/json\r\n" +
-      "Content-Length: " + byteLength(jsonBody) + "\r\n" +
+      "Content-Length: " + jsonBody.length + "\r\n" +
       "Connection: close\r\n" +
       "\r\n" +
       jsonBody;
@@ -149,29 +152,4 @@ function parseUrl(url) {
     port: match[3] ? parseInt(match[3], 10) : 80,
     path: match[4] || "/",
   };
-}
-
-/**
- * Calculate byte length of a string (UTF-8).
- * ExtendScript strings are UTF-16, so we handle surrogate pairs for
- * characters above U+FFFF which require 4 bytes in UTF-8.
- */
-function byteLength(str) {
-  var len = 0;
-  for (var i = 0; i < str.length; i++) {
-    var code = str.charCodeAt(i);
-    if (code <= 0x7f) {
-      len += 1;
-    } else if (code <= 0x7ff) {
-      len += 2;
-    } else if (code >= 0xd800 && code <= 0xdbff) {
-      // High surrogate — together with the next low surrogate this is a
-      // single code point above U+FFFF requiring 4 UTF-8 bytes.
-      len += 4;
-      i++; // skip the low surrogate
-    } else {
-      len += 3;
-    }
-  }
-  return len;
 }
