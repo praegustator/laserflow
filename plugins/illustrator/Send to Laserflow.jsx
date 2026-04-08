@@ -85,11 +85,15 @@ function jsonStringEncode(str) {
   var result = '"';
   for (var i = 0; i < str.length; i++) {
     var ch = str.charAt(i);
+    var code = str.charCodeAt(i);
     if (ch === '"') result += '\\"';
     else if (ch === "\\") result += "\\\\";
     else if (ch === "\n") result += "\\n";
     else if (ch === "\r") result += "\\r";
     else if (ch === "\t") result += "\\t";
+    else if (ch === "\b") result += "\\b";
+    else if (ch === "\f") result += "\\f";
+    else if (code < 0x20) result += "\\u" + ("0000" + code.toString(16)).slice(-4);
     else result += ch;
   }
   result += '"';
@@ -147,15 +151,25 @@ function parseUrl(url) {
 
 /**
  * Calculate byte length of a string (UTF-8).
- * ExtendScript strings are UTF-16, so we approximate for Content-Length.
+ * ExtendScript strings are UTF-16, so we handle surrogate pairs for
+ * characters above U+FFFF which require 4 bytes in UTF-8.
  */
 function byteLength(str) {
   var len = 0;
   for (var i = 0; i < str.length; i++) {
     var code = str.charCodeAt(i);
-    if (code <= 0x7f) len += 1;
-    else if (code <= 0x7ff) len += 2;
-    else len += 3;
+    if (code <= 0x7f) {
+      len += 1;
+    } else if (code <= 0x7ff) {
+      len += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      // High surrogate — together with the next low surrogate this is a
+      // single code point above U+FFFF requiring 4 UTF-8 bytes.
+      len += 4;
+      i++; // skip the low surrogate
+    } else {
+      len += 3;
+    }
   }
   return len;
 }

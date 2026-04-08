@@ -100,6 +100,55 @@ function updateProject(projects: Project[], id: string, updater: (p: Project) =>
   return projects.map(p => p.id === id ? updater({ ...p, updatedAt: new Date().toISOString() }) : p);
 }
 
+/** Shared helper: build shapes, ProjectFile, and Layer from parsed SVG geometry. */
+function buildSvgImportData(geometry: PathGeometry[], sourceSvg: string, filename: string): { projectFile: ProjectFile; layer: Layer } {
+  const fileId = uid();
+  const shapes: Shape[] = geometry.map((g, idx) => ({
+    id: `${fileId}-shape-${idx}`,
+    name: `Shape ${idx + 1}`,
+    d: g.d,
+    sourceFileId: fileId,
+    fill: g.fill,
+  }));
+
+  const projectFile: ProjectFile = {
+    id: fileId,
+    name: filename,
+    sourceSvg,
+    shapes,
+  };
+
+  const bbox = computeShapesBoundingBox(shapes);
+  const { originPosition, workAreaHeight } = useAppSettings.getState();
+  const offsetX = bbox ? -bbox.minX : 0;
+  let offsetY = 0;
+  if (bbox) {
+    if (originPosition === 'bottom-left') {
+      offsetY = workAreaHeight - bbox.maxY;
+    } else {
+      offsetY = -bbox.minY;
+    }
+  }
+
+  const layerId = uid();
+  const layer: Layer = {
+    id: layerId,
+    name: filename,
+    shapes: [...shapes],
+    visible: true,
+    offsetX,
+    offsetY,
+    scaleX: 1,
+    scaleY: 1,
+    rotation: 0,
+    mirrorX: false,
+    mirrorY: false,
+    pivot: defaultPivot(originPosition),
+  };
+
+  return { projectFile, layer };
+}
+
 export const useProjectStore = create<ProjectStore>()(
   persist(
     (set, get) => ({
@@ -145,53 +194,8 @@ export const useProjectStore = create<ProjectStore>()(
         form.append('file', file);
         const job = await api.postForm('/api/jobs', form) as { id: string; geometry: PathGeometry[]; sourceSvg?: string };
 
-        const fileId = uid();
-        const shapes: Shape[] = job.geometry.map((g, idx) => ({
-          id: `${fileId}-shape-${idx}`,
-          name: `Shape ${idx + 1}`,
-          d: g.d,
-          sourceFileId: fileId,
-          fill: g.fill,
-        }));
-
-        const projectFile: ProjectFile = {
-          id: fileId,
-          name: file.name.replace(/\.svg$/i, ''),
-          sourceSvg: job.sourceSvg ?? '',
-          shapes,
-        };
-
-        // Compute bounding box to position the layer based on origin setting
-        const bbox = computeShapesBoundingBox(shapes);
-        const { originPosition, workAreaHeight } = useAppSettings.getState();
-        // For top-left origin: align shape top to board top, left to board left.
-        // For bottom-left origin: align shape bottom to board bottom (machine origin), left to board left.
-        const offsetX = bbox ? -bbox.minX : 0;
-        let offsetY = 0;
-        if (bbox) {
-          if (originPosition === 'bottom-left') {
-            offsetY = workAreaHeight - bbox.maxY;
-          } else {
-            offsetY = -bbox.minY;
-          }
-        }
-
-        // Create a default layer for this file with all shapes
-        const layerId = uid();
-        const layer: Layer = {
-          id: layerId,
-          name: file.name.replace(/\.svg$/i, ''),
-          shapes: [...shapes],
-          visible: true,
-          offsetX,
-          offsetY,
-          scaleX: 1,
-          scaleY: 1,
-          rotation: 0,
-          mirrorX: false,
-          mirrorY: false,
-          pivot: defaultPivot(originPosition),
-        };
+        const filename = file.name.replace(/\.svg$/i, '');
+        const { projectFile, layer } = buildSvgImportData(job.geometry, job.sourceSvg ?? '', filename);
 
         set(s => ({
           projects: updateProject(s.projects, activeProjectId, p => ({
@@ -207,49 +211,7 @@ export const useProjectStore = create<ProjectStore>()(
         const { activeProjectId } = get();
         if (!activeProjectId) return;
 
-        const fileId = uid();
-        const shapes: Shape[] = data.geometry.map((g, idx) => ({
-          id: `${fileId}-shape-${idx}`,
-          name: `Shape ${idx + 1}`,
-          d: g.d,
-          sourceFileId: fileId,
-          fill: g.fill,
-        }));
-
-        const projectFile: ProjectFile = {
-          id: fileId,
-          name: data.filename,
-          sourceSvg: data.sourceSvg,
-          shapes,
-        };
-
-        const bbox = computeShapesBoundingBox(shapes);
-        const { originPosition, workAreaHeight } = useAppSettings.getState();
-        const offsetX = bbox ? -bbox.minX : 0;
-        let offsetY = 0;
-        if (bbox) {
-          if (originPosition === 'bottom-left') {
-            offsetY = workAreaHeight - bbox.maxY;
-          } else {
-            offsetY = -bbox.minY;
-          }
-        }
-
-        const layerId = uid();
-        const layer: Layer = {
-          id: layerId,
-          name: data.filename,
-          shapes: [...shapes],
-          visible: true,
-          offsetX,
-          offsetY,
-          scaleX: 1,
-          scaleY: 1,
-          rotation: 0,
-          mirrorX: false,
-          mirrorY: false,
-          pivot: defaultPivot(originPosition),
-        };
+        const { projectFile, layer } = buildSvgImportData(data.geometry, data.sourceSvg, data.filename);
 
         set(s => ({
           projects: updateProject(s.projects, activeProjectId, p => ({
