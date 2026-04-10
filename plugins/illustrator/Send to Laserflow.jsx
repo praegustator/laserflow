@@ -86,7 +86,7 @@ function showConnectionDialog(defaultUrl) {
   var urlInput = dlg.add("edittext", undefined, defaultUrl);
   urlInput.characters = 40;
 
-  var statusText = dlg.add("statictext", undefined, "");
+  var statusText = dlg.add("statictext", undefined, "Click Test Connection to verify.");
   statusText.characters = 40;
 
   var btnGroup = dlg.add("group");
@@ -117,8 +117,8 @@ function showConnectionDialog(defaultUrl) {
     }
   };
 
-  // Auto-test on open
-  testBtn.notify("onClick");
+  // Do NOT auto-test before the dialog is visible — let the user
+  // adjust the URL first if needed, then click Test Connection.
 
   if (dlg.show() === 1) {
     return urlInput.text;
@@ -127,7 +127,9 @@ function showConnectionDialog(defaultUrl) {
 }
 
 /**
- * Test whether we can open a TCP connection to the given host and port.
+ * Test whether the Laserflow backend is reachable by sending a real
+ * HTTP GET /api/version request.  A bare Socket.open()/close() is
+ * unreliable in ExtendScript so we must exchange actual data.
  */
 function testConnection(host, port) {
   try {
@@ -136,8 +138,19 @@ function testConnection(host, port) {
     if (!conn.open(host + ":" + port)) {
       return false;
     }
+
+    var request =
+      "GET /api/version HTTP/1.1\r\n" +
+      "Host: " + host + "\r\n" +
+      "Connection: close\r\n" +
+      "\r\n";
+
+    conn.write(request);
+    var response = conn.read(1024);
     conn.close();
-    return true;
+
+    // Any response containing "200" confirms the server is alive
+    return response && response.indexOf("200") !== -1;
   } catch (e) {
     return false;
   }
