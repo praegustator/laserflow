@@ -127,29 +127,38 @@ function showConnectionDialog(defaultUrl) {
 }
 
 /**
- * Test whether the Laserflow backend is reachable by sending a real
- * HTTP GET /api/version request.  A bare Socket.open()/close() is
- * unreliable in ExtendScript so we must exchange actual data.
+ * Test whether the Laserflow backend is reachable.
+ * Uses curl (reliable on macOS/Windows 10+) with Socket as fallback.
  */
 function testConnection(host, port) {
+  var url = "http://" + host + ":" + port + "/api/version";
+
+  // ── Try curl first (always available on macOS, Windows 10+) ──
+  try {
+    if (typeof system !== "undefined" && typeof system.callSystem === "function") {
+      var cmd = "curl -s -o /dev/null -w \"%{http_code}\" --connect-timeout 5 \"" + url + "\"";
+      var code = system.callSystem(cmd);
+      if (code !== null && code !== undefined) {
+        return String(code).replace(/\s/g, "") === "200";
+      }
+    }
+  } catch (ignore) { /* fall through to Socket */ }
+
+  // ── Fallback: ExtendScript Socket ──
   try {
     var conn = new Socket();
     conn.timeout = 5;
     if (!conn.open(host + ":" + port)) {
       return false;
     }
-
     var request =
       "GET /api/version HTTP/1.1\r\n" +
       "Host: " + host + "\r\n" +
       "Connection: close\r\n" +
       "\r\n";
-
     conn.write(request);
     var response = conn.read(1024);
     conn.close();
-
-    // Any response containing "200" confirms the server is alive
     return response && response.indexOf("200") !== -1;
   } catch (e) {
     return false;
@@ -191,13 +200,56 @@ function jsonStringEncode(str) {
 
 /**
  * Send an HTTP POST request with a JSON body.
- * Uses the platform-specific approach available in ExtendScript.
+ * Uses curl (reliable on macOS/Windows 10+) with Socket as fallback.
  */
 function httpPost(url, jsonBody) {
-  // Uses ExtendScript Socket (available on all platforms)
   var parts = parseUrl(url);
   if (!parts) return { ok: false, error: "Invalid URL: " + url };
 
+  // ── Try curl first (always available on macOS, Windows 10+) ──
+  try {
+    if (typeof system !== "undefined" && typeof system.callSystem === "function") {
+      // Write payload to a temp file to avoid shell-escaping issues
+      var tmpPayload = new File(Folder.temp.absoluteURI + "/laserflow-payload.json");
+      tmpPayload.open("w");
+      tmpPayload.write(jsonBody);
+      tmpPayload.close();
+
+      var cmd =
+        "curl -s -w \"\\n%{http_code}\" --connect-timeout 10 " +
+        "-X POST -H \"Content-Type: application/json\" " +
+        "-d @\"" + tmpPayload.fsName + "\" " +
+        "\"" + url + "\"";
+      var raw = system.callSystem(cmd);
+      tmpPayload.remove();
+
+      if (raw !== null && raw !== undefined) {
+        raw = String(raw).replace(/\s+$/, "");          // trim trailing whitespace
+        var lastNl = raw.lastIndexOf("\n");
+        var statusCode = lastNl >= 0 ? raw.substring(lastNl + 1) : raw;
+        statusCode = statusCode.replace(/\s/g, "");
+
+        if (statusCode === "200") {
+          return { ok: true };
+        }
+        if (statusCode === "000") {
+          return {
+            ok: false,
+            error: "Could not connect to " + parts.host + ":" + parts.port +
+                   "\n\nMake sure Laserflow is running."
+          };
+        }
+        var body = lastNl >= 0 ? raw.substring(0, lastNl) : "";
+        return {
+          ok: false,
+          error: "Server responded with HTTP " + statusCode +
+                 (body ? ":\n" + body.substring(0, 200) : "")
+        };
+      }
+    }
+  } catch (ignore) { /* fall through to Socket */ }
+
+  // ── Fallback: ExtendScript Socket ──
   try {
     var conn = new Socket();
     conn.timeout = 10;
@@ -234,8 +286,8 @@ function httpPost(url, jsonBody) {
     }
     // Try to extract a useful message from the HTTP response body
     var bodyStart = response.indexOf("\r\n\r\n");
-    var body = bodyStart !== -1 ? response.substring(bodyStart + 4) : response;
-    return { ok: false, error: "Server responded with an error:\n" + body.substring(0, 200) };
+    var respBody = bodyStart !== -1 ? response.substring(bodyStart + 4) : response;
+    return { ok: false, error: "Server responded with an error:\n" + respBody.substring(0, 200) };
   } catch (e) {
     return { ok: false, error: "Exception: " + e.message };
   }
