@@ -111,6 +111,8 @@ describe('importInbox', () => {
     expect(fs.existsSync(importFile)).toBe(false);
     // No broadcast
     expect(broadcastSpy).not.toHaveBeenCalled();
+    // Error should be logged
+    expect(consoleSpy).toHaveBeenCalled();
   });
 
   it('handles missing svg field gracefully', async () => {
@@ -126,6 +128,8 @@ describe('importInbox', () => {
 
     expect(fs.existsSync(importFile)).toBe(false);
     expect(broadcastSpy).not.toHaveBeenCalled();
+    // Error should be logged
+    expect(consoleSpy).toHaveBeenCalled();
   });
 
   it('uses default filename when not provided', async () => {

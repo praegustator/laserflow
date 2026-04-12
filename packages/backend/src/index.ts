@@ -20,10 +20,11 @@ try {
   process.exit(1);
 }
 
-// Clean up sentinel file on graceful shutdown.
+// Clean up on graceful shutdown.
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(signal, () => {
+  process.on(signal, async () => {
     stopImportInbox();
+    await app.close();
     process.exit(0);
   });
 }

@@ -74,8 +74,16 @@ var LASERFLOW_URL = "http://127.0.0.1:3001/api/import/svg";
 
   if (result.ok) {
     alert("Sent to Laserflow!\n\nThe design \"" + docName + "\" has been imported into your active project.");
+    return;
+  }
+
+  // HTTP failed — try file-based import as a fallback.
+  // The Laserflow backend watches ~/.laserflow/import/ for JSON files.
+  var fileResult = fileBasedImport(svgContent, docName);
+  if (fileResult.ok) {
+    alert("Sent to Laserflow!\n\n" + fileResult.message);
   } else {
-    alert("Could not reach Laserflow.\n\n" + result.error);
+    alert("Could not reach Laserflow.\n\n" + result.error + "\n\n" + fileResult.error);
   }
 })();
 
@@ -172,8 +180,15 @@ function showConnectionDialog(defaultUrl) {
       statusText.text = "\u2714 Connected to " + parts.host + ":" + parts.port;
       sendBtn.enabled = true;
     } else {
-      statusText.text = "\u2718 Cannot connect to " + parts.host + ":" + parts.port;
-      sendBtn.enabled = false;
+      // All HTTP methods failed — check file-based import availability
+      var inboxOk = testFileBasedImport(addLog);
+      if (inboxOk) {
+        statusText.text = "\u2714 File-based import available (HTTP failed)";
+        sendBtn.enabled = true;
+      } else {
+        statusText.text = "\u2718 Cannot connect to " + parts.host + ":" + parts.port;
+        sendBtn.enabled = false;
+      }
     }
   };
 
@@ -209,11 +224,7 @@ function testConnection(host, port, addLog) {
     addLog("system.callSystem: " + (typeof system.callSystem));
   }
   addLog("app.system: " + (typeof app.system));
-  addLog("app.doScript: " + (typeof app.doScript));
-  addLog("ScriptLanguage: " + (typeof ScriptLanguage));
-  if (typeof ScriptLanguage !== "undefined") {
-    try { addLog("ScriptLanguage.APPLESCRIPT: " + ScriptLanguage.APPLESCRIPT); } catch (ignore) {}
-  }
+  addLog("Socket: " + (typeof Socket));
 
   // ── Method 1: system.callSystem with curl (stdout capture) ──
   try {
@@ -278,81 +289,6 @@ function testConnection(host, port, addLog) {
     addLog("Method 3 exception: " + e3.message);
   }
 
-  // ── Method 5: app.doScript + AppleScript (macOS only) ──
-  try {
-    if ($.os.indexOf("Macintosh") !== -1 && typeof app.doScript === "function") {
-      addLog("\n--- Method 5: app.doScript + AppleScript ---");
-      // Build shell command with single-quoted arguments (safe, no escaping needed)
-      var sq = "'";
-      var shCmd5 = "curl -s -o /dev/null -w " + sq + "%{http_code}" + sq +
-                   " --connect-timeout 5 " + sq + url + sq + " 2>/dev/null; true";
-      addLog("shell cmd: " + shCmd5);
-      var asScript5 = 'do shell script "' + shCmd5 + '"';
-      addLog("AppleScript: " + asScript5);
-
-      var asResult5 = null;
-      if (typeof ScriptLanguage !== "undefined") {
-        try {
-          asResult5 = app.doScript(asScript5, ScriptLanguage.APPLESCRIPT);
-        } catch (dsErr5) {
-          addLog("doScript threw: " + dsErr5.message);
-        }
-      } else {
-        addLog("ScriptLanguage enum not found");
-      }
-
-      addLog("result: " + String(asResult5));
-      if (asResult5 !== null && asResult5 !== undefined) {
-        var trimmed5 = String(asResult5).replace(/\s/g, "");
-        addLog("trimmed: [" + trimmed5 + "]");
-        if (trimmed5 === "200") {
-          addLog("SUCCESS via app.doScript + AppleScript");
-          return true;
-        }
-      }
-    } else {
-      addLog("\nMethod 5 not available (not macOS or app.doScript missing)");
-    }
-  } catch (e5) {
-    addLog("Method 5 exception: " + e5.message);
-  }
-
-  // ── Method 6: File.execute with shell script (macOS only) ──
-  try {
-    if ($.os.indexOf("Macintosh") !== -1) {
-      addLog("\n--- Method 6: File.execute + shell script ---");
-      var tmpSh6 = new File(Folder.temp.absoluteURI + "/laserflow-test.command");
-      var tmpResult6 = new File(Folder.temp.absoluteURI + "/laserflow-test-result.txt");
-      tmpSh6.open("w");
-      tmpSh6.writeln("#!/bin/sh");
-      tmpSh6.writeln('curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "' + url + '" > "' + tmpResult6.fsName + '" 2>/dev/null');
-      tmpSh6.close();
-
-      // Make executable and run
-      addLog("script: " + tmpSh6.fsName);
-      var execResult = tmpSh6.execute();
-      addLog("execute() returned: " + execResult);
-
-      // File.execute() is async — wait briefly, then check result
-      $.sleep(6000);
-      if (tmpResult6.exists) {
-        var out6 = readFile(tmpResult6);
-        tmpResult6.remove();
-        addLog("result file: " + (out6 ? out6.substring(0, 100) : "(empty)"));
-        if (out6 && out6.replace(/\s/g, "") === "200") {
-          tmpSh6.remove();
-          addLog("SUCCESS via File.execute");
-          return true;
-        }
-      } else {
-        addLog("result file not created");
-      }
-      tmpSh6.remove();
-    }
-  } catch (e6) {
-    addLog("Method 6 exception: " + e6.message);
-  }
-
   // ── Method 4: ExtendScript Socket ──
   try {
     addLog("\n--- Method 4: ExtendScript Socket ---");
@@ -383,7 +319,7 @@ function testConnection(host, port, addLog) {
     addLog("Method 4 exception: " + e4.message);
   }
 
-  addLog("\nAll methods failed.");
+  addLog("\nAll HTTP methods failed.");
   return false;
 }
 
@@ -422,8 +358,8 @@ function jsonStringEncode(str) {
 
 /**
  * Send an HTTP POST request with a JSON body.
- * Tries (in order): system.callSystem, app.system, app.doScript+AppleScript,
- * File.execute+shell script, then Socket fallback.
+ * Tries (in order): system.callSystem, app.system, then Socket fallback.
+ * Returns { ok: true } on success or { ok: false, error: string } on failure.
  */
 function httpPost(url, jsonBody) {
   var parts = parseUrl(url);
@@ -487,78 +423,6 @@ function httpPost(url, jsonBody) {
   if (tmpPayload.exists) tmpPayload.remove();
   if (tmpOut.exists) tmpOut.remove();
 
-  // ── Method 5: app.doScript + AppleScript (macOS only) ──
-  try {
-    if ($.os.indexOf("Macintosh") !== -1 && typeof app.doScript === "function" && typeof ScriptLanguage !== "undefined") {
-      // Re-create payload file (may have been cleaned up above)
-      tmpPayload.open("w");
-      tmpPayload.write(jsonBody);
-      tmpPayload.close();
-
-      // Write a shell script that runs the curl POST
-      var tmpSh = new File(Folder.temp.absoluteURI + "/laserflow-post.sh");
-      tmpSh.open("w");
-      tmpSh.writeln("#!/bin/sh");
-      tmpSh.writeln('curl -s -w "\\n%{http_code}" --connect-timeout 10 -X POST -H "Content-Type: application/json" -d @"' + tmpPayload.fsName + '" "' + url + '" 2>/dev/null');
-      tmpSh.close();
-
-      // Execute via AppleScript do shell script
-      var asPost = 'do shell script "/bin/sh \\"' + tmpSh.fsName + '\\""';
-      try {
-        var rawAs = app.doScript(asPost, ScriptLanguage.APPLESCRIPT);
-      } catch (asPostErr) {
-        rawAs = null;
-      }
-      tmpSh.remove();
-      if (tmpPayload.exists) tmpPayload.remove();
-
-      if (rawAs !== null && rawAs !== undefined) {
-        var resultAs = parseCurlResult(String(rawAs), parts);
-        if (resultAs) return resultAs;
-        // curl returned 000 — server unreachable
-        return {
-          ok: false,
-          error: "Could not connect to " + parts.host + ":" + parts.port + ".\n\nMake sure Laserflow is running."
-        };
-      }
-    }
-  } catch (ignore) {}
-
-  // ── Method 6: File.execute + shell script (macOS only) ──
-  try {
-    if ($.os.indexOf("Macintosh") !== -1) {
-      // Re-create payload file if needed
-      if (!tmpPayload.exists) {
-        tmpPayload.open("w");
-        tmpPayload.write(jsonBody);
-        tmpPayload.close();
-      }
-
-      var tmpShPost = new File(Folder.temp.absoluteURI + "/laserflow-post.command");
-      var tmpResultPost = new File(Folder.temp.absoluteURI + "/laserflow-post-output.txt");
-      tmpShPost.open("w");
-      tmpShPost.writeln("#!/bin/sh");
-      tmpShPost.writeln('curl -s -w "\\n%{http_code}" --connect-timeout 10 -X POST -H "Content-Type: application/json" -d @"' + tmpPayload.fsName + '" "' + url + '" > "' + tmpResultPost.fsName + '" 2>/dev/null');
-      tmpShPost.close();
-
-      tmpShPost.execute();
-      $.sleep(12000);
-
-      if (tmpResultPost.exists) {
-        var outPost = readFile(tmpResultPost);
-        tmpResultPost.remove();
-        tmpShPost.remove();
-        if (tmpPayload.exists) tmpPayload.remove();
-        if (outPost) {
-          var resultExec = parseCurlResult(outPost, parts);
-          if (resultExec) return resultExec;
-        }
-      }
-      if (tmpShPost.exists) tmpShPost.remove();
-      if (tmpPayload.exists) tmpPayload.remove();
-    }
-  } catch (ignore) {}
-
   // ── Method 4: ExtendScript Socket ──
   try {
     var conn = new Socket();
@@ -566,9 +430,8 @@ function httpPost(url, jsonBody) {
     if (!conn.open(parts.host + ":" + parts.port)) {
       return {
         ok: false,
-        error: "All connection methods failed.\n\n" +
-               "Make sure Laserflow is running at " + parts.host + ":" + parts.port + ".\n\n" +
-               "Try \"Save SVG File Instead\" and drag the\nfile into the Laserflow browser window."
+        error: "All HTTP methods failed.\n\n" +
+               "Make sure Laserflow is running at " + parts.host + ":" + parts.port + "."
       };
     }
 
@@ -599,7 +462,10 @@ function httpPost(url, jsonBody) {
     var respBody = bodyStart !== -1 ? response.substring(bodyStart + 4) : response;
     return { ok: false, error: "Server responded with an error:\n" + respBody.substring(0, 200) };
   } catch (e) {
-    return { ok: false, error: "Exception: " + e.message };
+    return {
+      ok: false,
+      error: "All HTTP methods failed.\n(system.callSystem, app.system, and Socket unavailable)"
+    };
   }
 }
 
@@ -640,5 +506,132 @@ function parseUrl(url) {
     host: match[1],
     port: match[3] ? parseInt(match[3], 10) : 80,
     path: match[4] || "/",
+  };
+}
+
+// ── File-based import ──────────────────────────────────────────────────────
+// When HTTP is impossible (no system.callSystem, no Socket), the plugin
+// writes a JSON file to ~/.laserflow/import/ and the Laserflow backend
+// (running on the same machine) picks it up automatically.
+
+/**
+ * Return the path to the Laserflow import inbox directory.
+ * On macOS: /Users/<name>/.laserflow/import
+ * On Windows: C:\Users\<name>\.laserflow\import
+ */
+function getInboxFolder() {
+  var home = Folder("~");
+  return new Folder(home.absoluteURI + "/.laserflow/import");
+}
+
+/**
+ * Check if the Laserflow backend's file-based import inbox is available.
+ * The backend writes a sentinel file (.laserflow-server) when it starts.
+ * Logs diagnostics via addLog callback.
+ */
+function testFileBasedImport(addLog) {
+  addLog("\n--- File-based import check ---");
+  var inbox = getInboxFolder();
+  addLog("Inbox path: " + inbox.fsName);
+
+  if (!inbox.exists) {
+    addLog("Inbox directory does not exist.");
+    addLog("If Laserflow is running on this Mac,");
+    addLog("it should create ~/.laserflow/import/ at startup.");
+    return false;
+  }
+
+  var sentinel = new File(inbox.absoluteURI + "/.laserflow-server");
+  addLog("Sentinel file: " + sentinel.fsName);
+  if (!sentinel.exists) {
+    addLog("Sentinel file not found.");
+    addLog("The inbox directory exists but Laserflow may not be running.");
+    return false;
+  }
+
+  // Read sentinel to show diagnostic info
+  var sentinelData = readFile(sentinel);
+  if (sentinelData) {
+    addLog("Sentinel: " + sentinelData.substring(0, 200));
+  }
+
+  addLog("SUCCESS: file-based import available.");
+  addLog("SVG files will be written to the inbox directory");
+  addLog("and picked up automatically by Laserflow.");
+  return true;
+}
+
+/**
+ * Send SVG to Laserflow via the file-based inbox.
+ * Writes a JSON file to ~/.laserflow/import/ and waits for the backend
+ * to consume it (delete it).
+ *
+ * Returns { ok: true, message: string } or { ok: false, error: string }.
+ */
+function fileBasedImport(svgContent, filename) {
+  var inbox = getInboxFolder();
+
+  // Create the inbox directory if it doesn't exist
+  if (!inbox.exists) {
+    inbox.create();
+  }
+
+  if (!inbox.exists) {
+    return {
+      ok: false,
+      error: "Could not create import directory:\n" + inbox.fsName +
+             "\n\nUse \"Save SVG File Instead\" to export manually."
+    };
+  }
+
+  // Generate a unique filename using timestamp
+  var now = new Date();
+  var ts = now.getFullYear() +
+    ("0" + (now.getMonth() + 1)).slice(-2) +
+    ("0" + now.getDate()).slice(-2) + "-" +
+    ("0" + now.getHours()).slice(-2) +
+    ("0" + now.getMinutes()).slice(-2) +
+    ("0" + now.getSeconds()).slice(-2) + "-" +
+    ("00" + now.getMilliseconds()).slice(-3);
+  var importFile = new File(inbox.absoluteURI + "/import-" + ts + ".json");
+
+  // Build the JSON payload manually (no JSON.stringify in ES3)
+  var payload = '{"svg":' + jsonStringEncode(svgContent) + ',"filename":' + jsonStringEncode(filename) + '}';
+
+  importFile.open("w");
+  importFile.write(payload);
+  importFile.close();
+
+  if (!importFile.exists) {
+    return {
+      ok: false,
+      error: "Failed to write import file.\n\nUse \"Save SVG File Instead\" to export manually."
+    };
+  }
+
+  // Wait for the backend to pick up and delete the file (up to 8 seconds).
+  var waited = 0;
+  var step = 500; // milliseconds
+  var maxWait = 8000;
+  while (waited < maxWait) {
+    $.sleep(step);
+    waited += step;
+    if (!importFile.exists) {
+      // Backend consumed the file — success!
+      return {
+        ok: true,
+        message: "The design \"" + filename + "\" was sent to Laserflow\nvia the local import inbox."
+      };
+    }
+  }
+
+  // File still exists after timeout — backend might not be running
+  // Leave the file so a later backend restart can pick it up.
+  return {
+    ok: false,
+    error: "Import file was written to:\n" + importFile.fsName +
+           "\n\nbut Laserflow did not pick it up within " + (maxWait / 1000) + " seconds.\n" +
+           "Make sure the Laserflow backend is running.\n" +
+           "The file will be imported automatically when it starts."
   };
 }
