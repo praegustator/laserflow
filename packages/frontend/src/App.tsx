@@ -84,8 +84,13 @@ function AppInner() {
         },
         () => {
           setBackendConnected(false);
-          // Reconnect after 3s on close
-          reconnectTimer.current = setTimeout(connect, 3000);
+          // Only reconnect if this is still the active connection.
+          // Prevents duplicate connections in React StrictMode where the
+          // first socket's async onclose fires after cleanup has already
+          // created a replacement connection.
+          if (wsRef.current === ws) {
+            reconnectTimer.current = setTimeout(connect, 3000);
+          }
         },
       );
       wsRef.current = ws;

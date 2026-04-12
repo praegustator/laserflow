@@ -44,28 +44,25 @@ var LASERFLOW_URL = "http://127.0.0.1:3001/api/import/svg";
   var targetUrl = dialogResult.url;
   var doc = app.activeDocument;
   var docName = doc.name.replace(/\.ai$/i, "");
+  var hasSelection = doc.selection && doc.selection.length > 0;
 
-  // Export SVG to a temporary file
-  var tmpFile = new File(Folder.temp.absoluteURI + "/laserflow-export.svg");
-
-  var exportOptions = new ExportOptionsSVG();
-  exportOptions.embedRasterImages = true;
-  exportOptions.fontSubsetting = SVGFontSubsetting.None;
-  exportOptions.coordinatePrecision = 4;
-  exportOptions.documentEncoding = SVGDocumentEncoding.UTF8;
-  exportOptions.DTD = SVGDTDVersion.SVG1_1;
-  exportOptions.cssProperties = SVGCSSPropertyLocation.STYLEATTRIBUTES;
-
-  doc.exportFile(tmpFile, ExportType.SVG, exportOptions);
-
-  // Read the exported SVG content
-  var svgContent = readFile(tmpFile);
-  tmpFile.remove();
-
-  if (!svgContent) {
-    alert("Failed to export SVG.\nPlease try again.");
-    return;
+  var exported;
+  if (hasSelection && dialogResult.selectionOnly) {
+    exported = exportSelectionAsSvg(doc);
+    if (!exported) {
+      alert("Failed to export selected objects.\nPlease try again.");
+      return;
+    }
+    docName = docName + " (selection)";
+  } else {
+    exported = exportDocumentAsSvg(doc);
+    if (!exported) {
+      alert("Failed to export SVG.\nPlease try again.");
+      return;
+    }
   }
+
+  var svgContent = exported.svg;
 
   // Send to Laserflow via HTTP POST
   var payload = '{"svg":' + jsonStringEncode(svgContent) + ',"filename":' + jsonStringEncode(docName) + '}';
@@ -113,10 +110,134 @@ function saveSvgFile() {
 }
 
 /**
+ * Build standard ExportOptionsSVG used for both full-doc and selection exports.
+ */
+function buildExportOptions() {
+  var opts = new ExportOptionsSVG();
+  opts.embedRasterImages = true;
+  opts.fontSubsetting = SVGFontSubsetting.None;
+  opts.coordinatePrecision = 4;
+  opts.documentEncoding = SVGDocumentEncoding.UTF8;
+  opts.DTD = SVGDTDVersion.SVG1_1;
+  opts.cssProperties = SVGCSSPropertyLocation.STYLEATTRIBUTES;
+  return opts;
+}
+
+/**
+ * Export the full active document as SVG.
+ * Returns { svg: string } with mm-corrected dimensions, or null on failure.
+ */
+function exportDocumentAsSvg(doc) {
+  var tmpFile = new File(Folder.temp.absoluteURI + "/laserflow-export.svg");
+  doc.exportFile(tmpFile, ExportType.SVG, buildExportOptions());
+
+  var svgContent = readFile(tmpFile);
+  tmpFile.remove();
+  if (!svgContent) return null;
+
+  // Get artboard dimensions in mm and inject into the SVG so the parser
+  // can correctly scale from viewBox (in points) to millimetres.
+  var abIdx = doc.artboards.getActiveArtboardIndex();
+  var rect = doc.artboards[abIdx].artboardRect; // [left, top, right, bottom]
+  var wMm = (rect[2] - rect[0]) * 25.4 / 72;
+  var hMm = (rect[1] - rect[3]) * 25.4 / 72;
+
+  svgContent = fixSvgDimensions(svgContent, wMm, hMm);
+  return { svg: svgContent };
+}
+
+/**
+ * Export only the currently selected objects as SVG.
+ * Copies the selection into a temporary document, exports, then cleans up.
+ * Returns { svg: string } with mm-corrected dimensions, or null on failure.
+ */
+function exportSelectionAsSvg(doc) {
+  var sel = doc.selection;
+  if (!sel || sel.length === 0) return null;
+
+  // Compute the geometric bounds of all selected items (in points).
+  // Illustrator bounds: [left, top, right, bottom] where top > bottom.
+  var left = Infinity, top = -Infinity, right = -Infinity, bottom = Infinity;
+  for (var i = 0; i < sel.length; i++) {
+    var b = sel[i].geometricBounds;
+    if (b[0] < left) left = b[0];
+    if (b[1] > top) top = b[1];
+    if (b[2] > right) right = b[2];
+    if (b[3] < bottom) bottom = b[3];
+  }
+  var wPts = right - left;
+  var hPts = top - bottom;
+
+  // Copy selected items to the clipboard
+  app.copy();
+
+  // Create a temporary document with the same colour space
+  var cs = doc.documentColorSpace;
+  var tmpDoc = app.documents.add(cs, wPts, hPts);
+
+  // Set the artboard to match the original selection bounds so that
+  // "Paste in Front" places items at their original coordinates.
+  tmpDoc.artboards[0].artboardRect = [left, top, right, bottom];
+
+  // Paste in front preserves the original x/y position of copied items.
+  app.executeMenuCommand("pasteInFront");
+
+  // Export SVG (clipped to the artboard)
+  var exportOptions = buildExportOptions();
+  try { exportOptions.artBoardClipping = true; } catch (ignore) {}
+
+  var tmpFile = new File(Folder.temp.absoluteURI + "/laserflow-selection.svg");
+  tmpDoc.exportFile(tmpFile, ExportType.SVG, exportOptions);
+
+  var svgContent = readFile(tmpFile);
+  tmpFile.remove();
+  tmpDoc.close(SaveOptions.DONOTSAVECHANGES);
+
+  if (!svgContent) return null;
+
+  // Inject mm dimensions
+  var wMm = wPts * 25.4 / 72;
+  var hMm = hPts * 25.4 / 72;
+  svgContent = fixSvgDimensions(svgContent, wMm, hMm);
+
+  return { svg: svgContent };
+}
+
+/**
+ * Replace the width/height attributes in the root <svg> element with
+ * explicit mm values.  This ensures the Laserflow SVG parser can compute
+ * the correct scale from the viewBox (which Illustrator writes in points)
+ * to millimetres.
+ *
+ * Example: width="28.3465" → width="10mm"  (for a 10 mm artboard)
+ */
+function fixSvgDimensions(svgContent, wMm, hMm) {
+  var wStr = wMm.toFixed(4) + "mm";
+  var hStr = hMm.toFixed(4) + "mm";
+
+  // Locate the opening <svg ...> tag (may span multiple lines).
+  var svgStart = svgContent.indexOf("<svg");
+  if (svgStart < 0) return svgContent;
+  var svgTagEnd = svgContent.indexOf(">", svgStart);
+  if (svgTagEnd < 0) return svgContent;
+
+  var before = svgContent.substring(0, svgStart);
+  var svgTag = svgContent.substring(svgStart, svgTagEnd + 1);
+  var after = svgContent.substring(svgTagEnd + 1);
+
+  // Replace existing width/height (with or without px/pt suffix)
+  svgTag = svgTag.replace(/width="[\d.]+(px|pt)?"/, 'width="' + wStr + '"');
+  svgTag = svgTag.replace(/height="[\d.]+(px|pt)?"/, 'height="' + hStr + '"');
+
+  return before + svgTag + after;
+}
+
+/**
  * Show a dialog that lets the user confirm or change the Laserflow URL,
  * test the connection (with diagnostic log), or save an SVG file instead.
  *
- * Returns { mode: "send", url: string } or { mode: "save" } or null (cancel).
+ * Returns { mode: "send", url: string, selectionOnly: boolean }
+ *      or { mode: "save" } or null (cancel).
  */
 function showConnectionDialog(defaultUrl) {
   var dlg = new Window("dialog", "Send to Laserflow");
@@ -127,6 +248,13 @@ function showConnectionDialog(defaultUrl) {
   dlg.add("statictext", undefined, "Laserflow backend URL:");
   var urlInput = dlg.add("edittext", undefined, defaultUrl);
   urlInput.characters = 45;
+
+  // "Selection only" checkbox — enabled only when there is a selection
+  var hasSelection = app.activeDocument && app.activeDocument.selection &&
+                     app.activeDocument.selection.length > 0;
+  var selCheckbox = dlg.add("checkbox", undefined, "Send selected objects only");
+  selCheckbox.value = hasSelection; // default to on when there is a selection
+  selCheckbox.enabled = hasSelection;
 
   var statusText = dlg.add("statictext", undefined, "Click Test Connection to verify.");
   statusText.characters = 45;
@@ -199,7 +327,7 @@ function showConnectionDialog(defaultUrl) {
 
   var code = dlg.show();
   if (code === 1) {
-    return { mode: "send", url: urlInput.text };
+    return { mode: "send", url: urlInput.text, selectionOnly: selCheckbox.value };
   }
   if (chosenMode === "save") {
     return { mode: "save" };
