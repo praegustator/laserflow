@@ -1,12 +1,15 @@
 /**
  * File-based SVG import inbox.
  *
- * Watches `~/.laserflow/import/` for `.json` files dropped by the
- * Illustrator "Send to Laserflow" plugin (or any other tool).  Each file
- * is expected to contain `{ svg: string, filename?: string }`.
+ * Watches a directory for `.json` files dropped by the Illustrator
+ * "Send to Laserflow" plugin (or any other tool).  Each file is expected
+ * to contain `{ svg: string, filename?: string }`.
  *
  * This provides a reliable import path for environments where ExtendScript
  * has no networking (no system.callSystem, no Socket, etc.).
+ *
+ * The directory defaults to `~/.laserflow/import/` but can be changed at
+ * runtime via setInboxDir() (exposed through the settings API).
  *
  * Lifecycle:
  *   startImportInbox()  — creates the directory, writes a sentinel file,
@@ -20,11 +23,36 @@ import os from 'node:os';
 import { parseSvg } from './cam/SvgParser.js';
 import { wsBroadcaster } from './ws/WebSocketServer.js';
 
-/** Directory that plugin / external tools write import files into. */
-export const INBOX_DIR = path.join(os.homedir(), '.laserflow', 'import');
+/** Default inbox directory. */
+const DEFAULT_INBOX_DIR = path.join(os.homedir(), '.laserflow', 'import');
 
-/** Sentinel file the backend writes so the plugin can detect a running server. */
-const SENTINEL_FILE = path.join(INBOX_DIR, '.laserflow-server');
+/** Current active inbox directory (can be changed at runtime). */
+let currentInboxDir = DEFAULT_INBOX_DIR;
+
+/** Return the current inbox directory path. */
+export function getInboxDir(): string {
+  return currentInboxDir;
+}
+
+/**
+ * Change the inbox directory.  Restarts polling if it was already active.
+ * Returns the resolved absolute path.
+ */
+export function setInboxDir(dir: string): string {
+  const resolved = path.resolve(dir);
+  if (resolved === currentInboxDir) return resolved;
+
+  const wasRunning = pollTimer !== null;
+  if (wasRunning) stopImportInbox();
+
+  currentInboxDir = resolved;
+
+  if (wasRunning) startImportInbox();
+  return resolved;
+}
+
+/** Convenience getter kept for backwards compatibility with index.ts log. */
+export const INBOX_DIR = DEFAULT_INBOX_DIR;
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -37,7 +65,7 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 export function startImportInbox(): void {
   if (pollTimer) return; // already running
 
-  fs.mkdirSync(INBOX_DIR, { recursive: true });
+  fs.mkdirSync(currentInboxDir, { recursive: true });
   writeSentinel();
 
   // Poll every 2 seconds — lightweight (single readdir on a tiny directory).
@@ -59,18 +87,22 @@ export function stopImportInbox(): void {
 
 // ── Internals ──────────────────────────────────────────────────────────
 
+function sentinelPath(): string {
+  return path.join(currentInboxDir, '.laserflow-server');
+}
+
 function writeSentinel(): void {
   const data = JSON.stringify({
     pid: process.pid,
     port: parseInt(process.env['PORT'] ?? '3001', 10),
     startedAt: new Date().toISOString(),
   });
-  fs.writeFileSync(SENTINEL_FILE, data, 'utf-8');
+  fs.writeFileSync(sentinelPath(), data, 'utf-8');
 }
 
 function removeSentinel(): void {
   try {
-    fs.unlinkSync(SENTINEL_FILE);
+    fs.unlinkSync(sentinelPath());
   } catch {
     // file may already be gone
   }
@@ -80,14 +112,14 @@ function removeSentinel(): void {
 function scanInbox(): void {
   let entries: string[];
   try {
-    entries = fs.readdirSync(INBOX_DIR);
+    entries = fs.readdirSync(currentInboxDir);
   } catch {
     return; // directory may have been deleted externally
   }
 
   for (const name of entries) {
     if (!name.endsWith('.json')) continue;
-    const filePath = path.join(INBOX_DIR, name);
+    const filePath = path.join(currentInboxDir, name);
     processImportFile(filePath);
   }
 }

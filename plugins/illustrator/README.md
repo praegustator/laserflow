@@ -2,6 +2,12 @@
 
 Send SVG designs directly from Adobe Illustrator to your running Laserflow instance.
 
+## How it works
+
+The plugin exports your Illustrator document (or selected objects) as SVG and writes a JSON file to a shared **import inbox** directory.  The Laserflow backend watches that directory and automatically imports new files, pushing them to the editor via WebSocket.
+
+This file-based approach works reliably even in sandboxed Illustrator environments where ExtendScript networking (`Socket`, `system.callSystem`) is unavailable.
+
 ## Installation
 
 1. Copy `Send to Laserflow.jsx` into your Illustrator **Scripts** folder:
@@ -18,44 +24,32 @@ The script now appears under **File → Scripts → Send to Laserflow**.
 ## Usage
 
 1. Open or create a document in Illustrator.
-2. Make sure Laserflow is running (default: `http://127.0.0.1:3001`).
+2. Make sure Laserflow is running.
 3. Open a project in the Laserflow editor so there is an active project to receive the import.
 4. In Illustrator, go to **File → Scripts → Send to Laserflow**.
-5. A connection dialog will appear — click **Test Connection** to verify, then **Send**.
-6. The design will be parsed and imported as a new layer in your active Laserflow project.
+5. A dialog will appear showing the import inbox directory.  Optionally check **"Send selected objects only"** to export just the current selection.
+6. Click **Send**.  The design will be parsed and imported as a new layer in your active Laserflow project.
 
 ## Configuration
 
-The script defaults to `http://127.0.0.1:3001`. You can change the URL in the connection dialog each time you run the script, or edit the `LASERFLOW_URL` variable at the top of the script for a permanent change:
+### Import inbox directory
+
+By default the inbox is `~/.laserflow/import/`.  You can change it in two places (both must match):
+
+- **Laserflow frontend**: Settings → Import Inbox → Inbox Directory
+- **Illustrator plugin**: The dialog shows an editable path with a Browse button.  To change the default permanently, edit the `DEFAULT_INBOX` variable at the top of the script:
 
 ```javascript
-var LASERFLOW_URL = "http://192.168.1.100:3001/api/import/svg";
+var DEFAULT_INBOX = Folder("~").fsName + "/.laserflow/import";
 ```
 
-## API Endpoint
+### Exporting selected objects
 
-The script uses the `POST /api/import/svg` endpoint. This endpoint can also be called from other tools:
-
-### JSON body
-
-```bash
-curl -X POST http://localhost:3001/api/import/svg \
-  -H "Content-Type: application/json" \
-  -d '{"svg": "<svg>...</svg>", "filename": "my-design"}'
-```
-
-### Multipart file upload
-
-```bash
-curl -X POST http://localhost:3001/api/import/svg \
-  -F "file=@my-design.svg"
-```
-
-Both methods parse the SVG and push the result to all connected Laserflow frontends via WebSocket.
+If objects are selected in Illustrator when you run the script, the **"Send selected objects only"** checkbox is automatically enabled.  The plugin temporarily hides unselected items, shrinks the artboard to the selection bounds, exports, and then restores everything.
 
 ## Troubleshooting
 
-- **"Could not reach Laserflow"** — Make sure the Laserflow backend is running and the URL is correct. The connection dialog lets you test connectivity before sending. If `127.0.0.1` doesn't work, try your machine's LAN IP address (e.g. `192.168.x.x`).
-- **"✘ Cannot connect"** in the dialog — The script's Socket cannot reach the server. Check firewall settings and try a different IP.
 - **Nothing appears in the editor** — Make sure a project is open in the Laserflow editor. The pushed SVG is imported into the currently active project.
+- **"Laserflow did not pick it up"** — The backend may not be running, or the inbox directory paths don't match between the plugin and backend.  Check Laserflow Settings → Import Inbox.
+- **Scaling is wrong** — The plugin injects explicit `mm` dimensions into the SVG.  If you see incorrect sizes, make sure the document units in Illustrator are set to millimetres.
 - **Fonts not converting** — The script exports with `fontSubsetting: None`. For best results, convert text to outlines in Illustrator before sending (**Type → Create Outlines**).

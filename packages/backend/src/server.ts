@@ -14,6 +14,7 @@ import { registerRoutes as registerMaterialPresetRoutes } from './routes/materia
 import { registerRoutes as registerVersionRoutes } from './routes/version.js';
 import { registerRoutes as registerImageInfoRoutes } from './routes/imageInfo.js';
 import { registerRoutes as registerImportSvgRoutes } from './routes/importSvg.js';
+import { registerRoutes as registerImportInboxSettingsRoutes } from './routes/importInboxSettings.js';
 import { jobEngine } from './jobs/JobExecutionEngine.js';
 import { jobRepo } from './jobs/JobRepository.js';
 
@@ -62,6 +63,7 @@ export async function buildServer() {
   registerVersionRoutes(app);
   registerImageInfoRoutes(app);
   registerImportSvgRoutes(app);
+  registerImportInboxSettingsRoutes(app);
 
   // Maintain last-known Work Coordinate Offset so we can always compute both
   // MPos and WPos even when GRBL only reports one of them.

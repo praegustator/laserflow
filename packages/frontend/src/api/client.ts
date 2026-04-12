@@ -36,6 +36,15 @@ export const api = {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json();
     }),
+  put: (path: string, body?: unknown) =>
+    fetch(`${getBackendUrl()}${path}`, {
+      method: 'PUT',
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    }).then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    }),
 };
 
 export function createWebSocket(
