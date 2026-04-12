@@ -209,6 +209,11 @@ function testConnection(host, port, addLog) {
     addLog("system.callSystem: " + (typeof system.callSystem));
   }
   addLog("app.system: " + (typeof app.system));
+  addLog("app.doScript: " + (typeof app.doScript));
+  addLog("ScriptLanguage: " + (typeof ScriptLanguage));
+  if (typeof ScriptLanguage !== "undefined") {
+    try { addLog("ScriptLanguage.APPLESCRIPT: " + ScriptLanguage.APPLESCRIPT); } catch (ignore) {}
+  }
 
   // ── Method 1: system.callSystem with curl (stdout capture) ──
   try {
@@ -271,6 +276,81 @@ function testConnection(host, port, addLog) {
     }
   } catch (e3) {
     addLog("Method 3 exception: " + e3.message);
+  }
+
+  // ── Method 5: app.doScript + AppleScript (macOS only) ──
+  try {
+    if ($.os.indexOf("Macintosh") !== -1 && typeof app.doScript === "function") {
+      addLog("\n--- Method 5: app.doScript + AppleScript ---");
+      // Build shell command with single-quoted arguments (safe, no escaping needed)
+      var sq = "'";
+      var shCmd5 = "curl -s -o /dev/null -w " + sq + "%{http_code}" + sq +
+                   " --connect-timeout 5 " + sq + url + sq + " 2>/dev/null; true";
+      addLog("shell cmd: " + shCmd5);
+      var asScript5 = 'do shell script "' + shCmd5 + '"';
+      addLog("AppleScript: " + asScript5);
+
+      var asResult5 = null;
+      if (typeof ScriptLanguage !== "undefined") {
+        try {
+          asResult5 = app.doScript(asScript5, ScriptLanguage.APPLESCRIPT);
+        } catch (dsErr5) {
+          addLog("doScript threw: " + dsErr5.message);
+        }
+      } else {
+        addLog("ScriptLanguage enum not found");
+      }
+
+      addLog("result: " + String(asResult5));
+      if (asResult5 !== null && asResult5 !== undefined) {
+        var trimmed5 = String(asResult5).replace(/\s/g, "");
+        addLog("trimmed: [" + trimmed5 + "]");
+        if (trimmed5 === "200") {
+          addLog("SUCCESS via app.doScript + AppleScript");
+          return true;
+        }
+      }
+    } else {
+      addLog("\nMethod 5 not available (not macOS or app.doScript missing)");
+    }
+  } catch (e5) {
+    addLog("Method 5 exception: " + e5.message);
+  }
+
+  // ── Method 6: File.execute with shell script (macOS only) ──
+  try {
+    if ($.os.indexOf("Macintosh") !== -1) {
+      addLog("\n--- Method 6: File.execute + shell script ---");
+      var tmpSh6 = new File(Folder.temp.absoluteURI + "/laserflow-test.command");
+      var tmpResult6 = new File(Folder.temp.absoluteURI + "/laserflow-test-result.txt");
+      tmpSh6.open("w");
+      tmpSh6.writeln("#!/bin/sh");
+      tmpSh6.writeln('curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "' + url + '" > "' + tmpResult6.fsName + '" 2>/dev/null');
+      tmpSh6.close();
+
+      // Make executable and run
+      addLog("script: " + tmpSh6.fsName);
+      var execResult = tmpSh6.execute();
+      addLog("execute() returned: " + execResult);
+
+      // File.execute() is async — wait briefly, then check result
+      $.sleep(6000);
+      if (tmpResult6.exists) {
+        var out6 = readFile(tmpResult6);
+        tmpResult6.remove();
+        addLog("result file: " + (out6 ? out6.substring(0, 100) : "(empty)"));
+        if (out6 && out6.replace(/\s/g, "") === "200") {
+          tmpSh6.remove();
+          addLog("SUCCESS via File.execute");
+          return true;
+        }
+      } else {
+        addLog("result file not created");
+      }
+      tmpSh6.remove();
+    }
+  } catch (e6) {
+    addLog("Method 6 exception: " + e6.message);
   }
 
   // ── Method 4: ExtendScript Socket ──
@@ -342,7 +422,8 @@ function jsonStringEncode(str) {
 
 /**
  * Send an HTTP POST request with a JSON body.
- * Tries curl via system.callSystem, curl via app.system, then Socket fallback.
+ * Tries (in order): system.callSystem, app.system, app.doScript+AppleScript,
+ * File.execute+shell script, then Socket fallback.
  */
 function httpPost(url, jsonBody) {
   var parts = parseUrl(url);
@@ -406,6 +487,78 @@ function httpPost(url, jsonBody) {
   if (tmpPayload.exists) tmpPayload.remove();
   if (tmpOut.exists) tmpOut.remove();
 
+  // ── Method 5: app.doScript + AppleScript (macOS only) ──
+  try {
+    if ($.os.indexOf("Macintosh") !== -1 && typeof app.doScript === "function" && typeof ScriptLanguage !== "undefined") {
+      // Re-create payload file (may have been cleaned up above)
+      tmpPayload.open("w");
+      tmpPayload.write(jsonBody);
+      tmpPayload.close();
+
+      // Write a shell script that runs the curl POST
+      var tmpSh = new File(Folder.temp.absoluteURI + "/laserflow-post.sh");
+      tmpSh.open("w");
+      tmpSh.writeln("#!/bin/sh");
+      tmpSh.writeln('curl -s -w "\\n%{http_code}" --connect-timeout 10 -X POST -H "Content-Type: application/json" -d @"' + tmpPayload.fsName + '" "' + url + '" 2>/dev/null');
+      tmpSh.close();
+
+      // Execute via AppleScript do shell script
+      var asPost = 'do shell script "/bin/sh \\"' + tmpSh.fsName + '\\""';
+      try {
+        var rawAs = app.doScript(asPost, ScriptLanguage.APPLESCRIPT);
+      } catch (asPostErr) {
+        rawAs = null;
+      }
+      tmpSh.remove();
+      if (tmpPayload.exists) tmpPayload.remove();
+
+      if (rawAs !== null && rawAs !== undefined) {
+        var resultAs = parseCurlResult(String(rawAs), parts);
+        if (resultAs) return resultAs;
+        // curl returned 000 — server unreachable
+        return {
+          ok: false,
+          error: "Could not connect to " + parts.host + ":" + parts.port + ".\n\nMake sure Laserflow is running."
+        };
+      }
+    }
+  } catch (ignore) {}
+
+  // ── Method 6: File.execute + shell script (macOS only) ──
+  try {
+    if ($.os.indexOf("Macintosh") !== -1) {
+      // Re-create payload file if needed
+      if (!tmpPayload.exists) {
+        tmpPayload.open("w");
+        tmpPayload.write(jsonBody);
+        tmpPayload.close();
+      }
+
+      var tmpShPost = new File(Folder.temp.absoluteURI + "/laserflow-post.command");
+      var tmpResultPost = new File(Folder.temp.absoluteURI + "/laserflow-post-output.txt");
+      tmpShPost.open("w");
+      tmpShPost.writeln("#!/bin/sh");
+      tmpShPost.writeln('curl -s -w "\\n%{http_code}" --connect-timeout 10 -X POST -H "Content-Type: application/json" -d @"' + tmpPayload.fsName + '" "' + url + '" > "' + tmpResultPost.fsName + '" 2>/dev/null');
+      tmpShPost.close();
+
+      tmpShPost.execute();
+      $.sleep(12000);
+
+      if (tmpResultPost.exists) {
+        var outPost = readFile(tmpResultPost);
+        tmpResultPost.remove();
+        tmpShPost.remove();
+        if (tmpPayload.exists) tmpPayload.remove();
+        if (outPost) {
+          var resultExec = parseCurlResult(outPost, parts);
+          if (resultExec) return resultExec;
+        }
+      }
+      if (tmpShPost.exists) tmpShPost.remove();
+      if (tmpPayload.exists) tmpPayload.remove();
+    }
+  } catch (ignore) {}
+
   // ── Method 4: ExtendScript Socket ──
   try {
     var conn = new Socket();
@@ -414,7 +567,7 @@ function httpPost(url, jsonBody) {
       return {
         ok: false,
         error: "All connection methods failed.\n\n" +
-               "Socket.open returned false (error: " + conn.error + ").\n\n" +
+               "Make sure Laserflow is running at " + parts.host + ":" + parts.port + ".\n\n" +
                "Try \"Save SVG File Instead\" and drag the\nfile into the Laserflow browser window."
       };
     }
