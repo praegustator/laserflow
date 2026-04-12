@@ -15,6 +15,9 @@
  *   2. Make sure Laserflow is running (default: http://localhost:3001).
  *   3. Run File → Scripts → Send to Laserflow.
  *   4. The design will appear in your active Laserflow project.
+ *
+ * If networking fails, use "Save SVG File" to export manually,
+ * then drag the file into the Laserflow browser window.
  */
 
 // ── Configuration ──────────────────────────────────────────────────────────
@@ -29,9 +32,16 @@ var LASERFLOW_URL = "http://127.0.0.1:3001/api/import/svg";
   }
 
   // Show connection dialog so the user can confirm / change the URL
-  var targetUrl = showConnectionDialog(LASERFLOW_URL);
-  if (!targetUrl) return; // user cancelled
+  var dialogResult = showConnectionDialog(LASERFLOW_URL);
+  if (!dialogResult) return; // user cancelled
 
+  // "save" mode — user clicked Save SVG File
+  if (dialogResult.mode === "save") {
+    saveSvgFile();
+    return;
+  }
+
+  var targetUrl = dialogResult.url;
   var doc = app.activeDocument;
   var docName = doc.name.replace(/\.ai$/i, "");
 
@@ -72,9 +82,33 @@ var LASERFLOW_URL = "http://127.0.0.1:3001/api/import/svg";
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 /**
- * Show a dialog that lets the user confirm or change the Laserflow URL
- * and test the connection before sending.
- * Returns the URL string, or null if the user cancelled.
+ * Export SVG to a user-chosen location (fallback when networking fails).
+ * The user can then drag the .svg file into the Laserflow browser window.
+ */
+function saveSvgFile() {
+  var doc = app.activeDocument;
+  var docName = doc.name.replace(/\.ai$/i, "");
+  var dest = File.saveDialog("Save SVG for Laserflow", "SVG:*.svg");
+  if (!dest) return;
+
+  var exportOptions = new ExportOptionsSVG();
+  exportOptions.embedRasterImages = true;
+  exportOptions.fontSubsetting = SVGFontSubsetting.None;
+  exportOptions.coordinatePrecision = 4;
+  exportOptions.documentEncoding = SVGDocumentEncoding.UTF8;
+  exportOptions.DTD = SVGDTDVersion.SVG1_1;
+  exportOptions.cssProperties = SVGCSSPropertyLocation.STYLEATTRIBUTES;
+
+  doc.exportFile(dest, ExportType.SVG, exportOptions);
+
+  alert("SVG saved!\n\nDrag \"" + dest.name + "\" into the Laserflow\nbrowser window to import it.");
+}
+
+/**
+ * Show a dialog that lets the user confirm or change the Laserflow URL,
+ * test the connection (with diagnostic log), or save an SVG file instead.
+ *
+ * Returns { mode: "send", url: string } or { mode: "save" } or null (cancel).
  */
 function showConnectionDialog(defaultUrl) {
   var dlg = new Window("dialog", "Send to Laserflow");
@@ -84,31 +118,57 @@ function showConnectionDialog(defaultUrl) {
 
   dlg.add("statictext", undefined, "Laserflow backend URL:");
   var urlInput = dlg.add("edittext", undefined, defaultUrl);
-  urlInput.characters = 40;
+  urlInput.characters = 45;
 
   var statusText = dlg.add("statictext", undefined, "Click Test Connection to verify.");
-  statusText.characters = 40;
+  statusText.characters = 45;
 
-  var btnGroup = dlg.add("group");
-  btnGroup.alignment = ["center", "top"];
+  // Scrollable diagnostic log area
+  dlg.add("statictext", undefined, "Diagnostic log:");
+  var logBox = dlg.add("edittext", undefined, "", { multiline: true, readonly: true, scrolling: true });
+  logBox.characters = 45;
+  logBox.minimumSize = [0, 100];
 
-  var testBtn = btnGroup.add("button", undefined, "Test Connection");
-  var sendBtn = btnGroup.add("button", undefined, "Send", { name: "ok" });
-  var cancelBtn = btnGroup.add("button", undefined, "Cancel", { name: "cancel" });
+  var btnRow1 = dlg.add("group");
+  btnRow1.alignment = ["center", "top"];
+  var testBtn = btnRow1.add("button", undefined, "Test Connection");
+  var sendBtn = btnRow1.add("button", undefined, "Send", { name: "ok" });
+  var cancelBtn = btnRow1.add("button", undefined, "Cancel", { name: "cancel" });
+
+  var btnRow2 = dlg.add("group");
+  btnRow2.alignment = ["center", "top"];
+  var saveBtn = btnRow2.add("button", undefined, "Save SVG File Instead\u2026");
 
   sendBtn.enabled = false;
 
+  // Track whether user clicked Save SVG
+  var chosenMode = null;
+
+  function addLog(msg) {
+    if (logBox.text) {
+      logBox.text += "\n" + msg;
+    } else {
+      logBox.text = msg;
+    }
+    dlg.update();
+  }
+
   testBtn.onClick = function () {
+    logBox.text = "";
     statusText.text = "Connecting\u2026";
     dlg.update();
+
     var parts = parseUrl(urlInput.text);
     if (!parts) {
       statusText.text = "\u2718 Invalid URL";
+      addLog("ERROR: Could not parse URL: " + urlInput.text);
       sendBtn.enabled = false;
       return;
     }
-    var ping = testConnection(parts.host, parts.port);
-    if (ping) {
+    addLog("Parsed: host=" + parts.host + " port=" + parts.port + " path=" + parts.path);
+
+    var result = testConnection(parts.host, parts.port, addLog);
+    if (result) {
       statusText.text = "\u2714 Connected to " + parts.host + ":" + parts.port;
       sendBtn.enabled = true;
     } else {
@@ -117,52 +177,134 @@ function showConnectionDialog(defaultUrl) {
     }
   };
 
-  // Do NOT auto-test before the dialog is visible — let the user
-  // adjust the URL first if needed, then click Test Connection.
+  saveBtn.onClick = function () {
+    chosenMode = "save";
+    dlg.close(2);
+  };
 
-  if (dlg.show() === 1) {
-    return urlInput.text;
+  var code = dlg.show();
+  if (code === 1) {
+    return { mode: "send", url: urlInput.text };
+  }
+  if (chosenMode === "save") {
+    return { mode: "save" };
   }
   return null;
 }
 
 /**
  * Test whether the Laserflow backend is reachable.
- * Uses curl (reliable on macOS/Windows 10+) with Socket as fallback.
+ * Tries multiple methods and logs diagnostics via the addLog callback.
+ * Returns true if any method gets an HTTP 200.
  */
-function testConnection(host, port) {
+function testConnection(host, port, addLog) {
   var url = "http://" + host + ":" + port + "/api/version";
+  var tmpOut = new File(Folder.temp.absoluteURI + "/laserflow-curl-test.txt");
 
-  // ── Try curl first (always available on macOS, Windows 10+) ──
+  // ── Environment info ──
+  addLog("OS: " + $.os);
+  addLog("ExtendScript build: " + $.build);
+  addLog("system object: " + (typeof system));
+  if (typeof system !== "undefined") {
+    addLog("system.callSystem: " + (typeof system.callSystem));
+  }
+  addLog("app.system: " + (typeof app.system));
+
+  // ── Method 1: system.callSystem with curl (stdout capture) ──
   try {
     if (typeof system !== "undefined" && typeof system.callSystem === "function") {
-      var cmd = "curl -s -o /dev/null -w \"%{http_code}\" --connect-timeout 5 \"" + url + "\"";
-      var code = system.callSystem(cmd);
-      if (code !== null && code !== undefined) {
-        return String(code).replace(/\s/g, "") === "200";
+      addLog("\n--- Method 1: system.callSystem (curl stdout) ---");
+      var cmd1 = "curl -s -o /dev/null -w \"%{http_code}\" --connect-timeout 5 \"" + url + "\"";
+      addLog("cmd: " + cmd1);
+      var code1 = system.callSystem(cmd1);
+      addLog("result: " + String(code1));
+      if (code1 !== null && code1 !== undefined) {
+        var trimmed = String(code1).replace(/\s/g, "");
+        addLog("trimmed: [" + trimmed + "]");
+        if (trimmed === "200") {
+          addLog("SUCCESS via system.callSystem");
+          return true;
+        }
+      }
+    } else {
+      addLog("\nsystem.callSystem not available, skipping Method 1");
+    }
+  } catch (e1) {
+    addLog("Method 1 exception: " + e1.message);
+  }
+
+  // ── Method 2: system.callSystem with curl writing to a temp file ──
+  try {
+    if (typeof system !== "undefined" && typeof system.callSystem === "function") {
+      addLog("\n--- Method 2: system.callSystem (curl -> file) ---");
+      var cmd2 = "curl -s -w \"\\n%{http_code}\" --connect-timeout 5 \"" + url + "\" > \"" + tmpOut.fsName + "\" 2>&1";
+      addLog("cmd: " + cmd2);
+      system.callSystem(cmd2);
+      var out2 = readFile(tmpOut);
+      tmpOut.remove();
+      addLog("file content: " + (out2 ? out2.substring(0, 200) : "(empty)"));
+      if (out2 && out2.indexOf("200") !== -1) {
+        addLog("SUCCESS via system.callSystem + file");
+        return true;
       }
     }
-  } catch (ignore) { /* fall through to Socket */ }
+  } catch (e2) {
+    addLog("Method 2 exception: " + e2.message);
+  }
 
-  // ── Fallback: ExtendScript Socket ──
+  // ── Method 3: app.system (macOS/Windows) ──
   try {
+    if (typeof app.system === "function") {
+      addLog("\n--- Method 3: app.system (curl -> file) ---");
+      var cmd3 = "curl -s -w \"\\n%{http_code}\" --connect-timeout 5 \"" + url + "\" > \"" + tmpOut.fsName + "\" 2>&1";
+      addLog("cmd: " + cmd3);
+      app.system(cmd3);
+      var out3 = readFile(tmpOut);
+      tmpOut.remove();
+      addLog("file content: " + (out3 ? out3.substring(0, 200) : "(empty)"));
+      if (out3 && out3.indexOf("200") !== -1) {
+        addLog("SUCCESS via app.system + file");
+        return true;
+      }
+    } else {
+      addLog("\napp.system not available, skipping Method 3");
+    }
+  } catch (e3) {
+    addLog("Method 3 exception: " + e3.message);
+  }
+
+  // ── Method 4: ExtendScript Socket ──
+  try {
+    addLog("\n--- Method 4: ExtendScript Socket ---");
     var conn = new Socket();
     conn.timeout = 5;
-    if (!conn.open(host + ":" + port)) {
-      return false;
+    addLog("Socket.open(\"" + host + ":" + port + "\")");
+    var opened = conn.open(host + ":" + port);
+    addLog("open returned: " + opened);
+    if (opened) {
+      var request =
+        "GET /api/version HTTP/1.1\r\n" +
+        "Host: " + host + "\r\n" +
+        "Connection: close\r\n" +
+        "\r\n";
+      conn.write(request);
+      var response = conn.read(1024);
+      conn.close();
+      addLog("response: " + (response ? response.substring(0, 120) : "(empty)"));
+      if (response && response.indexOf("200") !== -1) {
+        addLog("SUCCESS via Socket");
+        return true;
+      }
+    } else {
+      addLog("Socket.open failed (returned false)");
+      addLog("Socket.error: " + conn.error);
     }
-    var request =
-      "GET /api/version HTTP/1.1\r\n" +
-      "Host: " + host + "\r\n" +
-      "Connection: close\r\n" +
-      "\r\n";
-    conn.write(request);
-    var response = conn.read(1024);
-    conn.close();
-    return response && response.indexOf("200") !== -1;
-  } catch (e) {
-    return false;
+  } catch (e4) {
+    addLog("Method 4 exception: " + e4.message);
   }
+
+  addLog("\nAll methods failed.");
+  return false;
 }
 
 /**
@@ -200,64 +342,80 @@ function jsonStringEncode(str) {
 
 /**
  * Send an HTTP POST request with a JSON body.
- * Uses curl (reliable on macOS/Windows 10+) with Socket as fallback.
+ * Tries curl via system.callSystem, curl via app.system, then Socket fallback.
  */
 function httpPost(url, jsonBody) {
   var parts = parseUrl(url);
   if (!parts) return { ok: false, error: "Invalid URL: " + url };
 
-  // ── Try curl first (always available on macOS, Windows 10+) ──
+  // Write payload to a temp file (used by curl methods)
+  var tmpPayload = new File(Folder.temp.absoluteURI + "/laserflow-payload.json");
+  var tmpOut = new File(Folder.temp.absoluteURI + "/laserflow-post-result.txt");
+
+  tmpPayload.open("w");
+  tmpPayload.write(jsonBody);
+  tmpPayload.close();
+
+  var curlCmd =
+    "curl -s -w \"\\n%{http_code}\" --connect-timeout 10 " +
+    "-X POST -H \"Content-Type: application/json\" " +
+    "-d @\"" + tmpPayload.fsName + "\" " +
+    "\"" + url + "\"";
+
+  // ── Method 1: system.callSystem (stdout capture) ──
   try {
     if (typeof system !== "undefined" && typeof system.callSystem === "function") {
-      // Write payload to a temp file to avoid shell-escaping issues
-      var tmpPayload = new File(Folder.temp.absoluteURI + "/laserflow-payload.json");
-      tmpPayload.open("w");
-      tmpPayload.write(jsonBody);
-      tmpPayload.close();
-
-      var cmd =
-        "curl -s -w \"\\n%{http_code}\" --connect-timeout 10 " +
-        "-X POST -H \"Content-Type: application/json\" " +
-        "-d @\"" + tmpPayload.fsName + "\" " +
-        "\"" + url + "\"";
-      var raw = system.callSystem(cmd);
+      var raw1 = system.callSystem(curlCmd);
       tmpPayload.remove();
-
-      if (raw !== null && raw !== undefined) {
-        raw = String(raw).replace(/\s+$/, "");          // trim trailing whitespace
-        var lastNl = raw.lastIndexOf("\n");
-        var statusCode = lastNl >= 0 ? raw.substring(lastNl + 1) : raw;
-        statusCode = statusCode.replace(/\s/g, "");
-
-        if (statusCode === "200") {
-          return { ok: true };
-        }
-        if (statusCode === "000") {
-          return {
-            ok: false,
-            error: "Could not connect to " + parts.host + ":" + parts.port +
-                   "\n\nMake sure Laserflow is running."
-          };
-        }
-        var body = lastNl >= 0 ? raw.substring(0, lastNl) : "";
-        return {
-          ok: false,
-          error: "Server responded with HTTP " + statusCode +
-                 (body ? ":\n" + body.substring(0, 200) : "")
-        };
+      if (raw1 !== null && raw1 !== undefined) {
+        var result1 = parseCurlResult(String(raw1), parts);
+        if (result1) return result1;
       }
     }
-  } catch (ignore) { /* fall through to Socket */ }
+  } catch (ignore) {}
 
-  // ── Fallback: ExtendScript Socket ──
+  // ── Method 2: system.callSystem (curl -> file) ──
+  try {
+    if (typeof system !== "undefined" && typeof system.callSystem === "function") {
+      system.callSystem(curlCmd + " > \"" + tmpOut.fsName + "\" 2>&1");
+      if (tmpPayload.exists) tmpPayload.remove();
+      var raw2 = readFile(tmpOut);
+      tmpOut.remove();
+      if (raw2) {
+        var result2 = parseCurlResult(raw2, parts);
+        if (result2) return result2;
+      }
+    }
+  } catch (ignore) {}
+
+  // ── Method 3: app.system (curl -> file) ──
+  try {
+    if (typeof app.system === "function") {
+      app.system(curlCmd + " > \"" + tmpOut.fsName + "\" 2>&1");
+      if (tmpPayload.exists) tmpPayload.remove();
+      var raw3 = readFile(tmpOut);
+      tmpOut.remove();
+      if (raw3) {
+        var result3 = parseCurlResult(raw3, parts);
+        if (result3) return result3;
+      }
+    }
+  } catch (ignore) {}
+
+  // Clean up temp files
+  if (tmpPayload.exists) tmpPayload.remove();
+  if (tmpOut.exists) tmpOut.remove();
+
+  // ── Method 4: ExtendScript Socket ──
   try {
     var conn = new Socket();
     conn.timeout = 10;
     if (!conn.open(parts.host + ":" + parts.port)) {
       return {
         ok: false,
-        error: "Could not open connection to " + parts.host + ":" + parts.port +
-               "\n\nMake sure Laserflow is running.\nIf it is, try changing the URL to use 127.0.0.1 or your machine\u2019s IP address."
+        error: "All connection methods failed.\n\n" +
+               "Socket.open returned false (error: " + conn.error + ").\n\n" +
+               "Try \"Save SVG File Instead\" and drag the\nfile into the Laserflow browser window."
       };
     }
 
@@ -284,13 +442,37 @@ function httpPost(url, jsonBody) {
     if (response.indexOf("200") !== -1) {
       return { ok: true };
     }
-    // Try to extract a useful message from the HTTP response body
     var bodyStart = response.indexOf("\r\n\r\n");
     var respBody = bodyStart !== -1 ? response.substring(bodyStart + 4) : response;
     return { ok: false, error: "Server responded with an error:\n" + respBody.substring(0, 200) };
   } catch (e) {
     return { ok: false, error: "Exception: " + e.message };
   }
+}
+
+/**
+ * Parse the output of a curl -w "\n%{http_code}" call.
+ * Returns {ok:true}, {ok:false, error:...}, or null if output is unusable.
+ */
+function parseCurlResult(raw, parts) {
+  raw = raw.replace(/\s+$/, "");
+  var lastNl = raw.lastIndexOf("\n");
+  var statusCode = lastNl >= 0 ? raw.substring(lastNl + 1) : raw;
+  statusCode = statusCode.replace(/\s/g, "");
+
+  if (statusCode === "200") {
+    return { ok: true };
+  }
+  if (statusCode === "000" || statusCode === "") {
+    // curl couldn't connect — don't return yet, let caller try next method
+    return null;
+  }
+  var body = lastNl >= 0 ? raw.substring(0, lastNl) : "";
+  return {
+    ok: false,
+    error: "Server responded with HTTP " + statusCode +
+           (body ? ":\n" + body.substring(0, 200) : "")
+  };
 }
 
 /**
