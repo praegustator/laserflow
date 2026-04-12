@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { startImportInbox, stopImportInbox, INBOX_DIR } from '../src/importInbox.js';
+import { startImportInbox, stopImportInbox, getInboxDir } from '../src/importInbox.js';
 import { wsBroadcaster } from '../src/ws/WebSocketServer.js';
 
 const SIMPLE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="10mm" height="10mm" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8"/></svg>';
@@ -10,11 +10,11 @@ const SIMPLE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="10mm" height=
 describe('importInbox', () => {
   beforeEach(() => {
     // Clean up inbox directory before each test
-    if (fs.existsSync(INBOX_DIR)) {
-      for (const f of fs.readdirSync(INBOX_DIR)) {
-        fs.unlinkSync(path.join(INBOX_DIR, f));
+    if (fs.existsSync(getInboxDir())) {
+      for (const f of fs.readdirSync(getInboxDir())) {
+        fs.unlinkSync(path.join(getInboxDir(), f));
       }
-      fs.rmdirSync(INBOX_DIR);
+      fs.rmdirSync(getInboxDir());
     }
   });
 
@@ -22,19 +22,19 @@ describe('importInbox', () => {
     stopImportInbox();
     vi.restoreAllMocks();
     // Clean up
-    if (fs.existsSync(INBOX_DIR)) {
-      for (const f of fs.readdirSync(INBOX_DIR)) {
-        fs.unlinkSync(path.join(INBOX_DIR, f));
+    if (fs.existsSync(getInboxDir())) {
+      for (const f of fs.readdirSync(getInboxDir())) {
+        fs.unlinkSync(path.join(getInboxDir(), f));
       }
-      fs.rmdirSync(INBOX_DIR);
+      fs.rmdirSync(getInboxDir());
     }
   });
 
   it('creates inbox directory and sentinel file on start', () => {
     startImportInbox();
 
-    expect(fs.existsSync(INBOX_DIR)).toBe(true);
-    const sentinelPath = path.join(INBOX_DIR, '.laserflow-server');
+    expect(fs.existsSync(getInboxDir())).toBe(true);
+    const sentinelPath = path.join(getInboxDir(), '.laserflow-server');
     expect(fs.existsSync(sentinelPath)).toBe(true);
 
     const sentinel = JSON.parse(fs.readFileSync(sentinelPath, 'utf-8'));
@@ -44,7 +44,7 @@ describe('importInbox', () => {
 
   it('removes sentinel file on stop', () => {
     startImportInbox();
-    const sentinelPath = path.join(INBOX_DIR, '.laserflow-server');
+    const sentinelPath = path.join(getInboxDir(), '.laserflow-server');
     expect(fs.existsSync(sentinelPath)).toBe(true);
 
     stopImportInbox();
@@ -57,7 +57,7 @@ describe('importInbox', () => {
     startImportInbox();
 
     // Write an import file
-    const importFile = path.join(INBOX_DIR, 'test-import.json');
+    const importFile = path.join(getInboxDir(), 'test-import.json');
     fs.writeFileSync(importFile, JSON.stringify({
       svg: SIMPLE_SVG,
       filename: 'TestDesign.svg',
@@ -82,7 +82,7 @@ describe('importInbox', () => {
     startImportInbox();
 
     // Write a non-JSON file
-    const txtFile = path.join(INBOX_DIR, 'readme.txt');
+    const txtFile = path.join(getInboxDir(), 'readme.txt');
     fs.writeFileSync(txtFile, 'not an import');
 
     await new Promise(resolve => setTimeout(resolve, 3000));
@@ -102,7 +102,7 @@ describe('importInbox', () => {
 
     startImportInbox();
 
-    const importFile = path.join(INBOX_DIR, 'bad.json');
+    const importFile = path.join(getInboxDir(), 'bad.json');
     fs.writeFileSync(importFile, '{ not valid json !!!');
 
     await new Promise(resolve => setTimeout(resolve, 3000));
@@ -121,7 +121,7 @@ describe('importInbox', () => {
 
     startImportInbox();
 
-    const importFile = path.join(INBOX_DIR, 'no-svg.json');
+    const importFile = path.join(getInboxDir(), 'no-svg.json');
     fs.writeFileSync(importFile, JSON.stringify({ filename: 'test' }));
 
     await new Promise(resolve => setTimeout(resolve, 3000));
@@ -137,7 +137,7 @@ describe('importInbox', () => {
 
     startImportInbox();
 
-    const importFile = path.join(INBOX_DIR, 'no-name.json');
+    const importFile = path.join(getInboxDir(), 'no-name.json');
     fs.writeFileSync(importFile, JSON.stringify({ svg: SIMPLE_SVG }));
 
     await new Promise(resolve => setTimeout(resolve, 3000));
@@ -151,11 +151,11 @@ describe('importInbox', () => {
     startImportInbox();
     startImportInbox(); // should not throw or create duplicate timers
 
-    const sentinelPath = path.join(INBOX_DIR, '.laserflow-server');
+    const sentinelPath = path.join(getInboxDir(), '.laserflow-server');
     expect(fs.existsSync(sentinelPath)).toBe(true);
   });
 
-  it('INBOX_DIR points to ~/.laserflow/import', () => {
-    expect(INBOX_DIR).toBe(path.join(os.homedir(), '.laserflow', 'import'));
+  it('getInboxDir() points to ~/.laserflow/import', () => {
+    expect(getInboxDir()).toBe(path.join(os.homedir(), '.laserflow', 'import'));
   });
 });

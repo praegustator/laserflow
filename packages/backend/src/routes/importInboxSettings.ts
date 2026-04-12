@@ -25,7 +25,12 @@ export function registerRoutes(app: FastifyInstance): void {
       return reply.code(400).send({ error: 'path field is required' });
     }
 
-    const resolved = setInboxDir(body.path.trim());
-    return reply.send({ path: resolved });
+    try {
+      const resolved = setInboxDir(body.path.trim());
+      return reply.send({ path: resolved });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return reply.code(400).send({ error: msg });
+    }
   });
 }

@@ -281,7 +281,7 @@ function ImportInboxSection() {
               placeholder={inboxPath}
               className="flex-1 bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100 font-mono focus:outline-none focus:border-orange-500"
             />
-            <button onClick={() => { void handleSave(); }} className="px-3 py-1.5 text-xs rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold transition-colors">Save</button>
+            <button type="button" onClick={() => { void handleSave(); }} className="px-3 py-1.5 text-xs rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold transition-colors">Save</button>
           </div>
           {status && <span className="text-xs text-gray-400 mt-1 block">{status}</span>}
         </div>

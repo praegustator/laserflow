@@ -429,10 +429,10 @@ function fileBasedImport(svgContent, filename, inboxPath) {
   // File still exists after timeout — backend might not be running.
   // Leave the file so a later backend restart can pick it up.
   return {
-    ok: true,
-    message: "The import file was written to:\n" + importFile.fsName +
-             "\n\nLaserflow did not pick it up within " + (maxWait / 1000) +
-             " seconds (backend may not be running).\n" +
-             "The file will be imported automatically when Laserflow starts."
+    ok: false,
+    error: "The import file was written to:\n" + importFile.fsName +
+           "\n\nbut Laserflow did not pick it up within " + (maxWait / 1000) +
+           " seconds (backend may not be running).\n" +
+           "The file will be imported automatically when Laserflow starts."
   };
 }

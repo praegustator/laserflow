@@ -36,10 +36,21 @@ export function getInboxDir(): string {
 
 /**
  * Change the inbox directory.  Restarts polling if it was already active.
- * Returns the resolved absolute path.
+ * The path is resolved to an absolute path and must be under the user's
+ * home directory to prevent path-injection attacks.
+ * Returns the resolved absolute path, or throws on invalid input.
  */
 export function setInboxDir(dir: string): string {
   const resolved = path.resolve(dir);
+
+  // Safety: only allow directories under the user's home or /tmp.
+  const home = os.homedir();
+  const allowed = [home, os.tmpdir()];
+  const isAllowed = allowed.some((prefix) => resolved === prefix || resolved.startsWith(prefix + path.sep));
+  if (!isAllowed) {
+    throw new Error(`Import inbox must be under the user home directory (${home}) or temp directory.`);
+  }
+
   if (resolved === currentInboxDir) return resolved;
 
   const wasRunning = pollTimer !== null;
@@ -50,9 +61,6 @@ export function setInboxDir(dir: string): string {
   if (wasRunning) startImportInbox();
   return resolved;
 }
-
-/** Convenience getter kept for backwards compatibility with index.ts log. */
-export const INBOX_DIR = DEFAULT_INBOX_DIR;
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
