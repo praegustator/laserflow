@@ -4,6 +4,7 @@ import { useJobStore } from '../store/jobStore';
 import { useProjectStore } from '../store/projectStore';
 import { useToastStore } from '../store/toastStore';
 import { useAppSettings } from '../store/appSettingsStore';
+import { useMachineStore } from '../store/machineStore';
 import { useKeyboardShortcuts, type ShortcutDef } from '../hooks/useKeyboardShortcuts';
 
 interface GMove {
@@ -75,6 +76,7 @@ export default function GcodePreview() {
   const addToast = useToastStore(s => s.addToast);
   const navigate = useNavigate();
   const originFlip = useAppSettings(s => s.originPosition) === 'bottom-left';
+  const backendConnected = useMachineStore(s => s.backendConnected);
 
   // When activeJobId is set (e.g. preview from Queue), prioritize that job's gcode.
   // Otherwise fall back to the active project's gcode.
@@ -379,9 +381,9 @@ export default function GcodePreview() {
         ) : (
           <button
             onClick={openNameDialog}
-            disabled={!hasGcode || !queueableJobId}
+            disabled={!hasGcode || !queueableJobId || !backendConnected}
             className="px-3 py-1.5 text-xs rounded bg-green-700 hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
-            title="Send this G-code to the job queue"
+            title={!backendConnected ? 'Backend unavailable — start the server to queue jobs' : 'Send this G-code to the job queue'}
           >📤 Send to Queue</button>
         )}
         <button

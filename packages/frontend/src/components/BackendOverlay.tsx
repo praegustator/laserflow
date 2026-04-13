@@ -9,20 +9,23 @@ import { useAppSettings, isMixedContent } from '../store/appSettingsStore';
  */
 export default function BackendOverlay() {
   const backendConnected = useMachineStore((s) => s.backendConnected);
+  const demoMode = useMachineStore((s) => s.demoMode);
+  const setDemoMode = useMachineStore((s) => s.setDemoMode);
   const backendUrl = useAppSettings((s) => s.backendUrl);
   const setBackendUrl = useAppSettings((s) => s.setBackendUrl);
   const [urlInput, setUrlInput] = useState(backendUrl);
   const [visible, setVisible] = useState(false);
 
-  // Show overlay 1 s after first disconnect to avoid a flash on startup
+  // Show overlay 1 s after first disconnect to avoid a flash on startup.
+  // Hidden when backend connects or user chooses demo mode.
   useEffect(() => {
-    if (backendConnected) {
+    if (backendConnected || demoMode) {
       setVisible(false);
       return;
     }
     const timer = setTimeout(() => setVisible(true), 1000);
     return () => clearTimeout(timer);
-  }, [backendConnected]);
+  }, [backendConnected, demoMode]);
 
   // Keep input in sync when the stored URL changes externally
   useEffect(() => {
@@ -87,6 +90,20 @@ export default function BackendOverlay() {
             Save &amp; Reconnect
           </button>
         </form>
+
+        <div className="mt-3 border-t border-gray-800 pt-3">
+          <button
+            type="button"
+            onClick={() => setDemoMode(true)}
+            className="w-full py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-gray-100 text-sm transition-colors"
+          >
+            Continue in Demo Mode
+          </button>
+          <p className="text-xs text-gray-600 text-center mt-2">
+            Browse and edit projects locally. Features that require the backend
+            (G-code generation, job queue, machine control) will be unavailable.
+          </p>
+        </div>
 
         <p className="text-xs text-gray-600 text-center mt-4">
           Retrying automatically every 3 seconds…

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import MachineStatus from './MachineStatus';
 import Footer from './Footer';
+import DemoModeBanner from './DemoModeBanner';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faFolderOpen, faPenToSquare, faCode, faListCheck, faGear } from '@fortawesome/free-solid-svg-icons';
 import { useJobStore } from '../store/jobStore';
@@ -87,6 +88,9 @@ export default function Layout() {
           </button>
         )}
       </header>
+
+      {/* Demo mode banner */}
+      <DemoModeBanner />
 
       {/* Page content */}
       <main className="flex-1 overflow-auto min-h-0 bg-gray-950">

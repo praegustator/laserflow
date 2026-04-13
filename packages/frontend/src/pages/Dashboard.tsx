@@ -34,7 +34,7 @@ export default function Dashboard() {
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingProjectName, setEditingProjectName] = useState('');
 
-  useEffect(() => { void fetchJobs(); }, [fetchJobs]);
+  useEffect(() => { void fetchJobs().catch(() => { /* backend unavailable in demo mode */ }); }, [fetchJobs]);
 
   const jobCountByProject = useMemo(() => {
     const counts: Record<string, number> = {};

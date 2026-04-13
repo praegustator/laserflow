@@ -39,7 +39,16 @@ export default function ImageImportDialog({ file, onConfirm, onCancel }: Props) 
     const objectUrl = URL.createObjectURL(file);
     setPreviewUrl(objectUrl);
 
-    // Fetch metadata from backend
+    // Helper: get pixel dimensions from the browser
+    const getPixelDimensions = (): Promise<{ width: number; height: number }> =>
+      new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+        img.onerror = () => reject(new Error('Failed to decode image'));
+        img.src = objectUrl;
+      });
+
+    // Try to fetch metadata from backend; fall back to browser-only on failure
     const form = new FormData();
     form.append('file', file);
     (api.postForm('/api/image-info', form) as Promise<ImageInfo>)
@@ -51,10 +60,22 @@ export default function ImageImportDialog({ file, onConfirm, onCancel }: Props) 
         setDpiInput(String(detectedDpi));
         setLoading(false);
       })
-      .catch((err) => {
+      .catch(() => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Failed to read image');
-        setLoading(false);
+        // Backend unavailable — fall back to browser-only (no embedded-DPI detection)
+        getPixelDimensions()
+          .then(({ width, height }) => {
+            if (cancelled) return;
+            setImageInfo({ width, height, dpi: null, widthMm: null, heightMm: null });
+            setDpi(96);
+            setDpiInput('96');
+            setLoading(false);
+          })
+          .catch((err: unknown) => {
+            if (cancelled) return;
+            setError(err instanceof Error ? err.message : 'Failed to read image');
+            setLoading(false);
+          });
       });
 
     return () => {
