@@ -150,7 +150,6 @@ function exportSelectionAsSvg(doc) {
 
   // Create a temporary document whose artboard matches the selection bounds.
   var tmpDoc = app.documents.add(doc.documentColorSpace, wPts, hPts);
-  tmpDoc.artboards[0].artboardRect = [left, top, left + wPts, top - hPts];
 
   // Duplicate each selected item into the temp document.
   // Illustrator's duplicate() preserves position, so items land exactly
@@ -159,7 +158,7 @@ function exportSelectionAsSvg(doc) {
     sel[s].duplicate(tmpDoc.layers[0], ElementPlacement.PLACEATEND);
   }
 
-  // Resize artboard to tightly fit what we just pasted.
+  // Resize artboard to tightly fit the duplicated selection.
   tmpDoc.artboards[0].artboardRect = [left, top, right, bottom];
 
   // Export the temp doc as SVG.

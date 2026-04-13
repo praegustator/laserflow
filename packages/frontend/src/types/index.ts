@@ -191,5 +191,6 @@ export interface PendingImport {
   filename: string;
   geometry: PathGeometry[];
   sourceSvg: string;
+  /** ISO 8601 timestamp when the import was received. */
   receivedAt: string;
 }
