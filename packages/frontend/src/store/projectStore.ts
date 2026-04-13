@@ -30,7 +30,7 @@ interface ProjectStore {
   importSvgFile: (file: File) => Promise<void>;
   importImageFile: (file: File, dpi?: number) => Promise<void>;
   /** Queue SVG data pushed from an external tool (e.g. Adobe Illustrator) as a pending import. */
-  importSvgFromPush: (data: { geometry: PathGeometry[]; sourceSvg: string; filename: string }) => void;
+  importSvgFromPush: (data: { geometry: PathGeometry[]; sourceSvg: string; filename: string; shapeNames?: string[] }) => void;
   /** Accept a pending import and add it as a layer to the active project. */
   acceptPendingImport: (importId: string) => void;
   /** Decline (dismiss) a pending import. */
@@ -107,11 +107,11 @@ function updateProject(projects: Project[], id: string, updater: (p: Project) =>
 }
 
 /** Shared helper: build shapes, ProjectFile, and Layer from parsed SVG geometry. */
-function buildSvgImportData(geometry: PathGeometry[], sourceSvg: string, filename: string): { projectFile: ProjectFile; layer: Layer } {
+function buildSvgImportData(geometry: PathGeometry[], sourceSvg: string, filename: string, shapeNames?: string[]): { projectFile: ProjectFile; layer: Layer } {
   const fileId = uid();
   const shapes: Shape[] = geometry.map((g, idx) => ({
     id: `${fileId}-shape-${idx}`,
-    name: `Shape ${idx + 1}`,
+    name: shapeNames?.[idx] ?? `Shape ${idx + 1}`,
     d: g.d,
     sourceFileId: fileId,
     fill: g.fill,
@@ -214,12 +214,13 @@ export const useProjectStore = create<ProjectStore>()(
         }));
       },
 
-      importSvgFromPush: (data: { geometry: PathGeometry[]; sourceSvg: string; filename: string }) => {
+      importSvgFromPush: (data: { geometry: PathGeometry[]; sourceSvg: string; filename: string; shapeNames?: string[] }) => {
         const pending: PendingImport = {
           id: uid(),
           filename: data.filename,
           geometry: data.geometry,
           sourceSvg: data.sourceSvg,
+          shapeNames: data.shapeNames,
           receivedAt: new Date().toISOString(),
         };
         set(s => ({ pendingImports: [...s.pendingImports, pending] }));
@@ -230,7 +231,7 @@ export const useProjectStore = create<ProjectStore>()(
         const pending = pendingImports.find(p => p.id === importId);
         if (!pending || !activeProjectId) return;
 
-        const { projectFile, layer } = buildSvgImportData(pending.geometry, pending.sourceSvg, pending.filename);
+        const { projectFile, layer } = buildSvgImportData(pending.geometry, pending.sourceSvg, pending.filename, pending.shapeNames);
 
         set(s => ({
           pendingImports: s.pendingImports.filter(p => p.id !== importId),

@@ -71,7 +71,7 @@ function AppInner() {
                 handleUnexpectedDisconnect();
               }
             } else if (msg.type === 'svgPushed') {
-              const d = msg.data as { geometry: PathGeometry[]; sourceSvg: string; filename: string };
+              const d = msg.data as { geometry: PathGeometry[]; sourceSvg: string; filename: string; shapeNames?: string[] };
               importSvgFromPush(d);
               addToast('info', `"${d.filename}" received — review in Shapes & Layers panel`);
             }

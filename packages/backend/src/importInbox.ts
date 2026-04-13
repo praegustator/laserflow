@@ -148,7 +148,7 @@ async function processImportFile(filePath: string): Promise<void> {
     return;
   }
 
-  let body: { svg?: string; filename?: string };
+  let body: { svg?: string; filename?: string; shapeNames?: string[] };
   try {
     body = JSON.parse(raw);
   } catch {
@@ -164,10 +164,12 @@ async function processImportFile(filePath: string): Promise<void> {
   const svgContent = body.svg;
   let filename = body.filename ?? 'Illustrator Export';
   filename = filename.replace(/\.svg$/i, '');
+  const shapeNames: string[] | undefined =
+    Array.isArray(body.shapeNames) ? body.shapeNames as string[] : undefined;
 
   try {
     const geometry = await parseSvg(svgContent);
-    const payload = { geometry, sourceSvg: svgContent, filename };
+    const payload = { geometry, sourceSvg: svgContent, filename, shapeNames };
     wsBroadcaster.broadcast('svgPushed', payload);
     console.log('[importInbox] Imported "%s" (%d shape(s))', filename, geometry.length);
   } catch (err) {

@@ -191,6 +191,8 @@ export interface PendingImport {
   filename: string;
   geometry: PathGeometry[];
   sourceSvg: string;
+  /** Optional per-shape names from the source tool (e.g. Illustrator layer names). */
+  shapeNames?: string[];
   /** ISO 8601 timestamp when the import was received. */
   receivedAt: string;
 }

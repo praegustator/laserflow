@@ -34,16 +34,14 @@ var DEFAULT_INBOX = Folder("~").fsName + "/.laserflow/import";
   var doc = app.activeDocument;
   var hasSelection = doc.selection && doc.selection.length > 0;
 
-  var dialogResult = showDialog(DEFAULT_INBOX, hasSelection);
+  // Default layer name: document name (no extension).
+  var defaultName = doc.name.replace(/\.ai$/i, "");
+
+  var dialogResult = showDialog(DEFAULT_INBOX, hasSelection, defaultName);
   if (!dialogResult) return; // user cancelled
 
-  if (dialogResult.mode === "save") {
-    saveSvgFile();
-    return;
-  }
-
   var inboxPath = dialogResult.inboxPath;
-  var docName = doc.name.replace(/\.ai$/i, "");
+  var layerName = dialogResult.layerName || defaultName;
 
   var exported;
   if (hasSelection && dialogResult.selectionOnly) {
@@ -52,7 +50,6 @@ var DEFAULT_INBOX = Folder("~").fsName + "/.laserflow/import";
       alert("Failed to export selected objects.\nPlease try again.");
       return;
     }
-    docName = docName + " (selection)";
   } else {
     exported = exportDocumentAsSvg(doc);
     if (!exported) {
@@ -61,29 +58,14 @@ var DEFAULT_INBOX = Folder("~").fsName + "/.laserflow/import";
     }
   }
 
-  var result = fileBasedImport(exported.svg, docName, inboxPath);
-  if (result.ok) {
-    alert("Sent to Laserflow!\n\n" + result.message);
-  } else {
+  var result = fileBasedImport(exported.svg, layerName, exported.shapeNames, inboxPath);
+  if (!result.ok) {
     alert("Could not send to Laserflow.\n\n" + result.error);
   }
+  // On success: silent — the Laserflow UI will show the pending import.
 })();
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Export SVG to a user-chosen location (fallback).
- * The user can then drag the .svg file into the Laserflow browser window.
- */
-function saveSvgFile() {
-  var doc = app.activeDocument;
-  var docName = doc.name.replace(/\.ai$/i, "");
-  var dest = File.saveDialog("Save SVG for Laserflow", "SVG:*.svg");
-  if (!dest) return;
-
-  doc.exportFile(dest, ExportType.SVG, buildExportOptions());
-  alert("SVG saved!\n\nDrag \"" + dest.name + "\" into the Laserflow\nbrowser window to import it.");
-}
 
 /**
  * Build standard ExportOptionsSVG used for both full-doc and selection exports.
@@ -101,7 +83,7 @@ function buildExportOptions() {
 
 /**
  * Export the full active document as SVG.
- * Returns { svg: string } with mm-corrected dimensions, or null on failure.
+ * Returns { svg: string, shapeNames: null } with mm-corrected dimensions, or null on failure.
  */
 function exportDocumentAsSvg(doc) {
   var tmpFile = new File(Folder.temp.absoluteURI + "/laserflow-export.svg");
@@ -119,7 +101,7 @@ function exportDocumentAsSvg(doc) {
   var hMm = (rect[1] - rect[3]) * 25.4 / 72;
 
   svgContent = fixSvgDimensions(svgContent, wMm, hMm);
-  return { svg: svgContent };
+  return { svg: svgContent, shapeNames: null };
 }
 
 /**
@@ -130,11 +112,28 @@ function exportDocumentAsSvg(doc) {
  * both clipboard (fails in sandboxed envs) and hide/show (exportFile may
  * still include hidden items in some Illustrator versions).
  *
- * Returns { svg: string } with mm-corrected dimensions, or null on failure.
+ * Returns { svg: string, shapeNames: string[] } with mm-corrected dimensions, or null on failure.
+ * shapeNames[i] is the Illustrator layer name of sel[i].
  */
 function exportSelectionAsSvg(doc) {
   var sel = doc.selection;
   if (!sel || sel.length === 0) return null;
+
+  // Collect the Illustrator layer name for each selected item.
+  var shapeNames = [];
+  for (var n = 0; n < sel.length; n++) {
+    var item = sel[n];
+    // Walk up until we reach a direct child of a Layer (parent.typename === "Layer")
+    // so we can read the containing layer's name.
+    while (item.parent && item.parent.typename !== "Document" &&
+           item.parent.typename !== "Layer") {
+      item = item.parent;
+    }
+    var layerName = (item.parent && item.parent.typename === "Layer")
+      ? item.parent.name
+      : "Shape " + (n + 1);
+    shapeNames.push(layerName);
+  }
 
   // Compute bounds of selection in points.
   var left = Infinity, top = -Infinity, right = -Infinity, bottom = Infinity;
@@ -182,7 +181,7 @@ function exportSelectionAsSvg(doc) {
   var hMm = hPts * 25.4 / 72;
   svgContent = fixSvgDimensions(svgContent, wMm, hMm);
 
-  return { svg: svgContent };
+  return { svg: svgContent, shapeNames: shapeNames };
 }
 
 /**
@@ -238,16 +237,21 @@ function fixSvgDimensions(svgContent, wMm, hMm) {
 /**
  * Show a simple dialog for file-based sending.
  *
- * Returns { mode: "send", inboxPath: string, selectionOnly: boolean }
- *      or { mode: "save" } or null (cancel).
+ * Returns { inboxPath: string, layerName: string, selectionOnly: boolean }
+ *      or null (cancel).
  */
-function showDialog(defaultInbox, hasSelection) {
+function showDialog(defaultInbox, hasSelection, defaultLayerName) {
   var dlg = new Window("dialog", "Send to Laserflow");
   dlg.orientation = "column";
   dlg.alignChildren = ["fill", "top"];
 
+  // ── Layer name ──
+  dlg.add("statictext", undefined, "Layer name in Laserflow:");
+  var nameInput = dlg.add("edittext", undefined, defaultLayerName);
+  nameInput.characters = 42;
+
   // ── Inbox directory ──
-  dlg.add("statictext", undefined, "Laserflow import inbox directory:");
+  dlg.add("statictext", undefined, "Import inbox directory:");
   var pathGroup = dlg.add("group");
   pathGroup.alignChildren = ["fill", "center"];
   var pathInput = pathGroup.add("edittext", undefined, defaultInbox);
@@ -272,17 +276,10 @@ function showDialog(defaultInbox, hasSelection) {
   statusText.characters = 50;
 
   // ── Buttons ──
-  var btnRow1 = dlg.add("group");
-  btnRow1.alignment = ["center", "top"];
-  var sendBtn = btnRow1.add("button", undefined, "Send", { name: "ok" });
-  var cancelBtn = btnRow1.add("button", undefined, "Cancel", { name: "cancel" });
-
-  var btnRow2 = dlg.add("group");
-  btnRow2.alignment = ["center", "top"];
-  var saveBtn = btnRow2.add("button", undefined, "Save SVG File Instead\u2026");
-
-  // Track mode
-  var chosenMode = null;
+  var btnRow = dlg.add("group");
+  btnRow.alignment = ["center", "top"];
+  var sendBtn = btnRow.add("button", undefined, "Send", { name: "ok" });
+  btnRow.add("button", undefined, "Cancel", { name: "cancel" });
 
   // Validate inbox on send
   sendBtn.onClick = function () {
@@ -295,21 +292,16 @@ function showDialog(defaultInbox, hasSelection) {
       statusText.text = "\u2718 Directory does not exist and could not be created.";
       return;
     }
-    chosenMode = "send";
     dlg.close(1);
   };
 
-  saveBtn.onClick = function () {
-    chosenMode = "save";
-    dlg.close(2);
-  };
-
   var code = dlg.show();
-  if (code === 1 && chosenMode === "send") {
-    return { mode: "send", inboxPath: pathInput.text, selectionOnly: selCheckbox.value };
-  }
-  if (chosenMode === "save") {
-    return { mode: "save" };
+  if (code === 1) {
+    return {
+      inboxPath: pathInput.text,
+      layerName: nameInput.text,
+      selectionOnly: selCheckbox.value
+    };
   }
   return null;
 }
@@ -356,9 +348,16 @@ function jsonStringEncode(str) {
  * Writes a JSON file to the inbox directory and waits for the backend
  * to consume it (delete it).
  *
- * Returns { ok: true, message: string } or { ok: false, error: string }.
+ * @param svgContent  SVG markup string.
+ * @param filename    Layer name to use in Laserflow.
+ * @param shapeNames  Optional array of per-shape names (one per geometry path).
+ *                    When provided, each shape in Laserflow is named after the
+ *                    corresponding Illustrator layer.
+ * @param inboxPath   Filesystem path to the inbox directory.
+ *
+ * Returns { ok: true } or { ok: false, error: string }.
  */
-function fileBasedImport(svgContent, filename, inboxPath) {
+function fileBasedImport(svgContent, filename, shapeNames, inboxPath) {
   var inbox = new Folder(inboxPath);
 
   // Create the inbox directory if it doesn't exist
@@ -369,8 +368,7 @@ function fileBasedImport(svgContent, filename, inboxPath) {
   if (!inbox.exists) {
     return {
       ok: false,
-      error: "Could not create import directory:\n" + inbox.fsName +
-             "\n\nUse \"Save SVG File Instead\" to export manually."
+      error: "Could not create import directory:\n" + inbox.fsName
     };
   }
 
@@ -385,8 +383,21 @@ function fileBasedImport(svgContent, filename, inboxPath) {
     ("00" + now.getMilliseconds()).slice(-3);
   var importFile = new File(inbox.absoluteURI + "/import-" + ts + ".json");
 
-  // Build the JSON payload manually (no JSON.stringify in ES3)
-  var payload = '{"svg":' + jsonStringEncode(svgContent) + ',"filename":' + jsonStringEncode(filename) + '}';
+  // Build the JSON payload manually (no JSON.stringify in ES3).
+  // Include shapeNames array when available so Laserflow can label each shape
+  // with its original Illustrator layer name.
+  var payload = '{"svg":' + jsonStringEncode(svgContent) +
+                ',"filename":' + jsonStringEncode(filename);
+  if (shapeNames && shapeNames.length > 0) {
+    var namesJson = "[";
+    for (var i = 0; i < shapeNames.length; i++) {
+      if (i > 0) namesJson += ",";
+      namesJson += jsonStringEncode(shapeNames[i]);
+    }
+    namesJson += "]";
+    payload += ',"shapeNames":' + namesJson;
+  }
+  payload += '}';
 
   importFile.open("w");
   importFile.write(payload);
@@ -395,7 +406,7 @@ function fileBasedImport(svgContent, filename, inboxPath) {
   if (!importFile.exists) {
     return {
       ok: false,
-      error: "Failed to write import file.\n\nUse \"Save SVG File Instead\" to export manually."
+      error: "Failed to write import file."
     };
   }
 
@@ -407,11 +418,8 @@ function fileBasedImport(svgContent, filename, inboxPath) {
     $.sleep(step);
     waited += step;
     if (!importFile.exists) {
-      // Backend consumed the file — success!
-      return {
-        ok: true,
-        message: "The design \"" + filename + "\" was sent to Laserflow\nvia the local import inbox."
-      };
+      // Backend consumed the file — success (silent).
+      return { ok: true };
     }
   }
 
