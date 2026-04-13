@@ -23,7 +23,7 @@ export default function DemoModeBanner() {
         className="flex-shrink-0 px-2 py-0.5 rounded bg-amber-800/60 hover:bg-amber-700/60 text-amber-200 transition-colors"
         title="Dismiss — the connection overlay will reappear"
       >
-        ✕ Exit demo
+        ✕ Dismiss
       </button>
     </div>
   );
