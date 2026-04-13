@@ -233,6 +233,9 @@ export default function Editor() {
   const deleteVersion = useProjectStore(s => s.deleteVersion);
   const alignLayersToPoint = useProjectStore(s => s.alignLayersToPoint);
   const renameProject = useProjectStore(s => s.renameProject);
+  const pendingImports = useProjectStore(s => s.pendingImports);
+  const acceptPendingImport = useProjectStore(s => s.acceptPendingImport);
+  const declinePendingImport = useProjectStore(s => s.declinePendingImport);
   const originPosition = useAppSettings(s => s.originPosition);
   const workAreaHeight = useAppSettings(s => s.workAreaHeight);
   const autoZoomOnLayerSelect = useAppSettings(s => s.autoZoomOnLayerSelect);
@@ -732,7 +735,29 @@ export default function Editor() {
                   <p className="text-sm font-bold text-orange-400">Drop SVG/image file(s) here</p>
                 </div>
               )}
-              {project.layers.length === 0 ? (
+              {/* ── Pending imports from Illustrator / external tools ── */}
+              {pendingImports.length > 0 && (
+                <div className="space-y-1 mb-2" onClick={e => e.stopPropagation()}>
+                  <span className="text-[10px] uppercase tracking-wider text-yellow-500 font-semibold px-1">Pending Imports</span>
+                  {pendingImports.map(pi => (
+                    <div key={pi.id} className="rounded-lg border border-yellow-600/60 bg-yellow-900/20 p-2 flex items-center gap-2">
+                      <FontAwesomeIcon icon={faFileImport} className="text-yellow-500 text-xs flex-shrink-0" />
+                      <span className="text-xs text-gray-200 truncate flex-1" title={pi.filename}>{pi.filename}</span>
+                      <button
+                        onClick={() => acceptPendingImport(pi.id)}
+                        className="text-[10px] px-1.5 py-0.5 rounded bg-green-700 hover:bg-green-600 text-white font-semibold transition-colors"
+                        title="Insert into project"
+                      >Insert</button>
+                      <button
+                        onClick={() => declinePendingImport(pi.id)}
+                        className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 font-semibold transition-colors"
+                        title="Dismiss"
+                      >Dismiss</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {project.layers.length === 0 && pendingImports.length === 0 ? (
                 <div
                   className="flex flex-col items-center justify-center h-full border-2 border-dashed border-gray-700 rounded-xl cursor-pointer hover:border-orange-500/60 transition-colors"
                   onClick={e => { e.stopPropagation(); fileInputRef.current?.click(); }}

@@ -125,39 +125,16 @@ function exportDocumentAsSvg(doc) {
 /**
  * Export only the currently selected objects as SVG.
  *
- * Strategy: hide every top-level item that is NOT selected, export the whole
- * document (Illustrator clips to the artboard), then restore visibility.
- * This avoids clipboard/paste which can fail in sandboxed environments.
+ * Strategy: duplicate selected items into a brand-new temporary document,
+ * export that document as SVG, then close it without saving.  This avoids
+ * both clipboard (fails in sandboxed envs) and hide/show (exportFile may
+ * still include hidden items in some Illustrator versions).
  *
  * Returns { svg: string } with mm-corrected dimensions, or null on failure.
  */
 function exportSelectionAsSvg(doc) {
   var sel = doc.selection;
   if (!sel || sel.length === 0) return null;
-
-  // Build a lookup of selected items' top-level parents.
-  var keepVisible = {};
-  for (var s = 0; s < sel.length; s++) {
-    var item = sel[s];
-    // Walk up to the root pageItem (direct child of a layer).
-    while (item.parent && item.parent.typename !== "Layer") {
-      item = item.parent;
-    }
-    keepVisible[getItemKey(item)] = true;
-  }
-
-  // Collect items to hide (all top-level items not in selection).
-  var hidden = [];
-  for (var li = 0; li < doc.layers.length; li++) {
-    var layer = doc.layers[li];
-    for (var pi = 0; pi < layer.pageItems.length; pi++) {
-      var pageItem = layer.pageItems[pi];
-      if (!keepVisible[getItemKey(pageItem)] && pageItem.hidden === false) {
-        pageItem.hidden = true;
-        hidden.push(pageItem);
-      }
-    }
-  }
 
   // Compute bounds of selection in points.
   var left = Infinity, top = -Infinity, right = -Infinity, bottom = Infinity;
@@ -171,26 +148,31 @@ function exportSelectionAsSvg(doc) {
   var wPts = right - left;
   var hPts = top - bottom;
 
-  // Temporarily resize artboard to selection bounds for a tight export.
-  var abIdx = doc.artboards.getActiveArtboardIndex();
-  var origRect = doc.artboards[abIdx].artboardRect;
-  doc.artboards[abIdx].artboardRect = [left, top, right, bottom];
+  // Create a temporary document whose artboard matches the selection bounds.
+  var tmpDoc = app.documents.add(doc.documentColorSpace, wPts, hPts);
+  tmpDoc.artboards[0].artboardRect = [left, top, left + wPts, top - hPts];
 
-  // Export
+  // Duplicate each selected item into the temp document.
+  // Illustrator's duplicate() preserves position, so items land exactly
+  // where they were relative to the coordinate system.
+  for (var s = 0; s < sel.length; s++) {
+    sel[s].duplicate(tmpDoc.layers[0], ElementPlacement.PLACEATEND);
+  }
+
+  // Resize artboard to tightly fit what we just pasted.
+  tmpDoc.artboards[0].artboardRect = [left, top, right, bottom];
+
+  // Export the temp doc as SVG.
   var tmpFile = new File(Folder.temp.absoluteURI + "/laserflow-selection.svg");
   var opts = buildExportOptions();
   try { opts.artBoardClipping = true; } catch (ignore) {}
-  doc.exportFile(tmpFile, ExportType.SVG, opts);
+  tmpDoc.exportFile(tmpFile, ExportType.SVG, opts);
 
-  // Restore artboard
-  doc.artboards[abIdx].artboardRect = origRect;
+  // Close temp doc without saving.
+  tmpDoc.close(SaveOptions.DONOTSAVECHANGES);
 
-  // Restore visibility
-  for (var h = 0; h < hidden.length; h++) {
-    hidden[h].hidden = false;
-  }
-
-  // Re-select the original selection (export may clear it)
+  // Restore selection in the original doc (closing temp doc changes activeDocument).
+  app.activeDocument = doc;
   doc.selection = sel;
 
   var svgContent = readFile(tmpFile);
@@ -205,23 +187,15 @@ function exportSelectionAsSvg(doc) {
 }
 
 /**
- * Generate a unique key for a pageItem so we can build a lookup set.
- * Tries .uuid first (Illustrator CC 2018+), falls back to name+position hash.
- */
-function getItemKey(item) {
-  if (item.uuid) return "uuid:" + item.uuid;
-  // Fall back to a combination of typename + position + name
-  var b = item.geometricBounds;
-  return item.typename + ":" + item.name + ":" + b[0] + "," + b[1] + "," + b[2] + "," + b[3];
-}
-
-/**
- * Replace the width/height attributes in the root <svg> element with
- * explicit mm values.  This ensures the Laserflow SVG parser can compute
- * the correct scale from the viewBox (which Illustrator writes in points)
- * to millimetres.
+ * Ensure the root <svg> element has explicit width/height in mm.
  *
- * Example: width="28.3465" -> width="10mm"  (for a 10 mm artboard)
+ * Illustrator may or may not include width/height attributes.  If they
+ * exist, we replace them.  If they are missing, we add them.  This ensures
+ * the Laserflow SVG parser can correctly scale from the viewBox (which
+ * Illustrator writes in points) to millimetres.
+ *
+ * Example: width="28.3465px" -> width="10mm"  (for a 10 mm artboard)
+ * Example: <svg viewBox="..."> -> <svg width="10mm" height="10mm" viewBox="...">
  */
 function fixSvgDimensions(svgContent, wMm, hMm) {
   var wStr = wMm.toFixed(4) + "mm";
@@ -237,9 +211,25 @@ function fixSvgDimensions(svgContent, wMm, hMm) {
   var svgTag = svgContent.substring(svgStart, svgTagEnd + 1);
   var after = svgContent.substring(svgTagEnd + 1);
 
-  // Replace existing width/height (with or without px/pt suffix)
-  svgTag = svgTag.replace(/width="[\d.]+(px|pt)?"/, 'width="' + wStr + '"');
-  svgTag = svgTag.replace(/height="[\d.]+(px|pt)?"/, 'height="' + hStr + '"');
+  // Replace existing width/height or add them if missing.
+  // The regex handles optional px/pt/em/% suffixes.
+  var hasWidth = /\bwidth\s*=\s*"/.test(svgTag);
+  var hasHeight = /\bheight\s*=\s*"/.test(svgTag);
+
+  if (hasWidth) {
+    svgTag = svgTag.replace(/\bwidth\s*=\s*"[^"]*"/, 'width="' + wStr + '"');
+  }
+  if (hasHeight) {
+    svgTag = svgTag.replace(/\bheight\s*=\s*"[^"]*"/, 'height="' + hStr + '"');
+  }
+
+  // If width/height were missing entirely, inject them after "<svg".
+  if (!hasWidth || !hasHeight) {
+    var inject = "";
+    if (!hasWidth) inject += ' width="' + wStr + '"';
+    if (!hasHeight) inject += ' height="' + hStr + '"';
+    svgTag = svgTag.replace(/^<svg/, "<svg" + inject);
+  }
 
   return before + svgTag + after;
 }

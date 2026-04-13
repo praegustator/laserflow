@@ -73,7 +73,7 @@ function AppInner() {
             } else if (msg.type === 'svgPushed') {
               const d = msg.data as { geometry: PathGeometry[]; sourceSvg: string; filename: string };
               importSvgFromPush(d);
-              addToast('success', `Imported "${d.filename}" from external tool`);
+              addToast('info', `"${d.filename}" received — review in Shapes & Layers panel`);
             }
           } catch {
             // ignore malformed messages

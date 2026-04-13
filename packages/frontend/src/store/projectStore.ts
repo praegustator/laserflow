@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '../api/client';
-import type { Project, ProjectFile, ProjectVersion, Layer, Shape, Operation, PathGeometry, Job, PivotAnchor } from '../types';
+import type { Project, ProjectFile, ProjectVersion, Layer, Shape, Operation, PathGeometry, Job, PivotAnchor, PendingImport } from '../types';
 import { computeShapesBoundingBox, bakeLayerTransform, splitPathIntoSubpaths, computeMultiLayerWorldBBox, worldAnchorPoint } from '../utils/geometry';
 import { useAppSettings, type OriginPosition } from './appSettingsStore';
 
@@ -17,6 +17,8 @@ function defaultPivot(originPosition: OriginPosition): PivotAnchor {
 interface ProjectStore {
   projects: Project[];
   activeProjectId: string | null;
+  /** SVG imports waiting for user confirmation. */
+  pendingImports: PendingImport[];
 
   // Project CRUD
   createProject: (name: string) => Project;
@@ -27,8 +29,12 @@ interface ProjectStore {
   // File import
   importSvgFile: (file: File) => Promise<void>;
   importImageFile: (file: File, dpi?: number) => Promise<void>;
-  /** Import SVG data pushed from an external tool (e.g. Adobe Illustrator). */
+  /** Queue SVG data pushed from an external tool (e.g. Adobe Illustrator) as a pending import. */
   importSvgFromPush: (data: { geometry: PathGeometry[]; sourceSvg: string; filename: string }) => void;
+  /** Accept a pending import and add it as a layer to the active project. */
+  acceptPendingImport: (importId: string) => void;
+  /** Decline (dismiss) a pending import. */
+  declinePendingImport: (importId: string) => void;
 
   // Layer management
   addLayer: (name: string) => void;
@@ -154,6 +160,7 @@ export const useProjectStore = create<ProjectStore>()(
     (set, get) => ({
       projects: [],
       activeProjectId: null,
+      pendingImports: [],
 
       createProject: (name: string) => {
         const project: Project = {
@@ -208,12 +215,25 @@ export const useProjectStore = create<ProjectStore>()(
       },
 
       importSvgFromPush: (data: { geometry: PathGeometry[]; sourceSvg: string; filename: string }) => {
-        const { activeProjectId } = get();
-        if (!activeProjectId) return;
+        const pending: PendingImport = {
+          id: uid(),
+          filename: data.filename,
+          geometry: data.geometry,
+          sourceSvg: data.sourceSvg,
+          receivedAt: new Date().toISOString(),
+        };
+        set(s => ({ pendingImports: [...s.pendingImports, pending] }));
+      },
 
-        const { projectFile, layer } = buildSvgImportData(data.geometry, data.sourceSvg, data.filename);
+      acceptPendingImport: (importId: string) => {
+        const { activeProjectId, pendingImports } = get();
+        const pending = pendingImports.find(p => p.id === importId);
+        if (!pending || !activeProjectId) return;
+
+        const { projectFile, layer } = buildSvgImportData(pending.geometry, pending.sourceSvg, pending.filename);
 
         set(s => ({
+          pendingImports: s.pendingImports.filter(p => p.id !== importId),
           projects: updateProject(s.projects, activeProjectId, p => ({
             ...p,
             files: [...p.files, projectFile],
@@ -221,6 +241,10 @@ export const useProjectStore = create<ProjectStore>()(
             gcodeUpToDate: false,
           })),
         }));
+      },
+
+      declinePendingImport: (importId: string) => {
+        set(s => ({ pendingImports: s.pendingImports.filter(p => p.id !== importId) }));
       },
 
       importImageFile: async (file: File, dpi?: number) => {

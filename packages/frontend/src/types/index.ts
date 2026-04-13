@@ -184,3 +184,12 @@ export interface WsMessage {
   type: 'console' | 'machineStatus' | 'jobProgress' | 'jobStatus' | 'serialStatus' | 'svgPushed';
   data: unknown;
 }
+
+/** An SVG import waiting for user confirmation in the Editor. */
+export interface PendingImport {
+  id: string;
+  filename: string;
+  geometry: PathGeometry[];
+  sourceSvg: string;
+  receivedAt: string;
+}
