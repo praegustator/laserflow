@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useProjectStore } from '../store/projectStore';
 import { useJobStore } from '../store/jobStore';
 import { useAppSettings } from '../store/appSettingsStore';
+import { useMachineStore } from '../store/machineStore';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTrash, faTableCells, faList, faSort, faSortUp, faSortDown, faPencil } from '@fortawesome/free-solid-svg-icons';
 
@@ -24,6 +25,7 @@ export default function Dashboard() {
   const setActiveProjectId = useProjectStore(s => s.setActiveProjectId);
   const jobs = useJobStore(s => s.jobs);
   const fetchJobs = useJobStore(s => s.fetchJobs);
+  const backendConnected = useMachineStore(s => s.backendConnected);
   const navigate = useNavigate();
   const viewMode = useAppSettings(s => s.projectsViewMode);
   const setViewMode = useAppSettings(s => s.setProjectsViewMode);
@@ -34,7 +36,7 @@ export default function Dashboard() {
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingProjectName, setEditingProjectName] = useState('');
 
-  useEffect(() => { void fetchJobs(); }, [fetchJobs]);
+  useEffect(() => { if (backendConnected) void fetchJobs(); }, [fetchJobs, backendConnected]);
 
   const jobCountByProject = useMemo(() => {
     const counts: Record<string, number> = {};

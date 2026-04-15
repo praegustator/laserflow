@@ -4,6 +4,7 @@ import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'reac
 import { useProjectStore } from '../store/projectStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { useToastStore } from '../store/toastStore';
+import { useMachineStore } from '../store/machineStore';
 import { useKeyboardShortcuts, type ShortcutDef } from '../hooks/useKeyboardShortcuts';
 import SvgCanvas, { type TransformPreview, type SvgCanvasHandle } from '../components/SvgCanvas';
 import OperationsPanel from '../components/OperationsPanel';
@@ -243,6 +244,7 @@ export default function Editor() {
   const calibratedPxPerMm = useAppSettings(s => s.calibratedPxPerMm);
   const setCalibratedPxPerMm = useAppSettings(s => s.setCalibratedPxPerMm);
   const addToast = useToastStore(s => s.addToast);
+  const backendConnected = useMachineStore(s => s.backendConnected);
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<SvgCanvasHandle>(null);
@@ -317,6 +319,10 @@ export default function Editor() {
     for (const file of Array.from(files)) {
       try {
         if (file.name.endsWith('.svg')) {
+          if (!backendConnected) {
+            addToast('error', 'SVG import requires the backend server. Start the server to import SVG files.');
+            continue;
+          }
           await importSvgFile(file);
           addToast('success', `Imported ${file.name}`);
         } else if (IMAGE_EXTENSIONS.test(file.name)) {
@@ -332,7 +338,7 @@ export default function Editor() {
     if (imageFiles.length > 0) {
       setImageImportQueue(prev => [...prev, ...imageFiles]);
     }
-  }, [importSvgFile, addToast]);
+  }, [importSvgFile, addToast, backendConnected]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) void handleFiles(e.target.files);
@@ -704,6 +710,7 @@ export default function Editor() {
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1"
+                  title={!backendConnected ? 'SVG import requires the backend; images can still be imported' : 'Import SVG or image file'}
                 ><FontAwesomeIcon icon={faFileImport} /> Import</button>
               )}
             </div>

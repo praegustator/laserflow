@@ -5,6 +5,7 @@ import { useProjectStore } from '../store/projectStore';
 import { useJobStore } from '../store/jobStore';
 import { useToastStore } from '../store/toastStore';
 import { useAppSettings } from '../store/appSettingsStore';
+import { useMachineStore } from '../store/machineStore';
 import { api } from '../api/client';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faToggleOn, faToggleOff, faTrash, faClone, faPlus, faGears, faEye, faPencil } from '@fortawesome/free-solid-svg-icons';
@@ -468,6 +469,7 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
   const setActiveJobId = useJobStore(s => s.setActiveJobId);
   const originPosition = useAppSettings(s => s.originPosition);
   const workAreaHeight = useAppSettings(s => s.workAreaHeight);
+  const backendConnected = useMachineStore(s => s.backendConnected);
   const navigate = useNavigate();
   const [generating, setGenerating] = useState(false);
   const [presets, setPresets] = useState<MaterialPreset[]>([]);
@@ -644,9 +646,9 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
         <div className="flex gap-2">
           <button
             onClick={() => { void handleGenerate(); }}
-            disabled={generating || !hasEnabledOps || gcodeUpToDate}
+            disabled={generating || !hasEnabledOps || gcodeUpToDate || !backendConnected}
             className="flex-1 py-2 text-sm rounded bg-orange-600 hover:bg-orange-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
-            title={gcodeUpToDate ? 'G-code is up to date' : 'Generate G-code from operations'}
+            title={!backendConnected ? 'Backend unavailable — start the server to generate G-code' : gcodeUpToDate ? 'G-code is up to date' : 'Generate G-code from operations'}
           ><FontAwesomeIcon icon={faGears} className="mr-1" />{generating ? 'Generating…' : 'Generate'}</button>
           <button
             onClick={() => { setActiveJobId(null); void navigate('/gcode-preview'); }}

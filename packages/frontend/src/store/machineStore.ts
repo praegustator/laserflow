@@ -7,6 +7,8 @@ const LAST_PORT_KEY = 'laserflow_last_port';
 interface MachineStore {
   /** Whether the frontend WebSocket can reach the backend server */
   backendConnected: boolean;
+  /** User has opted to continue using the app without a backend (demo mode) */
+  demoMode: boolean;
   /** Serial connection to the physical machine (via backend) */
   connectionStatus: 'disconnected' | 'connecting' | 'connected';
   machineState: MachineState | null;
@@ -18,6 +20,7 @@ interface MachineStore {
   shouldAutoReconnect: boolean;
 
   setBackendConnected: (v: boolean) => void;
+  setDemoMode: (v: boolean) => void;
   fetchPorts: () => Promise<void>;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
@@ -39,6 +42,7 @@ const RECONNECT_BASE_DELAY_MS = 3000;
 
 export const useMachineStore = create<MachineStore>((set, get) => ({
   backendConnected: false,
+  demoMode: false,
   connectionStatus: 'disconnected',
   machineState: null,
   selectedPort: '',
@@ -47,7 +51,8 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
   ports: [],
   shouldAutoReconnect: false,
 
-  setBackendConnected: (v) => set({ backendConnected: v }),
+  setBackendConnected: (v) => set({ backendConnected: v, ...(v ? { demoMode: false } : {}) }),
+  setDemoMode: (v) => set({ demoMode: v }),
 
   fetchPorts: async () => {
     const ports = await api.get('/api/ports') as PortInfo[];

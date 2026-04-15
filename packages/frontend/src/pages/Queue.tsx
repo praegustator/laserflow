@@ -328,6 +328,7 @@ export default function Queue() {
   const setActiveJobId = useJobStore(s => s.setActiveJobId);
   const projects = useProjectStore(s => s.projects);
   const connectionStatus = useMachineStore(s => s.connectionStatus);
+  const backendConnected = useMachineStore(s => s.backendConnected);
   const sendCommand = useMachineStore(s => s.sendCommand);
   const addToast = useToastStore(s => s.addToast);
   const navigate = useNavigate();
@@ -346,17 +347,19 @@ export default function Queue() {
   }, [projects]);
 
   useEffect(() => {
+    if (!backendConnected) return;
     setLoading(true);
     void fetchJobs().finally(() => setLoading(false));
-  }, [fetchJobs]);
+  }, [fetchJobs, backendConnected]);
 
   // Auto-refresh every 5 seconds for running jobs
   useEffect(() => {
+    if (!backendConnected) return;
     const hasActive = jobs.some(j => j.status === 'running' || j.status === 'paused' || j.status === 'queued');
     if (!hasActive) return;
     const timer = setInterval(() => { void fetchJobs(); }, 5000);
     return () => clearInterval(timer);
-  }, [jobs, fetchJobs]);
+  }, [jobs, fetchJobs, backendConnected]);
 
   const wrap = useCallback((fn: () => Promise<void>, successMsg?: string) => async () => {
     try {
@@ -557,7 +560,17 @@ export default function Queue() {
         </div>
 
         {/* Three-column layout */}
-        {loading && jobs.length === 0 ? (
+        {!backendConnected ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <div className="text-5xl mb-4">🔌</div>
+              <h2 className="text-lg font-semibold text-gray-400">Backend unavailable</h2>
+              <p className="text-sm text-gray-600 mt-2">
+                The job queue requires the backend server. Start the server to manage jobs and control the machine.
+              </p>
+            </div>
+          </div>
+        ) : loading && jobs.length === 0 ? (
           <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">
             Loading jobs…
           </div>
