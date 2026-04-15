@@ -233,6 +233,10 @@ Please open a [GitHub Issue](https://github.com/praegustator/laserflow/issues) a
 
 ---
 
+## Disclaimer
+
+> **USE AT YOUR OWN RISK.** Laser cutters and engravers are powerful tools that can cause fire, serious injury, or permanent damage to property and equipment if misused. The author(s) of this software accept **no responsibility or liability** of any kind for any damage, injury, loss, or harm — direct or indirect — arising from the use, misuse, or inability to use this codebase or any software derived from it. You are solely responsible for operating your hardware safely and in accordance with all applicable laws, regulations, and manufacturer guidelines.
+
 ## License
 
 This project is open source. See [LICENSE](LICENSE) for details.
