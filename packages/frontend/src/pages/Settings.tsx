@@ -228,6 +228,73 @@ function PresetForm({
   );
 }
 
+// ─── Import Inbox Section ─────────────────────────────────────────────────────
+
+function ImportInboxSection() {
+  const [inboxPath, setInboxPath] = useState('');
+  const [pendingPath, setPendingPath] = useState('');
+  const [status, setStatus] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    api.get('/api/settings/import-inbox')
+      .then((data: unknown) => {
+        const d = data as { path: string };
+        setInboxPath(d.path);
+        setPendingPath(d.path);
+        setLoaded(true);
+      })
+      .catch(() => {
+        setStatus('Could not load inbox path');
+        setLoaded(true);
+      });
+  }, []);
+
+  const handleSave = async () => {
+    const trimmed = pendingPath.trim();
+    if (!trimmed) return;
+    setStatus('Saving…');
+    try {
+      const data = await api.put('/api/settings/import-inbox', { path: trimmed }) as { path: string };
+      setInboxPath(data.path);
+      setPendingPath(data.path);
+      setStatus('✓ Saved');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatus(`✗ ${msg}`);
+    }
+    setTimeout(() => setStatus(null), 3000);
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <section>
+      <h2 className="text-lg font-semibold text-gray-200 mb-3">Import Inbox (Illustrator Plugin)</h2>
+      <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 space-y-3">
+        <div>
+          <label className="text-xs text-gray-500 uppercase">Inbox Directory</label>
+          <div className="flex gap-2 mt-1">
+            <input
+              value={pendingPath}
+              onChange={e => setPendingPath(e.target.value)}
+              placeholder={inboxPath}
+              className="flex-1 bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100 font-mono focus:outline-none focus:border-orange-500"
+            />
+            <button type="button" onClick={() => { void handleSave(); }} className="px-3 py-1.5 text-xs rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold transition-colors">Save</button>
+          </div>
+          {status && <span className="text-xs text-gray-400 mt-1 block">{status}</span>}
+        </div>
+        <p className="text-xs text-gray-500">
+          The Illustrator &ldquo;Send to Laserflow&rdquo; plugin writes SVG files to this directory.
+          The backend watches it and automatically imports new files.
+          Change this on both the backend (here) and in the Illustrator plugin dialog if you use a custom path.
+        </p>
+      </div>
+    </section>
+  );
+}
+
 // ─── Main Settings Page ───────────────────────────────────────────────────────
 
 export default function Settings() {
@@ -512,6 +579,9 @@ export default function Settings() {
           </p>
         </div>
       </section>
+
+      {/* ── Import Inbox ───────────────────────────────────────────────── */}
+      <ImportInboxSection />
 
       {/* ── Machine Profiles ──────────────────────────────────────────── */}
       <section>

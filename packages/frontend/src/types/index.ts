@@ -181,6 +181,18 @@ export interface JobProgress {
 }
 
 export interface WsMessage {
-  type: 'console' | 'machineStatus' | 'jobProgress' | 'jobStatus' | 'serialStatus';
+  type: 'console' | 'machineStatus' | 'jobProgress' | 'jobStatus' | 'serialStatus' | 'svgPushed';
   data: unknown;
+}
+
+/** An SVG import waiting for user confirmation in the Editor. */
+export interface PendingImport {
+  id: string;
+  filename: string;
+  geometry: PathGeometry[];
+  sourceSvg: string;
+  /** Optional per-shape names from the source tool (e.g. Illustrator layer names). */
+  shapeNames?: string[];
+  /** ISO 8601 timestamp when the import was received. */
+  receivedAt: string;
 }

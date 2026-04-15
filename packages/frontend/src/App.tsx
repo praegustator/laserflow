@@ -10,8 +10,10 @@ import Queue from './pages/Queue';
 import { createWebSocket } from './api/client';
 import { useMachineStore } from './store/machineStore';
 import { useJobStore } from './store/jobStore';
+import { useProjectStore } from './store/projectStore';
+import { useToastStore } from './store/toastStore';
 import { useAppSettings } from './store/appSettingsStore';
-import type { WsMessage, MachineState, JobProgress } from './types';
+import type { WsMessage, MachineState, JobProgress, PathGeometry } from './types';
 
 function AppInner() {
   const addConsoleEntry = useMachineStore((s) => s.addConsoleEntry);
@@ -20,6 +22,8 @@ function AppInner() {
   const handleUnexpectedDisconnect = useMachineStore((s) => s.handleUnexpectedDisconnect);
   const updateJobProgress = useJobStore((s) => s.updateJobProgress);
   const updateJobStatus = useJobStore((s) => s.updateJobStatus);
+  const importSvgFromPush = useProjectStore((s) => s.importSvgFromPush);
+  const addToast = useToastStore((s) => s.addToast);
   const backendUrl = useAppSettings((s) => s.backendUrl);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -66,6 +70,10 @@ function AppInner() {
               if (d.status === 'disconnected') {
                 handleUnexpectedDisconnect();
               }
+            } else if (msg.type === 'svgPushed') {
+              const d = msg.data as { geometry: PathGeometry[]; sourceSvg: string; filename: string; shapeNames?: string[] };
+              importSvgFromPush(d);
+              addToast('info', `"${d.filename}" received — review in Shapes & Layers panel`);
             }
           } catch {
             // ignore malformed messages
@@ -76,8 +84,13 @@ function AppInner() {
         },
         () => {
           setBackendConnected(false);
-          // Reconnect after 3s on close
-          reconnectTimer.current = setTimeout(connect, 3000);
+          // Only reconnect if this is still the active connection.
+          // Prevents duplicate connections in React StrictMode where the
+          // first socket's async onclose fires after cleanup has already
+          // created a replacement connection.
+          if (wsRef.current === ws) {
+            reconnectTimer.current = setTimeout(connect, 3000);
+          }
         },
       );
       wsRef.current = ws;
@@ -85,7 +98,7 @@ function AppInner() {
 
     connect();
     return cleanup;
-  }, [backendUrl, addConsoleEntry, setMachineState, setBackendConnected, handleUnexpectedDisconnect, updateJobProgress, updateJobStatus]);
+  }, [backendUrl, addConsoleEntry, setMachineState, setBackendConnected, handleUnexpectedDisconnect, updateJobProgress, updateJobStatus, importSvgFromPush, addToast]);
 
   return (
     <Routes>
