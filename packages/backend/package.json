@@ -14,7 +14,7 @@
     "@fastify/cors": "^10.1.0",
     "@fastify/multipart": "^9.4.0",
     "@fastify/websocket": "^11.2.0",
-    "fastify": "^5.8.4",
+    "fastify": "^5.8.5",
     "serialport": "^12.0.0",
     "sharp": "^0.34.5",
     "svg-pathdata": "^6.0.3",
