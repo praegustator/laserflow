@@ -16,7 +16,10 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "svg-pathdata": ["../../node_modules/svg-pathdata/lib/SVGPathData"]
+      "svg-pathdata": [
+        "../../node_modules/svg-pathdata/lib/SVGPathData",
+        "./node_modules/svg-pathdata/lib/SVGPathData"
+      ]
     }
   },
   "include": ["src"],
