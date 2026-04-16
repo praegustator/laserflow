@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     build:
@@ -8,8 +6,13 @@ services:
       - "3001:3001"
     volumes:
       - laser_data:/app/data
-    devices:
-      - "/dev/ttyUSB0:/dev/ttyUSB0"
+    # Uncomment the lines below once your laser controller is connected.
+    # Replace /dev/ttyUSB0 with the actual device path on your host
+    # (e.g. /dev/ttyACM0 on some systems).  Docker will refuse to start
+    # if the device does not exist, so keep this commented out until the
+    # hardware is physically attached.
+    #devices:
+    #  - "/dev/ttyUSB0:/dev/ttyUSB0"
     restart: unless-stopped
     environment:
       - NODE_ENV=production
@@ -17,6 +20,8 @@ services:
   frontend:
     build:
       context: ./packages/frontend
+      args:
+        VITE_IS_DOCKER: "true"
     ports:
       - "8080:80"
     depends_on:

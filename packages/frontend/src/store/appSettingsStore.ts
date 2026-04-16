@@ -37,7 +37,10 @@ interface AppSettings {
 export const useAppSettings = create<AppSettings>()(
   persist(
     (set) => ({
-      backendUrl: 'http://localhost:3001',
+      // Empty string means "same origin" – API calls are routed through the
+      // nginx (Docker) or Vite dev-server proxy at /api and /ws.
+      // Override this only when the backend runs on a different host/port.
+      backendUrl: '',
       originPosition: 'bottom-left',
       workAreaWidth: 300,
       workAreaHeight: 200,
@@ -70,14 +73,20 @@ export const useAppSettings = create<AppSettings>()(
 export function getBackendUrl(): string {
   try {
     const stored = JSON.parse(localStorage.getItem('laserflow-settings') ?? '{}') as { state?: { backendUrl?: string } };
-    return stored.state?.backendUrl ?? 'http://localhost:3001';
+    return stored.state?.backendUrl ?? '';
   } catch {
-    return 'http://localhost:3001';
+    return '';
   }
 }
 
 export function getWsUrl(): string {
   const base = getBackendUrl();
+  if (!base) {
+    // Same-origin mode: derive WebSocket URL from the current page location.
+    // This works via the nginx (Docker) or Vite dev-server /ws proxy.
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${window.location.host}/ws`;
+  }
   return base.replace(/^http/, 'ws') + '/ws';
 }
 
