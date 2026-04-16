@@ -37,7 +37,9 @@ export default function BackendOverlay() {
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = urlInput.trim().replace(/\/$/, '');
-    if (trimmed) setBackendUrl(trimmed);
+    // Empty string is valid — it means "same origin" (requests are proxied
+    // by nginx in Docker or by the Vite dev server locally).
+    setBackendUrl(trimmed);
   };
 
   return (
@@ -64,6 +66,9 @@ export default function BackendOverlay() {
               placeholder="http://localhost:3001"
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Leave blank to use the same host (recommended when running via Docker or a reverse proxy).
+            </p>
           </div>
 
           {/* Mixed-content warning */}
