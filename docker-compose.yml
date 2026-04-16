@@ -20,6 +20,8 @@ services:
   frontend:
     build:
       context: ./packages/frontend
+      args:
+        VITE_IS_DOCKER: "true"
     ports:
       - "8080:80"
     depends_on:

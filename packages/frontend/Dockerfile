@@ -10,7 +10,12 @@ COPY vite.config.ts ./
 COPY tailwind.config.js ./
 COPY postcss.config.js ./
 COPY index.html ./
+COPY public ./public
 COPY src ./src
+
+ARG VITE_IS_DOCKER=true
+ENV VITE_IS_DOCKER=$VITE_IS_DOCKER
+
 RUN npm run build
 
 FROM nginx:alpine AS runtime

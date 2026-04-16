@@ -76,6 +76,11 @@ export default function ConnectionPanel({ showStatus = true }: Props) {
             title="Refresh ports"
           >↺</button>
         </div>
+        {ports.length === 0 && import.meta.env.VITE_IS_DOCKER === 'true' && (
+          <p className="text-xs text-amber-400/80 mt-1.5">
+            Running in Docker? Edit <code className="font-mono">docker-compose.yml</code> and uncomment the <code className="font-mono">devices:</code> section to pass your USB serial device through to the container, then rebuild.
+          </p>
+        )}
       </div>
 
       {/* Baud rate */}
