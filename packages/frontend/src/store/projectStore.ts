@@ -1009,7 +1009,7 @@ export const useProjectStore = create<ProjectStore>()(
         // reference the same layer; the backend generator filters by layerIds per
         // operation so duplicates here would cause extra passes.
         const geometry: PathGeometry[] = [];
-        const layerTransforms: Record<string, { offsetX: number; offsetY: number; scaleX: number; scaleY: number; rotation: number; mirrorX: boolean; mirrorY: boolean }> = {};
+        const layerTransforms: Record<string, { offsetX: number; offsetY: number; scaleX: number; scaleY: number; rotation: number; mirrorX: boolean; mirrorY: boolean; fillRule?: 'evenodd' | 'nonzero' }> = {};
         const seenLayerIds = new Set<string>();
 
         for (const op of enabledOps) {
@@ -1026,6 +1026,7 @@ export const useProjectStore = create<ProjectStore>()(
               rotation: layer.rotation ?? 0,
               mirrorX: layer.mirrorX ?? false,
               mirrorY: layer.mirrorY ?? false,
+              fillRule: layer.fillRule,
             };
             for (const shape of layer.shapes) {
               geometry.push({ d: shape.d, layerId, fill: shape.fill, imageDataUrl: shape.imageDataUrl });

@@ -1,6 +1,17 @@
 export type JobStatus = 'idle' | 'queued' | 'running' | 'paused' | 'completed' | 'canceled' | 'error';
 export type OperationType = 'cut' | 'engrave';
 
+/**
+ * Fill rule controlling how overlapping/intersecting sub-paths within a layer
+ * are treated during engraving.
+ *
+ * - `'evenodd'` — (default) even-odd rule: overlapping regions cancel out,
+ *   creating negative (empty) areas at intersections.
+ * - `'nonzero'` — non-zero winding rule: all enclosed regions are filled,
+ *   so overlapping shapes merge into a single positive area.
+ */
+export type FillRule = 'evenodd' | 'nonzero';
+
 /** Fill pattern used when engraving filled shapes. */
 export type EngravePattern = 'lines' | 'crosshatch' | 'spiral' | 'dots';
 
@@ -76,6 +87,8 @@ export interface Layer {
   pivot: PivotAnchor;
   /** Custom color for the layer (hex string). Falls back to index-based color when undefined. */
   color?: string;
+  /** Fill rule for engraving overlapping shapes. Default: 'evenodd'. */
+  fillRule?: FillRule;
 }
 
 /** An SVG file imported into a project */

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { Layer, PivotAnchor } from '../types';
+import type { Layer, PivotAnchor, FillRule } from '../types';
 import { computeShapesBoundingBox, computeMultiLayerWorldBBox, type BBox } from '../utils/geometry';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowsLeftRight, faArrowsUpDown, faLock, faLockOpen } from '@fortawesome/free-solid-svg-icons';
@@ -628,6 +628,36 @@ export default function LayerTransformPanel({ layers, onUpdate, originPosition =
           </div>
         )}
       </div>
+
+      {/* ── Fill rule ── */}
+      {(() => {
+        const rules: FillRule[] = layers.map(l => l.fillRule ?? 'evenodd');
+        const allSame = rules.every(r => r === rules[0]);
+        const currentRule: FillRule | 'mixed' = allSame ? rules[0] : 'mixed';
+        const setFillRule = (rule: FillRule) => {
+          for (const l of layers) onUpdate(l.id, { fillRule: rule });
+        };
+        return (
+          <div>
+            <label className="text-xs text-gray-500 mb-0.5 block">Fill rule</label>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setFillRule('evenodd')}
+                className={currentRule === 'evenodd' ? btnActive : btnInactive}
+                title="Even-odd: overlapping areas are subtracted (holes at intersections)"
+              >Even-odd</button>
+              <button
+                onClick={() => setFillRule('nonzero')}
+                className={currentRule === 'nonzero' ? btnActive : btnInactive}
+                title="Non-zero: all enclosed areas are filled (overlaps merge)"
+              >Non-zero</button>
+            </div>
+            {currentRule === 'mixed' && (
+              <p className="text-[10px] text-gray-500 mt-0.5">Mixed — click to apply to all</p>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Info line */}
       {!multi && bbox && (

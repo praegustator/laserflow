@@ -860,4 +860,136 @@ describe('raster image engraving', () => {
     // At scale=3: 30mm physical height / 1mm interval → ~30 scan lines
     expect(g1Lines3.length).toBeGreaterThan(g1Lines1.length * 2);
   });
+
+  // ── Fill rule tests ────────────────────────────────────────────────────
+
+  it('even-odd fill rule creates hole in overlapping shapes', async () => {
+    // Two overlapping filled squares sharing the same layer.
+    // Square A: 0,0 → 10,0 → 10,10 → 0,10 Z
+    // Square B: 5,0 → 15,0 → 15,10 → 5,10 Z (overlaps A from x=5..10)
+    // With even-odd: the overlap region (x=5..10) should be empty.
+    const layerId = 'layer-eo';
+    const geometry: PathGeometry[] = [
+      { d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z M 5 0 L 15 0 L 15 10 L 5 10 Z', fill: '#000', layerId },
+    ];
+    const operations: Operation[] = [{
+      id: 'engrave-eo',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 100,
+      passes: 1,
+      engraveLineInterval: 1,
+      layerIds: [layerId],
+    }];
+    const transforms = { [layerId]: { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 } };
+    const gcode = await generateGcode(geometry, operations, defaultProfile, transforms);
+
+    // With even-odd, the overlap (x=5..10) is subtracted, leaving two separate regions:
+    // x=0..5 and x=10..15 per scan line → ~2 G1 segments per scan line.
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+    // ~10 scan lines × 2 segments each ≈ ~20 G1 lines
+    expect(g1Lines.length).toBeGreaterThanOrEqual(16);
+    expect(g1Lines.length).toBeLessThanOrEqual(24);
+  });
+
+  it('non-zero fill rule merges overlapping shapes', async () => {
+    // Same two overlapping squares, but with non-zero fill rule.
+    // The overlap region should be filled (merged), not subtracted.
+    const layerId = 'layer-nz';
+    const geometry: PathGeometry[] = [
+      { d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z M 5 0 L 15 0 L 15 10 L 5 10 Z', fill: '#000', layerId },
+    ];
+    const operations: Operation[] = [{
+      id: 'engrave-nz',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 100,
+      passes: 1,
+      engraveLineInterval: 1,
+      layerIds: [layerId],
+    }];
+    const transforms = {
+      [layerId]: { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, fillRule: 'nonzero' as const },
+    };
+    const gcode = await generateGcode(geometry, operations, defaultProfile, transforms);
+
+    // With non-zero, the overlap is merged → one continuous region x=0..15 per scan line.
+    // ~10 scan lines × 1 segment each ≈ ~10 G1 lines
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+    expect(g1Lines.length).toBeGreaterThanOrEqual(9);
+    expect(g1Lines.length).toBeLessThanOrEqual(11);
+  });
+
+  it('non-zero fill rule works with spiral pattern', async () => {
+    // Two overlapping squares with spiral fill and non-zero rule should produce output
+    const layerId = 'layer-nz-spiral';
+    const geometry: PathGeometry[] = [
+      { d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z M 5 0 L 15 0 L 15 10 L 5 10 Z', fill: '#000', layerId },
+    ];
+    const operations: Operation[] = [{
+      id: 'engrave-nz-spiral',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 100,
+      passes: 1,
+      engraveLineInterval: 1,
+      engravePattern: 'spiral',
+      layerIds: [layerId],
+    }];
+    const transforms = {
+      [layerId]: { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, fillRule: 'nonzero' as const },
+    };
+    const gcode = await generateGcode(geometry, operations, defaultProfile, transforms);
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+    // Spiral should produce G1 lines covering the merged area
+    expect(g1Lines.length).toBeGreaterThan(0);
+  });
+
+  it('non-zero fill rule works with dots pattern', async () => {
+    // Two overlapping squares with dots fill and non-zero rule
+    const layerId = 'layer-nz-dots';
+    const geometry: PathGeometry[] = [
+      { d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z M 5 0 L 15 0 L 15 10 L 5 10 Z', fill: '#000', layerId },
+    ];
+    const operations: Operation[] = [{
+      id: 'engrave-nz-dots',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 100,
+      passes: 1,
+      engraveLineInterval: 2,
+      engravePattern: 'dots',
+      layerIds: [layerId],
+    }];
+    const transforms = {
+      [layerId]: { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, fillRule: 'nonzero' as const },
+    };
+    const gcode = await generateGcode(geometry, operations, defaultProfile, transforms);
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+    // Dots should appear in the merged area
+    expect(g1Lines.length).toBeGreaterThan(0);
+  });
+
+  it('defaults to even-odd when fillRule is not set', async () => {
+    // Overlapping shapes without explicit fillRule should behave as even-odd (existing behaviour)
+    const layerId = 'layer-default';
+    const geometry: PathGeometry[] = [
+      { d: 'M 0 0 L 10 0 L 10 10 L 0 10 Z M 5 0 L 15 0 L 15 10 L 5 10 Z', fill: '#000', layerId },
+    ];
+    const operations: Operation[] = [{
+      id: 'engrave-default',
+      type: 'engrave',
+      feedRate: 3000,
+      power: 100,
+      passes: 1,
+      engraveLineInterval: 1,
+      layerIds: [layerId],
+    }];
+    // No fillRule in transforms (should default to even-odd)
+    const transforms = { [layerId]: { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 } };
+    const gcode = await generateGcode(geometry, operations, defaultProfile, transforms);
+    const g1Lines = gcode.split('\n').filter(l => l.startsWith('G1'));
+    // Even-odd: 2 segments per scan line ≈ ~20 G1 lines
+    expect(g1Lines.length).toBeGreaterThanOrEqual(16);
+  });
 });
