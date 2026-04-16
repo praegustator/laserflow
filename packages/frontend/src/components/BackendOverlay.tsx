@@ -5,7 +5,12 @@ import { useAppSettings, isMixedContent } from '../store/appSettingsStore';
 /**
  * Full-screen overlay shown when the frontend cannot reach the backend server.
  * Lets the user correct the backend URL so the auto-reconnect picks it up.
- * A 1-second grace period prevents a flash on initial load.
+ *
+ * A 5-second grace period is used to avoid false-positive flashes:
+ *   - On initial load the WebSocket may take a moment to establish (especially
+ *     when routed through an nginx proxy in Docker).
+ *   - On transient disconnects the client automatically retries after 3 s, so
+ *     the overlay should only appear if the reconnect has not succeeded by then.
  */
 export default function BackendOverlay() {
   const backendConnected = useMachineStore((s) => s.backendConnected);
@@ -23,7 +28,7 @@ export default function BackendOverlay() {
       setVisible(false);
       return;
     }
-    const timer = setTimeout(() => setVisible(true), 1000);
+    const timer = setTimeout(() => setVisible(true), 5000);
     return () => clearTimeout(timer);
   }, [backendConnected, demoMode]);
 
