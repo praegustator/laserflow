@@ -9,6 +9,8 @@ export interface PathTransform {
   scaleY: number;
   flipY?: boolean;
   workH?: number;
+  /** Fill rule for overlapping sub-paths: 'evenodd' (default) or 'nonzero'. */
+  fillRule?: 'evenodd' | 'nonzero';
 }
 
 const IDENTITY_TRANSFORM: PathTransform = { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 };
@@ -268,8 +270,29 @@ const SPIRAL_POINTS_PER_REVOLUTION = 100;
  *  0.1 mm is short enough to look like a point but long enough to be accepted by all firmware. */
 const DOT_PULSE_MM = 0.1;
 
-/** Even-odd point-in-polygon test for a set of polygons. */
-function pointInPolygons(x: number, y: number, polygons: Array<Array<[number, number]>>): boolean {
+/** Point-in-polygon test supporting both even-odd and non-zero winding fill rules. */
+function pointInPolygons(x: number, y: number, polygons: Array<Array<[number, number]>>, fillRule: 'evenodd' | 'nonzero' = 'evenodd'): boolean {
+  if (fillRule === 'nonzero') {
+    let winding = 0;
+    for (const poly of polygons) {
+      const n = poly.length;
+      for (let i = 0, j = n - 1; i < n; j = i++) {
+        const xi = poly[i][0], yi = poly[i][1];
+        const xj = poly[j][0], yj = poly[j][1];
+        if (yi <= y) {
+          if (yj > y && (xj - xi) * (y - yi) - (x - xi) * (yj - yi) > 0) {
+            winding++;
+          }
+        } else {
+          if (yj <= y && (xj - xi) * (y - yi) - (x - xi) * (yj - yi) < 0) {
+            winding--;
+          }
+        }
+      }
+    }
+    return winding !== 0;
+  }
+  // Even-odd (default)
   let inside = false;
   for (const poly of polygons) {
     const n = poly.length;
@@ -343,24 +366,46 @@ function hatchFillToGcode(
   const lines: string[] = [];
   let leftToRight = true;
 
+  const fillRule = transform.fillRule ?? 'evenodd';
+
   // Scan from minY to maxY, offset by half-interval to stay inside the shape
   for (let scanY = minY + layerInterval / 2; scanY <= maxY - layerInterval / 2 + 1e-9; scanY += layerInterval) {
     // Find all X-intersections with polygon edges at this scanY
-    const intersections: number[] = [];
+    const intersections: Array<{ x: number; dir: number }> = [];
     for (const edge of edges) {
       const { x1, y1, x2, y2 } = edge;
       if ((y1 <= scanY && y2 > scanY) || (y2 <= scanY && y1 > scanY)) {
         const t = (scanY - y1) / (y2 - y1);
-        intersections.push(x1 + t * (x2 - x1));
+        const ix = x1 + t * (x2 - x1);
+        // dir: +1 if edge goes upward (y1 < y2), -1 if downward
+        const dir = y2 > y1 ? 1 : -1;
+        intersections.push({ x: ix, dir });
       }
     }
 
-    intersections.sort((a, b) => a - b);
+    intersections.sort((a, b) => a.x - b.x);
 
-    // Apply even-odd fill rule: fill between pairs of intersections
     const pairs: Array<[number, number]> = [];
-    for (let i = 0; i + 1 < intersections.length; i += 2) {
-      pairs.push([intersections[i], intersections[i + 1]]);
+
+    if (fillRule === 'nonzero') {
+      // Non-zero winding rule: fill where winding number is non-zero
+      let winding = 0;
+      let segStart: number | null = null;
+      for (const { x, dir } of intersections) {
+        const prevWinding = winding;
+        winding += dir;
+        if (prevWinding === 0 && winding !== 0) {
+          segStart = x;
+        } else if (prevWinding !== 0 && winding === 0 && segStart !== null) {
+          pairs.push([segStart, x]);
+          segStart = null;
+        }
+      }
+    } else {
+      // Even-odd fill rule: fill between pairs of intersections
+      for (let i = 0; i + 1 < intersections.length; i += 2) {
+        pairs.push([intersections[i].x, intersections[i + 1].x]);
+      }
     }
 
     // Alternate direction for efficient toolpath (serpentine)
@@ -412,7 +457,8 @@ function crosshatchFillToGcode(
 
 /**
  * Fill a shape with an Archimedean spiral radiating from the shape centroid.
- * The spiral is clipped to the shape interior using an even-odd point test.
+ * The spiral is clipped to the shape interior using a point-in-polygon test
+ * governed by the layer fill rule.
  * `lineInterval` controls the spacing between successive spiral arms.
  */
 function spiralFillToGcode(
@@ -460,7 +506,7 @@ function spiralFillToGcode(
     const r = b * Math.min(theta, thetaMax);
     const x = cx + r * Math.cos(theta);
     const y = cy + r * Math.sin(theta);
-    const inside = pointInPolygons(x, y, polygons);
+    const inside = pointInPolygons(x, y, polygons, transform.fillRule);
 
     const [tx, ty] = applyTransform(x, y, transform);
     if (inside && !prevInside) {
@@ -523,7 +569,7 @@ function dotsFillToGcode(
       const x = cx + gx * cosA - gy * sinA;
       const y = cy + gx * sinA + gy * cosA;
 
-      if (!pointInPolygons(x, y, polygons)) continue;
+      if (!pointInPolygons(x, y, polygons, transform.fillRule)) continue;
 
       const [tx, ty] = applyTransform(x, y, transform);
       // Move to dot centre with laser off, then short move with laser on
