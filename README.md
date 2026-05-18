@@ -20,7 +20,7 @@ The script will: detect / install **Node.js 20** –> clone repo –> `npm insta
 
 ## Manual Installation
 
-App requires Node.js (18+ LTS).
+App requires Node.js (20+ LTS).
 
 ```sh
 git clone https://github.com/praegustator/laserflow.git
