@@ -8,6 +8,17 @@ export const GRBL_REALTIME = {
   JOG_CANCEL: 0x85,
 } as const;
 
+/**
+ * True when `line` is a GRBL realtime status report (e.g. `<Idle|MPos:0,0,0|...>`).
+ * These are emitted ~5×/second in response to the '?' query and must NOT be
+ * echoed to the console log — doing so floods the WebSocket and the UI, making
+ * it lag seconds behind the machine. They are delivered separately as parsed
+ * `machineStatus` events instead.
+ */
+export function isStatusReport(line: string): boolean {
+  return line.startsWith('<') && line.endsWith('>');
+}
+
 export function parseStatusReport(line: string): Partial<MachineState> {
   if (!line.startsWith('<') || !line.endsWith('>')) {
     return {};

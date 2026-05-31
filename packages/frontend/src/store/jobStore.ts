@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api } from '../api/client';
+import { useMachineStore } from './machineStore';
 import type { Job, JobProgress } from '../types';
 
 interface JobStore {
@@ -116,6 +117,9 @@ export const useJobStore = create<JobStore>((set, get) => ({
   },
 
   emergencyStop: async () => {
+    // Drop any buffered console output so the log reflects the halted machine
+    // immediately instead of replaying stale, already-executed commands.
+    useMachineStore.getState().flushConsoleBuffer();
     await api.post('/api/emergency-stop');
     set((s) => ({
       activeJobId: null,

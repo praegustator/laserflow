@@ -29,6 +29,8 @@ interface MachineStore {
   sendCommand: (command: string) => Promise<void>;
   addConsoleEntry: (entry: Omit<ConsoleEntry, 'id' | 'timestamp'>) => void;
   clearConsoleLog: () => void;
+  /** Drop any buffered-but-not-yet-rendered console entries (used on STOP). */
+  flushConsoleBuffer: () => void;
   setMachineState: (state: Partial<MachineState>) => void;
   setSelectedPort: (port: string) => void;
   setBaudRate: (rate: number) => void;
@@ -39,6 +41,20 @@ let _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let _reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_BASE_DELAY_MS = 3000;
+
+/**
+ * Console entries can arrive from the machine far faster than React can
+ * re-render (hundreds per second while streaming a job). Committing one Zustand
+ * update per message makes the UI fall ever further behind the real machine, so
+ * the live console keeps scrolling long after the job is done or stopped.
+ *
+ * To stay in sync we buffer incoming entries and flush them in a single batched
+ * state update at most ~12×/second (every FLUSH_INTERVAL_MS).
+ */
+const CONSOLE_LIMIT = 500;
+const FLUSH_INTERVAL_MS = 80;
+let _consoleBuffer: ConsoleEntry[] = [];
+let _flushTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useMachineStore = create<MachineStore>((set, get) => ({
   backendConnected: false,
@@ -136,12 +152,36 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
   addConsoleEntry: (entry) => {
     const id = String(++_entryCounter);
     const newEntry: ConsoleEntry = { ...entry, id, timestamp: Date.now() };
-    set((s) => ({
-      consoleLog: [...s.consoleLog.slice(-499), newEntry],
-    }));
+    _consoleBuffer.push(newEntry);
+    if (_flushTimer === null) {
+      _flushTimer = setTimeout(() => {
+        _flushTimer = null;
+        const batch = _consoleBuffer;
+        _consoleBuffer = [];
+        if (batch.length === 0) return;
+        set((s) => ({
+          consoleLog: [...s.consoleLog, ...batch].slice(-CONSOLE_LIMIT),
+        }));
+      }, FLUSH_INTERVAL_MS);
+    }
   },
 
-  clearConsoleLog: () => set({ consoleLog: [] }),
+  clearConsoleLog: () => {
+    _consoleBuffer = [];
+    if (_flushTimer !== null) {
+      clearTimeout(_flushTimer);
+      _flushTimer = null;
+    }
+    set({ consoleLog: [] });
+  },
+
+  flushConsoleBuffer: () => {
+    _consoleBuffer = [];
+    if (_flushTimer !== null) {
+      clearTimeout(_flushTimer);
+      _flushTimer = null;
+    }
+  },
 
   setMachineState: (partial) => {
     set((s) => {

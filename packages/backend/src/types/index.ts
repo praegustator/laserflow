@@ -38,6 +38,8 @@ export interface Operation {
   engraveLineAngle?: number;
   /** Fill pattern for engrave operations (default: 'lines'). */
   engravePattern?: EngravePattern;
+  /** ID of the material preset this operation was configured from, if any. */
+  presetId?: string;
 }
 
 export interface PathGeometry {

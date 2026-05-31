@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseStatusReport, parseResponse } from '../../src/serial/GrblProtocol.js';
+import { parseStatusReport, parseResponse, isStatusReport } from '../../src/serial/GrblProtocol.js';
 
 describe('GrblProtocol', () => {
   describe('parseStatusReport', () => {
@@ -34,6 +34,16 @@ describe('GrblProtocol', () => {
       expect(result.position).toEqual({ x: 100, y: 200, z: 0 });
       expect(result.wco).toEqual({ x: 10, y: 20, z: 0 });
       expect(result.feed).toBe(500);
+    });
+  });
+  describe('isStatusReport', () => {
+    it('recognises a status report', () => {
+      expect(isStatusReport('<Idle|MPos:0.000,0.000,0.000|FS:0,0>')).toBe(true);
+    });
+    it('rejects ok/error/other lines', () => {
+      expect(isStatusReport('ok')).toBe(false);
+      expect(isStatusReport('error:22')).toBe(false);
+      expect(isStatusReport('Grbl 1.1f [\'$\' for help]')).toBe(false);
     });
   });
   describe('parseResponse', () => {
