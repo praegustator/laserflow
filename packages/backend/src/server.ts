@@ -4,7 +4,7 @@ import multipart from '@fastify/multipart';
 import websocketPlugin from '@fastify/websocket';
 import { wsBroadcaster } from './ws/WebSocketServer.js';
 import { serialManager } from './serial/SerialManager.js';
-import { parseStatusReport } from './serial/GrblProtocol.js';
+import { parseStatusReport, isStatusReport } from './serial/GrblProtocol.js';
 import { registerRoutes as registerPortRoutes } from './routes/ports.js';
 import { registerRoutes as registerMachineRoutes } from './routes/machines.js';
 import { registerRoutes as registerConnectionRoutes } from './routes/connection.js';
@@ -70,9 +70,12 @@ export async function buildServer() {
   let lastWco: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 };
 
   serialManager.on('data', (line: string) => {
-    wsBroadcaster.broadcast('console', line);
-
-    if (line.startsWith('<') && line.endsWith('>')) {
+    if (isStatusReport(line)) {
+      // Status reports arrive ~5×/second. Broadcasting them on the console
+      // channel floods the WebSocket and overwhelms the frontend, causing the
+      // live console to lag far behind the machine (so e.g. STOP appears to do
+      // nothing while the UI keeps replaying buffered output). They carry no
+      // textual value for the console — only deliver the parsed machineStatus.
       const state = parseStatusReport(line);
 
       // Update stored WCO if reported
@@ -97,7 +100,10 @@ export async function buildServer() {
       }
 
       wsBroadcaster.broadcast('machineStatus', state);
+      return;
     }
+
+    wsBroadcaster.broadcast('console', line);
   });
 
   // Notify the frontend when the serial port closes unexpectedly so it can auto-reconnect.

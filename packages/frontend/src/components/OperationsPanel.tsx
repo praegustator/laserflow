@@ -32,9 +32,19 @@ interface OperationParamsPanelProps {
   selectedOps: Operation[];
   presets: MaterialPreset[];
   onChange: (partial: Partial<Operation>) => void;
+  /** Persist a brand-new preset and return it (with its assigned id). */
+  onCreatePreset: (preset: Omit<MaterialPreset, 'id'>) => Promise<MaterialPreset>;
+  /** Overwrite an existing preset in place. */
+  onUpdatePreset: (preset: MaterialPreset) => Promise<MaterialPreset>;
 }
 
-function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParamsPanelProps) {
+/** Which preset slot an operation's feed/power maps to, based on its type. */
+type PresetSlot = 'engrave' | 'cutThin';
+function slotForType(type: OperationType | null): PresetSlot {
+  return type === 'engrave' ? 'engrave' : 'cutThin';
+}
+
+function OperationParamsPanel({ selectedOps, presets, onChange, onCreatePreset, onUpdatePreset }: OperationParamsPanelProps) {
   const multiType = sharedValue(selectedOps, o => o.type);
   const multiFeedRate = sharedValue(selectedOps, o => o.feedRate);
   const multiPower = sharedValue(selectedOps, o => o.power);
@@ -97,6 +107,69 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
     ? selectedOps[0].label || selectedOps[0].type
     : `${selectedOps.length} operations`;
 
+  // ─── Material preset (PrusaSlicer-style template tracking) ───
+  const multiPresetId = sharedValue(selectedOps, o => o.presetId ?? '');
+  const activePreset = multiPresetId
+    ? presets.find(p => p.id === multiPresetId) ?? null
+    : null;
+  const activeSlot = slotForType(multiType);
+  // A preset is "modified" when the operation's live values diverge from the
+  // template it was applied from (or when a multi-selection has mixed values).
+  const presetModified = !!activePreset && (
+    multiFeedRate === null ||
+    multiPower === null ||
+    multiFeedRate !== activePreset[activeSlot].feedRate ||
+    multiPower !== activePreset[activeSlot].power
+  );
+
+  const [savingAsNew, setSavingAsNew] = useState(false);
+  const [newPresetName, setNewPresetName] = useState('');
+  const [presetBusy, setPresetBusy] = useState(false);
+
+  const applyPreset = (preset: MaterialPreset) => {
+    const settings = preset[slotForType(multiType)];
+    onChange({ feedRate: settings.feedRate, power: settings.power, label: preset.name, presetId: preset.id });
+  };
+
+  /** Build a preset object from the operation's current feed/power. */
+  const presetFromCurrent = (name: string, base?: MaterialPreset): Omit<MaterialPreset, 'id'> => {
+    const feedRate = multiFeedRate ?? 0;
+    const power = multiPower ?? 0;
+    const seed: Omit<MaterialPreset, 'id'> = base
+      ? { name, thickness: base.thickness, engrave: { ...base.engrave }, cutThin: { ...base.cutThin }, cutThick: { ...base.cutThick } }
+      : { name, thickness: 3, engrave: { feedRate, power }, cutThin: { feedRate, power }, cutThick: { feedRate, power } };
+    seed[activeSlot] = { feedRate, power };
+    return seed;
+  };
+
+  const handleSaveAsNew = async () => {
+    const name = newPresetName.trim();
+    if (!name || presetBusy) return;
+    setPresetBusy(true);
+    try {
+      const created = await onCreatePreset(presetFromCurrent(name, activePreset ?? undefined));
+      onChange({ label: created.name, presetId: created.id });
+      setSavingAsNew(false);
+      setNewPresetName('');
+    } finally {
+      setPresetBusy(false);
+    }
+  };
+
+  const handleUpdatePreset = async () => {
+    if (!activePreset || presetBusy) return;
+    setPresetBusy(true);
+    try {
+      const next: MaterialPreset = {
+        ...activePreset,
+        [activeSlot]: { feedRate: multiFeedRate ?? activePreset[activeSlot].feedRate, power: multiPower ?? activePreset[activeSlot].power },
+      };
+      await onUpdatePreset(next);
+    } finally {
+      setPresetBusy(false);
+    }
+  };
+
   // Shared input class — matches transform panel style
   const inputCls = 'w-16 text-xs bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-gray-100 text-right focus:outline-none focus:border-orange-500';
 
@@ -125,28 +198,84 @@ function OperationParamsPanel({ selectedOps, presets, onChange }: OperationParam
       </div>
 
       <>
-          {/* Material preset quick-apply */}
-          {presets.length > 0 && (
-            <div>
-              <label className="text-xs text-gray-500 uppercase">Material Preset</label>
-              <select
-                value=""
-                onChange={e => {
-                  const preset = presets.find(p => p.id === e.target.value);
-                  if (!preset) return;
-                  const useEngrave = multiType === 'engrave';
-                  const settings = useEngrave ? preset.engrave : preset.cutThin;
-                  onChange({ feedRate: settings.feedRate, power: settings.power, label: preset.name });
-                }}
-                className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
-              >
-                <option value="">— Apply preset —</option>
-                {presets.map(p => (
-                  <option key={p.id} value={p.id}>{p.name} ({p.thickness}mm)</option>
-                ))}
-              </select>
-            </div>
-          )}
+          {/* Material preset — PrusaSlicer-style template selector */}
+          <div>
+            <label className="text-xs text-gray-500 uppercase flex items-center gap-1">
+              Material Preset
+              {activePreset && presetModified && (
+                <span className="text-orange-400 font-bold" title="Modified — unsaved changes to this template">*</span>
+              )}
+            </label>
+            <select
+              value={activePreset ? activePreset.id : ''}
+              onChange={e => {
+                const val = e.target.value;
+                if (!val) { onChange({ presetId: undefined }); return; }
+                const preset = presets.find(p => p.id === val);
+                if (preset) applyPreset(preset);
+              }}
+              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-orange-500"
+            >
+              <option value="">— Custom (no preset) —</option>
+              {multiPresetId === null && <option value="" disabled>— Mixed presets —</option>}
+              {presets.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name}{activePreset?.id === p.id && presetModified ? ' *' : ''} ({p.thickness}mm)
+                </option>
+              ))}
+            </select>
+
+            {/* Save controls — appear when the live values differ from the template,
+                or always offer "save as new" so any tweak can become a template. */}
+            {!savingAsNew ? (
+              <div className="flex gap-1 mt-1.5">
+                {activePreset && presetModified && (
+                  <button
+                    type="button"
+                    onClick={() => { void handleUpdatePreset(); }}
+                    disabled={presetBusy}
+                    title={`Overwrite "${activePreset.name}" with the current values`}
+                    className="flex-1 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 disabled:opacity-40 transition-colors"
+                  >Update "{activePreset.name}"</button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewPresetName(activePreset ? `${activePreset.name} (copy)` : '');
+                    setSavingAsNew(true);
+                  }}
+                  disabled={multiFeedRate === null || multiPower === null}
+                  title="Save the current values as a new material template"
+                  className="flex-1 py-1 text-xs rounded bg-orange-600/80 hover:bg-orange-500 text-white disabled:opacity-40 transition-colors"
+                >Save as new…</button>
+              </div>
+            ) : (
+              <div className="flex gap-1 mt-1.5">
+                <input
+                  autoFocus
+                  value={newPresetName}
+                  onChange={e => setNewPresetName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { void handleSaveAsNew(); }
+                    if (e.key === 'Escape') { setSavingAsNew(false); setNewPresetName(''); }
+                  }}
+                  placeholder="New template name"
+                  className="flex-1 min-w-0 text-xs bg-gray-900 border border-gray-700 rounded px-2 py-1 text-gray-100 focus:outline-none focus:border-orange-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => { void handleSaveAsNew(); }}
+                  disabled={!newPresetName.trim() || presetBusy}
+                  className="px-2 py-1 text-xs rounded bg-orange-600 hover:bg-orange-500 text-white disabled:opacity-40 transition-colors"
+                >Save</button>
+                <button
+                  type="button"
+                  onClick={() => { setSavingAsNew(false); setNewPresetName(''); }}
+                  className="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"
+                >Cancel</button>
+              </div>
+            )}
+          </div>
 
           {/* Feed rate */}
           <div className="flex items-center justify-between gap-2">
@@ -483,6 +612,20 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
       .catch(() => { console.warn('Failed to load material presets'); });
   }, []);
 
+  const createPreset = async (preset: Omit<MaterialPreset, 'id'>): Promise<MaterialPreset> => {
+    const created = await api.post('/api/material-presets', preset) as MaterialPreset;
+    setPresets(ps => [...ps, created]);
+    addToast('success', `Material template "${created.name}" saved`);
+    return created;
+  };
+
+  const updatePreset = async (preset: MaterialPreset): Promise<MaterialPreset> => {
+    const updated = await api.post(`/api/material-presets/${preset.id}`, preset) as MaterialPreset;
+    setPresets(ps => ps.map(p => (p.id === updated.id ? updated : p)));
+    addToast('success', `Material template "${updated.name}" updated`);
+    return updated;
+  };
+
   // Notify parent of layer IDs referenced by currently selected ops (for cross-highlighting)
   useEffect(() => {
     if (!onSelectedOpIdsChange) return;
@@ -620,6 +763,8 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
             selectedOps={selectedOps}
             presets={presets}
             onChange={applyToSelected}
+            onCreatePreset={createPreset}
+            onUpdatePreset={updatePreset}
           />
         </div>
       )}
