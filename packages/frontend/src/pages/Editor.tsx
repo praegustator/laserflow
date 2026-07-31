@@ -586,8 +586,13 @@ export default function Editor() {
         if (alignMode) { exitAlignMode(); return; }
         setSelectedLayerIds(new Set()); setSelectedShapeIds(new Set());
       }},
+      { key: '+', label: 'Zoom in',  handler: () => canvasRef.current?.zoomIn() },
+      { key: '+', shift: true, label: 'Zoom in', handler: () => canvasRef.current?.zoomIn() },
+      { key: '=', label: 'Zoom in',  handler: () => canvasRef.current?.zoomIn() },
+      { key: '-', label: 'Zoom out', handler: () => canvasRef.current?.zoomOut() },
+      { key: 'f', label: 'Fit work area', handler: () => canvasRef.current?.fitAll() },
     ];
-  }, [selectedLayerIds, selectedShapeIds, removeLayer, removeShapes]);
+  }, [selectedLayerIds, selectedShapeIds, removeLayer, removeShapes, alignMode, exitAlignMode]);
   useKeyboardShortcuts(shortcuts);
 
   return (
@@ -1154,7 +1159,7 @@ export default function Editor() {
               <button
                 onClick={() => canvasRef.current?.zoomIn()}
                 className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded text-xs transition-colors"
-                title="Zoom in"
+                title="Zoom in (+)"
               ><FontAwesomeIcon icon={faMagnifyingGlassPlus} /></button>
               {editingZoom ? (
                 <input
@@ -1194,7 +1199,7 @@ export default function Editor() {
               <button
                 onClick={() => canvasRef.current?.zoomOut()}
                 className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded text-xs transition-colors"
-                title="Zoom out"
+                title="Zoom out (-)"
               ><FontAwesomeIcon icon={faMagnifyingGlassMinus} /></button>
               <div className="w-px bg-gray-600 mx-0.5" />
               <button
@@ -1212,7 +1217,7 @@ export default function Editor() {
               <button
                 onClick={() => canvasRef.current?.fitAll()}
                 className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded text-xs transition-colors"
-                title="Fit entire work area"
+                title="Fit entire work area (F)"
               ><FontAwesomeIcon icon={faExpand} /></button>
               <div className="w-px bg-gray-600 mx-0.5" />
               <button
