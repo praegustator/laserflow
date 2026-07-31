@@ -27,6 +27,22 @@ function validatePreset(body: Partial<MaterialPreset> | undefined): string | nul
   return null;
 }
 
+/**
+ * Build a clean preset from a validated payload, copying only known fields so
+ * arbitrary extra properties from the request body are never persisted or
+ * echoed back to the client.
+ */
+function sanitizePreset(body: Omit<MaterialPreset, 'id'>, id: string): MaterialPreset {
+  return {
+    id,
+    name: body.name.trim(),
+    thickness: body.thickness,
+    engrave: { feedRate: body.engrave.feedRate, power: body.engrave.power },
+    cutThin: { feedRate: body.cutThin.feedRate, power: body.cutThin.power },
+    cutThick: { feedRate: body.cutThick.feedRate, power: body.cutThick.power },
+  };
+}
+
 export function registerRoutes(app: FastifyInstance): void {
   app.get('/api/material-presets', async (_req, reply) => {
     return reply.send(materialPresets.getAll());
@@ -35,7 +51,7 @@ export function registerRoutes(app: FastifyInstance): void {
   app.post<{ Body: Omit<MaterialPreset, 'id'> & { id?: string } }>('/api/material-presets', async (req, reply) => {
     const error = validatePreset(req.body);
     if (error) return reply.code(400).send({ error });
-    const preset: MaterialPreset = { ...req.body, name: req.body.name.trim(), id: req.body.id ?? randomUUID() };
+    const preset = sanitizePreset(req.body, typeof req.body.id === 'string' && req.body.id ? req.body.id : randomUUID());
     materialPresets.save(preset);
     return reply.code(201).send(preset);
   });
@@ -43,7 +59,7 @@ export function registerRoutes(app: FastifyInstance): void {
   app.post<{ Params: { id: string }; Body: MaterialPreset }>('/api/material-presets/:id', async (req, reply) => {
     const error = validatePreset(req.body);
     if (error) return reply.code(400).send({ error });
-    const preset: MaterialPreset = { ...req.body, name: req.body.name.trim(), id: req.params.id };
+    const preset = sanitizePreset(req.body, req.params.id);
     materialPresets.save(preset);
     return reply.send(preset);
   });
