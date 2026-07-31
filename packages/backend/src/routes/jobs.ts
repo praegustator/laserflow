@@ -293,6 +293,10 @@ export function registerRoutes(app: FastifyInstance): void {
     }
     // Send soft-reset to GRBL if connected
     if (serialManager.getStatus() === 'connected') {
+      // Feed-hold first so motion decelerates under control before the reset
+      // clears the planner buffer (per GRBL docs, resetting during motion can
+      // lose steps and position).
+      serialManager.writeRealtime(GRBL_REALTIME.FEED_HOLD);
       serialManager.writeRealtime(String.fromCharCode(GRBL_REALTIME.SOFT_RESET));
       try { await serialManager.sendCommand('M5'); } catch (e) { app.log.warn('Emergency stop: M5 failed: %s', e); }
     }

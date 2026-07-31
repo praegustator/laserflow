@@ -3,19 +3,47 @@ import { randomUUID } from 'node:crypto';
 import { materialPresets } from '../config/MaterialPresets.js';
 import type { MaterialPreset } from '../types/index.js';
 
+function isValidSettings(s: unknown): s is { feedRate: number; power: number } {
+  if (!s || typeof s !== 'object') return false;
+  const { feedRate, power } = s as { feedRate?: unknown; power?: unknown };
+  return (
+    typeof feedRate === 'number' && Number.isFinite(feedRate) && feedRate > 0 &&
+    typeof power === 'number' && Number.isFinite(power) && power >= 0 && power <= 100
+  );
+}
+
+/** Validate a material preset payload; returns an error message or null. */
+function validatePreset(body: Partial<MaterialPreset> | undefined): string | null {
+  if (!body || typeof body !== 'object') return 'Request body is required';
+  if (typeof body.name !== 'string' || !body.name.trim()) return 'name is required';
+  if (typeof body.thickness !== 'number' || !Number.isFinite(body.thickness) || body.thickness <= 0) {
+    return 'thickness must be a positive number';
+  }
+  for (const slot of ['engrave', 'cutThin', 'cutThick'] as const) {
+    if (!isValidSettings(body[slot])) {
+      return `${slot} must have a positive feedRate and a power between 0 and 100`;
+    }
+  }
+  return null;
+}
+
 export function registerRoutes(app: FastifyInstance): void {
   app.get('/api/material-presets', async (_req, reply) => {
     return reply.send(materialPresets.getAll());
   });
 
   app.post<{ Body: Omit<MaterialPreset, 'id'> & { id?: string } }>('/api/material-presets', async (req, reply) => {
-    const preset: MaterialPreset = { ...req.body, id: req.body.id ?? randomUUID() };
+    const error = validatePreset(req.body);
+    if (error) return reply.code(400).send({ error });
+    const preset: MaterialPreset = { ...req.body, name: req.body.name.trim(), id: req.body.id ?? randomUUID() };
     materialPresets.save(preset);
     return reply.code(201).send(preset);
   });
 
   app.post<{ Params: { id: string }; Body: MaterialPreset }>('/api/material-presets/:id', async (req, reply) => {
-    const preset: MaterialPreset = { ...req.body, id: req.params.id };
+    const error = validatePreset(req.body);
+    if (error) return reply.code(400).send({ error });
+    const preset: MaterialPreset = { ...req.body, name: req.body.name.trim(), id: req.params.id };
     materialPresets.save(preset);
     return reply.send(preset);
   });
