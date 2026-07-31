@@ -36,6 +36,8 @@ interface OperationParamsPanelProps {
   onCreatePreset: (preset: Omit<MaterialPreset, 'id'>) => Promise<MaterialPreset>;
   /** Overwrite an existing preset in place. */
   onUpdatePreset: (preset: MaterialPreset) => Promise<MaterialPreset>;
+  /** Remove a preset from the library. */
+  onDeletePreset: (preset: MaterialPreset) => Promise<void>;
 }
 
 /** Which preset slot an operation's feed/power maps to, based on its type. */
@@ -44,7 +46,7 @@ function slotForType(type: OperationType | null): PresetSlot {
   return type === 'engrave' ? 'engrave' : 'cutThin';
 }
 
-function OperationParamsPanel({ selectedOps, presets, onChange, onCreatePreset, onUpdatePreset }: OperationParamsPanelProps) {
+function OperationParamsPanel({ selectedOps, presets, onChange, onCreatePreset, onUpdatePreset, onDeletePreset }: OperationParamsPanelProps) {
   const multiType = sharedValue(selectedOps, o => o.type);
   const multiFeedRate = sharedValue(selectedOps, o => o.feedRate);
   const multiPower = sharedValue(selectedOps, o => o.power);
@@ -170,6 +172,19 @@ function OperationParamsPanel({ selectedOps, presets, onChange, onCreatePreset, 
     }
   };
 
+  const handleDeletePreset = async () => {
+    if (!activePreset || presetBusy) return;
+    if (!window.confirm(`Delete material template "${activePreset.name}"? This cannot be undone.`)) return;
+    setPresetBusy(true);
+    try {
+      await onDeletePreset(activePreset);
+      // Detach the deleted template from the selected operations, keeping their values.
+      onChange({ presetId: undefined });
+    } finally {
+      setPresetBusy(false);
+    }
+  };
+
   // Shared input class — matches transform panel style
   const inputCls = 'w-16 text-xs bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-gray-100 text-right focus:outline-none focus:border-orange-500';
 
@@ -248,6 +263,15 @@ function OperationParamsPanel({ selectedOps, presets, onChange, onCreatePreset, 
                   title="Save the current values as a new material template"
                   className="flex-1 py-1 text-xs rounded bg-orange-600/80 hover:bg-orange-500 text-white disabled:opacity-40 transition-colors"
                 >Save as new…</button>
+                {activePreset && (
+                  <button
+                    type="button"
+                    onClick={() => { void handleDeletePreset(); }}
+                    disabled={presetBusy}
+                    title={`Delete "${activePreset.name}" from the material library`}
+                    className="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-red-700 text-gray-300 hover:text-white disabled:opacity-40 transition-colors"
+                  >🗑</button>
+                )}
               </div>
             ) : (
               <div className="flex gap-1 mt-1.5">
@@ -626,6 +650,12 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
     return updated;
   };
 
+  const deletePreset = async (preset: MaterialPreset): Promise<void> => {
+    await api.delete(`/api/material-presets/${preset.id}`);
+    setPresets(ps => ps.filter(p => p.id !== preset.id));
+    addToast('success', `Material template "${preset.name}" deleted`);
+  };
+
   // Notify parent of layer IDs referenced by currently selected ops (for cross-highlighting)
   useEffect(() => {
     if (!onSelectedOpIdsChange) return;
@@ -765,6 +795,7 @@ export default function OperationsPanel({ project, layers, selectedLayerIds, onS
             onChange={applyToSelected}
             onCreatePreset={createPreset}
             onUpdatePreset={updatePreset}
+            onDeletePreset={deletePreset}
           />
         </div>
       )}

@@ -6,6 +6,7 @@ import { useToastStore } from '../store/toastStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { useMachineStore } from '../store/machineStore';
 import { useKeyboardShortcuts, type ShortcutDef } from '../hooks/useKeyboardShortcuts';
+import { explainGcodeLine } from '../utils/gcodeReference';
 
 interface GMove {
   type: 'rapid' | 'cut';
@@ -14,24 +15,37 @@ interface GMove {
   lineNum: number;
   /** Normalised laser power 0–1 (from S parameter). Only set for G1 cut moves. */
   power?: number;
+  /** Modal feed rate in mm/min (from F parameter). Only set for G1 cut moves. */
+  feed?: number;
+}
+
+/** Matches G0/G1 motion commands, tolerating leading zeros (G00/G01),
+ *  lowercase letters, and coordinates written without a space (G1X10). */
+const MOTION_RE = /^[Gg]0*([01])(?![0-9.])/;
+
+/** Strip inline comments: parenthesis comments and everything after `;`. */
+function stripComments(line: string): string {
+  return line.replace(/\(.*?\)/g, '').split(';')[0].trim();
 }
 
 function parseGcode(gcode: string, maxS: number = 1000): GMove[] {
   const moves: GMove[] = [];
-  let x = 0, y = 0, currentS = 0;
+  let x = 0, y = 0, currentS = 0, currentF = 0;
   const lines = gcode.split('\n');
   lines.forEach((line, lineNum) => {
-    const trimmed = line.trim();
-    if (trimmed.startsWith(';') || !trimmed) return;
-    const isG0 = trimmed.startsWith('G0 ') || trimmed.startsWith('G0\t') || trimmed === 'G0';
-    const isG1 = trimmed.startsWith('G1 ') || trimmed.startsWith('G1\t') || trimmed === 'G1';
-    if (!isG0 && !isG1) return;
-    const xMatch = trimmed.match(/X(-?[\d.]+)/);
-    const yMatch = trimmed.match(/Y(-?[\d.]+)/);
-    const sMatch = trimmed.match(/S(-?[\d.]+)/);
+    const trimmed = stripComments(line);
+    if (!trimmed) return;
+    const motion = MOTION_RE.exec(trimmed);
+    if (!motion) return;
+    const isG0 = motion[1] === '0';
+    const xMatch = trimmed.match(/[Xx](-?[\d.]+)/);
+    const yMatch = trimmed.match(/[Yy](-?[\d.]+)/);
+    const sMatch = trimmed.match(/[Ss](-?[\d.]+)/);
+    const fMatch = trimmed.match(/[Ff]([\d.]+)/);
     const newX = xMatch ? parseFloat(xMatch[1]) : NaN;
     const newY = yMatch ? parseFloat(yMatch[1]) : NaN;
     if (sMatch) currentS = parseFloat(sMatch[1]);
+    if (fMatch) currentF = parseFloat(fMatch[1]);
     // Only update coordinates when they are explicitly present in the command;
     // if neither X nor Y appears on a G0/G1 line, skip it (no movement).
     if (!isNaN(newX)) x = newX;
@@ -43,10 +57,25 @@ function parseGcode(gcode: string, maxS: number = 1000): GMove[] {
       // (white pixels in raster images) which must render at full brightness
       // in the preview, not at the default `m.power ?? 1` fallback.
       move.power = Math.min(1, Math.max(0, currentS / maxS));
+      if (currentF > 0) move.feed = currentF;
     }
     moves.push(move);
   });
   return moves;
+}
+
+/** Assumed rapid (G0) traverse rate in mm/min for time estimation. */
+const RAPID_FEED_MM_MIN = 3000;
+/** Fallback cut feed in mm/min when the G-code never specifies F. */
+const DEFAULT_CUT_FEED_MM_MIN = 1000;
+
+/** Format a duration in seconds as a compact human-readable string. */
+function formatDuration(totalSec: number): string {
+  const sec = Math.round(totalSec);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ${sec % 60}s`;
+  return `${Math.floor(min / 60)}h ${min % 60}m`;
 }
 
 function highlightLine(line: string): React.ReactNode {
@@ -128,6 +157,7 @@ export default function GcodePreview() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playSpeed, setPlaySpeed] = useState<PlaySpeed>(1);
   const [showText, setShowText] = useState(false);
+  const [hoveredLine, setHoveredLine] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const rafRef = useRef<number | null>(null);
@@ -146,9 +176,10 @@ export default function GcodePreview() {
     // normalised to [0, 1]. We scan all G1 lines for S parameters.
     let maxS = 0;
     for (const line of gcode.split('\n')) {
-      const t = line.trim();
-      if ((t.startsWith('G1 ') || t.startsWith('G1\t'))) {
-        const m = t.match(/S([\d.]+)/);
+      const t = stripComments(line);
+      const motion = MOTION_RE.exec(t);
+      if (motion && motion[1] === '1') {
+        const m = t.match(/[Ss]([\d.]+)/);
         if (m) {
           const s = parseFloat(m[1]);
           if (s > maxS) maxS = s;
@@ -158,6 +189,31 @@ export default function GcodePreview() {
     return parseGcode(gcode, maxS > 0 ? maxS : 1000);
   }, [gcode]);
   const totalMoves = moves.length;
+
+  // Job statistics: cut/travel distances, estimated duration and job dimensions
+  const stats = useMemo(() => {
+    let cutDist = 0, rapidDist = 0, timeMin = 0;
+    let px = 0, py = 0;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const m of moves) {
+      const d = Math.hypot(m.x - px, m.y - py);
+      if (m.type === 'cut') {
+        cutDist += d;
+        timeMin += d / (m.feed && m.feed > 0 ? m.feed : DEFAULT_CUT_FEED_MM_MIN);
+      } else {
+        rapidDist += d;
+        timeMin += d / RAPID_FEED_MM_MIN;
+      }
+      px = m.x; py = m.y;
+      if (m.x < minX) minX = m.x;
+      if (m.y < minY) minY = m.y;
+      if (m.x > maxX) maxX = m.x;
+      if (m.y > maxY) maxY = m.y;
+    }
+    const width = moves.length > 0 ? maxX - minX : 0;
+    const height = moves.length > 0 ? maxY - minY : 0;
+    return { cutDist, rapidDist, timeSec: timeMin * 60, width, height };
+  }, [moves]);
   const currentIdx = Math.min(Math.floor(sliderPos * totalMoves), totalMoves);
 
   // Line number in the source gcode that the current move corresponds to
@@ -355,6 +411,10 @@ export default function GcodePreview() {
   };
 
   const gcodeLines = useMemo(() => gcode.split('\n'), [gcode]);
+  const hoverExplanations = useMemo(
+    () => (hoveredLine !== null ? explainGcodeLine(gcodeLines[hoveredLine] ?? '') : []),
+    [hoveredLine, gcodeLines]
+  );
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -371,6 +431,14 @@ export default function GcodePreview() {
           ))}
         </div>
         <div className="flex-1" />
+        {totalMoves > 0 && (
+          <span className="text-xs text-gray-500 hidden md:inline" title={`Cut distance · travel distance · estimated duration (rapids assumed at ${RAPID_FEED_MM_MIN} mm/min)`}>
+            ✂ {Math.round(stats.cutDist).toLocaleString()} mm
+            {' · '}↔ {Math.round(stats.rapidDist).toLocaleString()} mm
+            {' · '}~{formatDuration(stats.timeSec)}
+            {' · '}{stats.width.toFixed(1)}×{stats.height.toFixed(1)} mm
+          </span>
+        )}
         <span className="text-xs text-gray-500">{totalMoves} moves</span>
         {comingFromQueue ? (
           <button
@@ -471,19 +539,38 @@ export default function GcodePreview() {
 
                   {/* Side text panel */}
                   {showText && (
-                    <div ref={sideTextRef} className="w-72 flex-shrink-0 border-l border-gray-800 overflow-auto bg-gray-950">
-                      <pre className="p-3 text-xs font-mono leading-5">
-                        {gcodeLines.map((line, i) => (
-                          <div
-                            key={i}
-                            ref={el => { lineEls.current[i] = el; }}
-                            className={`flex gap-2 ${i === currentLineNum ? 'bg-orange-900/40 rounded' : ''}`}
-                          >
-                            <span className="text-gray-600 select-none w-7 text-right flex-shrink-0">{i + 1}</span>
-                            {highlightLine(line)}
-                          </div>
-                        ))}
-                      </pre>
+                    <div className="w-72 flex-shrink-0 border-l border-gray-800 flex flex-col min-h-0 bg-gray-950">
+                      <div ref={sideTextRef} className="flex-1 min-h-0 overflow-auto" onMouseLeave={() => setHoveredLine(null)}>
+                        <pre className="p-3 text-xs font-mono leading-5">
+                          {gcodeLines.map((line, i) => (
+                            <div
+                              key={i}
+                              ref={el => { lineEls.current[i] = el; }}
+                              onMouseEnter={() => setHoveredLine(i)}
+                              className={`flex gap-2 ${i === currentLineNum ? 'bg-orange-900/40 rounded' : hoveredLine === i ? 'bg-gray-800/60 rounded' : ''}`}
+                            >
+                              <span className="text-gray-600 select-none w-7 text-right flex-shrink-0">{i + 1}</span>
+                              {highlightLine(line)}
+                            </div>
+                          ))}
+                        </pre>
+                      </div>
+                      {/* Command explanation for the hovered line */}
+                      <div className="flex-shrink-0 border-t border-gray-800 p-2 text-xs max-h-40 overflow-auto">
+                        {hoverExplanations.length > 0 ? (
+                          <ul className="space-y-1">
+                            {hoverExplanations.map((exp, i) => (
+                              <li key={`${exp.token}-${i}`}>
+                                <span className="font-mono text-orange-400">{exp.token}</span>
+                                <span className="text-gray-300"> — {exp.name}</span>
+                                <p className="text-gray-500 leading-snug">{exp.description}</p>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-gray-600">Hover a line to see what each command does.</p>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

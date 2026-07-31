@@ -76,6 +76,8 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
   const workH = machineProfile?.workArea.y ?? settingsWorkH;
 
   const [transform, setTransform] = useState({ tx: 40, ty: 40, scale: 1.5 });
+  // Cursor position in work coordinates (mm), rounded to 0.1 mm; null when outside the canvas
+  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
   const dragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
@@ -192,6 +194,14 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
   }, []);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
+    // Middle mouse button always pans (common CAD convention)
+    if (e.button === 1) {
+      e.preventDefault();
+      dragging.current = true;
+      interactMode.current = 'pan';
+      dragStart.current = { x: e.clientX, y: e.clientY, tx: transform.tx, ty: transform.ty };
+      return;
+    }
     if (e.button !== 0) return;
     dragging.current = true;
 
@@ -213,6 +223,13 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
   }, [transform, selectedLayerIds, layers, onUpdateLayer]);
 
   const onMouseMove = useCallback((e: React.MouseEvent) => {
+    // Track cursor position in work coordinates (mm) for the info readout
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (rect) {
+      const wx = Math.round(((e.clientX - rect.left - transform.tx) / transform.scale) * 10) / 10;
+      const wy = Math.round(((e.clientY - rect.top - transform.ty) / transform.scale) * 10) / 10;
+      setCursorPos(prev => (prev && prev.x === wx && prev.y === wy) ? prev : { x: wx, y: wy });
+    }
     if (!dragging.current) return;
     if (interactMode.current === 'move' && onUpdateLayer) {
       const dx = (e.clientX - interactStart.current.x) / transform.scale;
@@ -233,11 +250,17 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
         ty: dragStart.current.ty + e.clientY - dragStart.current.y,
       }));
     }
-  }, [transform.scale, onUpdateLayer]);
+  }, [transform, onUpdateLayer]);
 
   const onMouseUp = useCallback(() => {
     dragging.current = false;
     interactMode.current = 'pan';
+  }, []);
+
+  const onMouseLeave = useCallback(() => {
+    dragging.current = false;
+    interactMode.current = 'pan';
+    setCursorPos(null);
   }, []);
 
   // Get color for a layer based on operations or custom color
@@ -293,7 +316,7 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
-      onMouseLeave={onMouseUp}
+      onMouseLeave={onMouseLeave}
     >
       <g transform={`translate(${tx},${ty}) scale(${scale})`}>
         {/* Work area background */}
@@ -615,9 +638,10 @@ export default forwardRef<SvgCanvasHandle, Props>(function SvgCanvas({ layers, o
         );
       })()}
 
-      {/* Canvas info — work area size, grid spacing, origin */}
+      {/* Canvas info — work area size, grid spacing, origin, cursor position */}
       <text x={8} y={16} fill="#6b7280" fontSize={10}>
         {workW}×{workH} mm | grid: {gridStep}mm | origin: {originPosition}
+        {cursorPos && ` | X ${cursorPos.x.toFixed(1)}  Y ${(originPosition === 'bottom-left' ? Math.round((workH - cursorPos.y) * 10) / 10 : cursorPos.y).toFixed(1)} mm`}
       </text>
     </svg>
   );
