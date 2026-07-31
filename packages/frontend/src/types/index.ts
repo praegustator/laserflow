@@ -170,6 +170,8 @@ export interface MachineProfile {
   maxFeedRate: { x: number; y: number };
   maxSpindleSpeed: number;
   homingEnabled: boolean;
+  startGcode?: string;
+  endGcode?: string;
 }
 
 export interface MaterialPreset {

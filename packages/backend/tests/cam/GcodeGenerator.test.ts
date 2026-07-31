@@ -19,6 +19,34 @@ describe('GcodeGenerator', () => {
     expect(gcode).toContain('M5');
   });
 
+  it('inserts custom start and end G-code from the machine profile', async () => {
+    const profile: MachineProfile = {
+      ...defaultProfile,
+      startGcode: '$H\nM8',
+      endGcode: 'M9\nG4 P1',
+    };
+    const gcode = await generateGcode([], [], profile);
+    const lines = gcode.split('\n');
+    const startIdx = lines.indexOf('; Custom start G-code');
+    expect(startIdx).toBeGreaterThan(-1);
+    expect(lines[startIdx + 1]).toBe('$H');
+    expect(lines[startIdx + 2]).toBe('M8');
+    // Custom start comes before the first operation content
+    expect(startIdx).toBeLessThan(lines.indexOf('M5'));
+    const endIdx = lines.indexOf('; Custom end G-code');
+    expect(endIdx).toBeGreaterThan(lines.lastIndexOf('M5'));
+    expect(lines[endIdx + 1]).toBe('M9');
+    expect(lines[endIdx + 2]).toBe('G4 P1');
+    // End G-code runs before the final return to origin
+    expect(endIdx).toBeLessThan(lines.lastIndexOf('G0 X0 Y0 S0'));
+  });
+
+  it('omits custom G-code sections when profile fields are empty', async () => {
+    const gcode = await generateGcode([], [], { ...defaultProfile, startGcode: '  ', endGcode: '' });
+    expect(gcode).not.toContain('; Custom start G-code');
+    expect(gcode).not.toContain('; Custom end G-code');
+  });
+
   it('generates cut operation for a simple line path', async () => {
     const geometry: PathGeometry[] = [{ d: 'M 0 0 L 100 0' }];
     const operations: Operation[] = [{

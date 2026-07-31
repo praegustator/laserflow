@@ -4,6 +4,8 @@ import { faFileExport, faFileImport, faPlus, faPencil, faTrash } from '@fortawes
 import { api } from '../api/client';
 import { useAppSettings, isMixedContent, type OriginPosition } from '../store/appSettingsStore';
 import type { MachineProfile, MaterialPreset } from '../types';
+import GcodeEditor from '../components/GcodeEditor';
+import { START_GCODE_TEMPLATES, END_GCODE_TEMPLATES } from '../utils/gcodeReference';
 
 // ─── Machine Profiles ────────────────────────────────────────────────────────
 
@@ -13,6 +15,8 @@ const EMPTY_PROFILE: Omit<MachineProfile, 'id'> = {
   maxFeedRate: { x: 5000, y: 5000 },
   maxSpindleSpeed: 1000,
   homingEnabled: false,
+  startGcode: '',
+  endGcode: '',
 };
 
 function ProfileForm({
@@ -100,6 +104,24 @@ function ProfileForm({
           <label htmlFor="homing" className="text-sm text-gray-300">
             Homing Enabled
           </label>
+        </div>
+        <div className="col-span-2">
+          <GcodeEditor
+            label="Custom Start G-code"
+            value={form.startGcode ?? ''}
+            onChange={(v) => set('startGcode', v)}
+            templates={START_GCODE_TEMPLATES}
+            placeholder={'; runs before every job, e.g.\n$H\nM8'}
+          />
+        </div>
+        <div className="col-span-2">
+          <GcodeEditor
+            label="Custom End G-code"
+            value={form.endGcode ?? ''}
+            onChange={(v) => set('endGcode', v)}
+            templates={END_GCODE_TEMPLATES}
+            placeholder={'; runs after every job, e.g.\nM9'}
+          />
         </div>
       </div>
       <div className="flex gap-2 pt-1">

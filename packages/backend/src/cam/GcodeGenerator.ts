@@ -736,6 +736,13 @@ export async function generateGcode(
   lines.push('G21');
   lines.push('G90');
   lines.push('G0 X0 Y0 S0');
+  if (profile.startGcode?.trim()) {
+    lines.push('; Custom start G-code');
+    for (const l of profile.startGcode.split(/\r?\n/)) {
+      const trimmed = l.trim();
+      if (trimmed) lines.push(trimmed);
+    }
+  }
   lines.push('');
 
   for (const op of operations) {
@@ -831,6 +838,13 @@ export async function generateGcode(
   }
 
   lines.push('M5');
+  if (profile.endGcode?.trim()) {
+    lines.push('; Custom end G-code');
+    for (const l of profile.endGcode.split(/\r?\n/)) {
+      const trimmed = l.trim();
+      if (trimmed) lines.push(trimmed);
+    }
+  }
   lines.push('G0 X0 Y0 S0');
   lines.push('; End');
 

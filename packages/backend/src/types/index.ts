@@ -5,6 +5,10 @@ export interface MachineProfile {
   maxFeedRate: { x: number; y: number };
   maxSpindleSpeed: number; // $30 value
   homingEnabled: boolean;
+  /** Custom G-code inserted after the standard header, before any operation. */
+  startGcode?: string;
+  /** Custom G-code appended after all operations, before the final return to origin. */
+  endGcode?: string;
 }
 
 export interface MaterialPreset {

@@ -6,6 +6,7 @@ import { useToastStore } from '../store/toastStore';
 import { useAppSettings } from '../store/appSettingsStore';
 import { useMachineStore } from '../store/machineStore';
 import { useKeyboardShortcuts, type ShortcutDef } from '../hooks/useKeyboardShortcuts';
+import { explainGcodeLine } from '../utils/gcodeReference';
 
 interface GMove {
   type: 'rapid' | 'cut';
@@ -156,6 +157,7 @@ export default function GcodePreview() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playSpeed, setPlaySpeed] = useState<PlaySpeed>(1);
   const [showText, setShowText] = useState(false);
+  const [hoveredLine, setHoveredLine] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const rafRef = useRef<number | null>(null);
@@ -409,6 +411,10 @@ export default function GcodePreview() {
   };
 
   const gcodeLines = useMemo(() => gcode.split('\n'), [gcode]);
+  const hoverExplanations = useMemo(
+    () => (hoveredLine !== null ? explainGcodeLine(gcodeLines[hoveredLine] ?? '') : []),
+    [hoveredLine, gcodeLines]
+  );
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -533,19 +539,38 @@ export default function GcodePreview() {
 
                   {/* Side text panel */}
                   {showText && (
-                    <div ref={sideTextRef} className="w-72 flex-shrink-0 border-l border-gray-800 overflow-auto bg-gray-950">
-                      <pre className="p-3 text-xs font-mono leading-5">
-                        {gcodeLines.map((line, i) => (
-                          <div
-                            key={i}
-                            ref={el => { lineEls.current[i] = el; }}
-                            className={`flex gap-2 ${i === currentLineNum ? 'bg-orange-900/40 rounded' : ''}`}
-                          >
-                            <span className="text-gray-600 select-none w-7 text-right flex-shrink-0">{i + 1}</span>
-                            {highlightLine(line)}
-                          </div>
-                        ))}
-                      </pre>
+                    <div className="w-72 flex-shrink-0 border-l border-gray-800 flex flex-col min-h-0 bg-gray-950">
+                      <div ref={sideTextRef} className="flex-1 min-h-0 overflow-auto" onMouseLeave={() => setHoveredLine(null)}>
+                        <pre className="p-3 text-xs font-mono leading-5">
+                          {gcodeLines.map((line, i) => (
+                            <div
+                              key={i}
+                              ref={el => { lineEls.current[i] = el; }}
+                              onMouseEnter={() => setHoveredLine(i)}
+                              className={`flex gap-2 ${i === currentLineNum ? 'bg-orange-900/40 rounded' : hoveredLine === i ? 'bg-gray-800/60 rounded' : ''}`}
+                            >
+                              <span className="text-gray-600 select-none w-7 text-right flex-shrink-0">{i + 1}</span>
+                              {highlightLine(line)}
+                            </div>
+                          ))}
+                        </pre>
+                      </div>
+                      {/* Command explanation for the hovered line */}
+                      <div className="flex-shrink-0 border-t border-gray-800 p-2 text-xs max-h-40 overflow-auto">
+                        {hoverExplanations.length > 0 ? (
+                          <ul className="space-y-1">
+                            {hoverExplanations.map((exp, i) => (
+                              <li key={`${exp.token}-${i}`}>
+                                <span className="font-mono text-orange-400">{exp.token}</span>
+                                <span className="text-gray-300"> — {exp.name}</span>
+                                <p className="text-gray-500 leading-snug">{exp.description}</p>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-gray-600">Hover a line to see what each command does.</p>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
